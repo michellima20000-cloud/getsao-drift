@@ -1,0 +1,83 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --bg-deep: #070D1E;
+    --bg-dark: #0B132B;
+    --bg-card: #141E38;
+    --bg-card-hover: #1A284C;
+    --cyan-neon: #00F0FF;
+    --cyan-primary: #00B4D8;
+    --cyan-glow: #48CAE4;
+  }
+
+  body {
+    background-color: var(--bg-deep);
+    color: #F1F5F9;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    overflow-x: hidden;
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* Custom speed / tech typography */
+.font-display {
+  font-family: 'Chakra Petch', 'Inter', sans-serif;
+}
+
+.font-mono-numbers {
+  font-family: 'JetBrains Mono', monospace;
+  font-feature-settings: 'tnum' on, 'zero' on;
+}
+
+/* Neon glow utilities */
+.glow-cyan-btn {
+  box-shadow: 0 0 25px rgba(0, 180, 216, 0.45), 0 0 50px rgba(0, 240, 255, 0.2);
+}
+
+.glow-cyan-subtle {
+  box-shadow: 0 0 15px rgba(72, 202, 228, 0.25);
+}
+
+.glow-cyan-border {
+  border-color: rgba(72, 202, 228, 0.6);
+  box-shadow: 0 0 10px rgba(0, 180, 216, 0.2);
+}
+
+.glow-cyan-text {
+  text-shadow: 0 0 12px rgba(72, 202, 228, 0.7);
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(11, 19, 43, 0.8);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(72, 202, 228, 0.3);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(72, 202, 228, 0.6);
+}
+
+/* Pulse animation for live race indicators */
+@keyframes neonPulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: drop-shadow(0 0 4px #00F0FF);
+  }
+  50% {
+    opacity: 0.75;
+    transform: scale(1.04);
+    filter: drop-shadow(0 0 8px #00F0FF);
+  }
+}
+
+.animate-neon-pulse {
+  animation: neonPulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}

@@ -1,0 +1,194 @@
+import React, { useState } from 'react';
+import { useDriftPark } from '../context/DriftParkContext';
+import { SpeedometerLogo } from './SpeedometerLogo';
+import {
+  Building2,
+  User,
+  Shield,
+  Smartphone,
+  Maximize2,
+  Code2,
+  ChevronDown,
+  LogOut,
+  RefreshCw,
+} from 'lucide-react';
+
+export const TopHeader: React.FC = () => {
+  const {
+    currentUser,
+    currentTenant,
+    allTenants,
+    switchTenant,
+    quickLoginAs,
+    logout,
+    isDeviceFrame,
+    setIsDeviceFrame,
+    setIsCodeModalOpen,
+  } = useDriftPark();
+
+  const [tenantDropdownOpen, setTenantDropdownOpen] = useState(false);
+  const [userDropdownOpen, setUserDropdownOpen] = useState(false);
+
+  return (
+    <header className="relative z-30 bg-[#0B132B]/95 backdrop-blur-md border-b border-[#1C2541] px-4 py-2.5">
+      <div className="flex items-center justify-between gap-2 max-w-lg mx-auto">
+        {/* Left: Brand / Tenant selector */}
+        <div className="relative">
+          <button
+            onClick={() => setTenantDropdownOpen(!tenantDropdownOpen)}
+            className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-[#141E38] hover:bg-[#1C284C] border border-cyan-500/20 text-left transition-all"
+            title="Alterar Parque / Operação Multi-Tenant"
+          >
+            <SpeedometerLogo size={28} />
+            <div className="leading-tight">
+              <div className="text-[11px] font-bold tracking-wider text-slate-100 flex items-center gap-1">
+                DRIFT PARK
+                <ChevronDown size={12} className="text-cyan-400" />
+              </div>
+              <div className="text-[9px] text-cyan-400/90 truncate max-w-[120px] font-medium">
+                {currentTenant.name.replace('Drift Park Brasil - ', '')}
+              </div>
+            </div>
+          </button>
+
+          {/* Tenant Dropdown */}
+          {tenantDropdownOpen && (
+            <div className="absolute left-0 mt-2 w-64 bg-[#0F172A] border border-cyan-500/30 rounded-xl shadow-2xl p-2 z-50 animate-in fade-in zoom-in-95">
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-cyan-400 px-2 py-1 flex items-center gap-1.5 border-b border-slate-800">
+                <Building2 size={12} />
+                Unidades Multi-Tenant
+              </div>
+              <div className="mt-1 space-y-1">
+                {allTenants.map((t) => (
+                  <button
+                    key={t.id}
+                    onClick={() => {
+                      switchTenant(t.id);
+                      setTenantDropdownOpen(false);
+                    }}
+                    className={`w-full text-left px-2.5 py-2 rounded-lg text-xs transition-colors flex items-center justify-between ${
+                      t.id === currentTenant.id
+                        ? 'bg-cyan-500/20 text-cyan-300 font-semibold border border-cyan-500/40'
+                        : 'text-slate-300 hover:bg-slate-800/80'
+                    }`}
+                  >
+                    <div>
+                      <div className="font-medium">{t.name}</div>
+                      <div className="text-[10px] text-slate-400">{t.city}</div>
+                    </div>
+                    {t.id === currentTenant.id && (
+                      <span className="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_6px_#00F0FF]" />
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Right Tools: Flutter Code Modal, Frame Toggle, User Menu */}
+        <div className="flex items-center gap-1.5">
+          {/* Flutter Code Button */}
+          <button
+            onClick={() => setIsCodeModalOpen(true)}
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-cyan-950/70 hover:bg-cyan-900 border border-cyan-400/40 text-cyan-300 text-xs font-semibold shadow-[0_0_10px_rgba(0,180,216,0.2)] transition-all"
+            title="Ver Código Flutter / Dart e Regras Firestore"
+          >
+            <Code2 size={14} className="text-cyan-400" />
+            <span className="hidden sm:inline text-[11px]">Flutter</span>
+          </button>
+
+          {/* Device Frame Toggle */}
+          <button
+            onClick={() => setIsDeviceFrame((prev) => !prev)}
+            className="p-1.5 rounded-lg bg-[#141E38] hover:bg-[#1C284C] text-slate-300 hover:text-cyan-400 border border-slate-700 transition-colors"
+            title={isDeviceFrame ? 'Alternar para tela cheia' : 'Alternar para moldura de celular'}
+          >
+            {isDeviceFrame ? <Maximize2 size={16} /> : <Smartphone size={16} />}
+          </button>
+
+          {/* User Profile / Role menu */}
+          <div className="relative">
+            <button
+              onClick={() => setUserDropdownOpen(!userDropdownOpen)}
+              className="flex items-center gap-1.5 pl-2 pr-2 py-1 rounded-lg bg-[#141E38] hover:bg-[#1C284C] border border-slate-700/80 transition-all text-xs"
+            >
+              <div
+                className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                  currentUser?.role === 'admin'
+                    ? 'bg-amber-500 text-slate-950'
+                    : 'bg-cyan-500 text-slate-950'
+                }`}
+              >
+                {currentUser?.role === 'admin' ? 'A' : 'O'}
+              </div>
+              <span className="text-[11px] font-medium text-slate-200 hidden sm:inline max-w-[80px] truncate">
+                {currentUser?.name || 'Conta'}
+              </span>
+              <ChevronDown size={11} className="text-slate-400" />
+            </button>
+
+            {userDropdownOpen && (
+              <div className="absolute right-0 mt-2 w-56 bg-[#0F172A] border border-cyan-500/30 rounded-xl shadow-2xl p-2 z-50 animate-in fade-in zoom-in-95">
+                <div className="px-2 py-1.5 border-b border-slate-800">
+                  <div className="text-xs font-semibold text-slate-200">{currentUser?.name}</div>
+                  <div className="text-[10px] text-slate-400 truncate">{currentUser?.email}</div>
+                  <div className="mt-1 flex items-center gap-1 text-[10px]">
+                    <span
+                      className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${
+                        currentUser?.role === 'admin'
+                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                          : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
+                      }`}
+                    >
+                      {currentUser?.role === 'admin' ? '👑 Administrador' : '🏎️ Operador'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="py-1 space-y-1">
+                  <div className="text-[9px] text-slate-400 px-2 pt-1 uppercase font-semibold">
+                    Alternar Perfil (Simulação)
+                  </div>
+                  <button
+                    onClick={() => {
+                      quickLoginAs('admin');
+                      setUserDropdownOpen(false);
+                    }}
+                    className="w-full text-left px-2 py-1.5 rounded text-xs text-slate-200 hover:bg-slate-800 flex items-center gap-2"
+                  >
+                    <Shield size={13} className="text-amber-400" />
+                    <span>Modo Administrador</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      quickLoginAs('operador');
+                      setUserDropdownOpen(false);
+                    }}
+                    className="w-full text-left px-2 py-1.5 rounded text-xs text-slate-200 hover:bg-slate-800 flex items-center gap-2"
+                  >
+                    <User size={13} className="text-cyan-400" />
+                    <span>Modo Operador</span>
+                  </button>
+                </div>
+
+                <div className="pt-1 border-t border-slate-800">
+                  <button
+                    onClick={() => {
+                      logout();
+                      setUserDropdownOpen(false);
+                    }}
+                    className="w-full text-left px-2 py-1.5 rounded text-xs text-rose-300 hover:bg-rose-950/40 flex items-center gap-2"
+                  >
+                    <LogOut size={13} />
+                    <span>Sair da Conta</span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </header>
+  );
+};
