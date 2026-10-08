@@ -42,6 +42,7 @@ export interface Vehicle {
   batteryLevel?: number; // 0 - 100%
   totalRuns: number;
   activeRentalId?: string;
+  imageUrl?: string;
 }
 
 export interface Rental {

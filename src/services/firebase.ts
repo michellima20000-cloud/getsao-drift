@@ -58,6 +58,36 @@ export async function checkEmailAlreadyExists(email: string): Promise<boolean> {
 }
 
 /**
+ * Busca perfil do usuário no Firestore pelo UID ou e-mail
+ */
+export async function getFirestoreUserProfile(uidOrEmail: string): Promise<any | null> {
+  const clean = uidOrEmail.trim().toLowerCase();
+  try {
+    // 1. Tenta buscar direto pelo UID na coleção 'users'
+    const docRef = doc(db, 'users', clean);
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      return snap.data();
+    }
+    // 2. Tenta buscar por e-mail em 'users'
+    const q1 = query(collection(db, 'users'), where('email', '==', clean));
+    const snap1 = await getDocs(q1);
+    if (!snap1.empty) {
+      return snap1.docs[0].data();
+    }
+    // 3. Tenta buscar em 'usuarios'
+    const q2 = query(collection(db, 'usuarios'), where('email', '==', clean));
+    const snap2 = await getDocs(q2);
+    if (!snap2.empty) {
+      return snap2.docs[0].data();
+    }
+  } catch (err) {
+    console.warn('Firestore user profile fetch error:', err);
+  }
+  return null;
+}
+
+/**
  * Cria credencial de autenticação no Firebase Auth para Sub-Conta sem deslogar o Admin
  * Retorna o UID gerado pelo Firebase Auth para uso como ID do documento no Firestore
  */

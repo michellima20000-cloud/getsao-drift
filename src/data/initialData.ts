@@ -37,6 +37,25 @@ export const INITIAL_TENANTS: Tenant[] = [
 // Sem dados fictícios ou mocks hardcoded
 export const INITIAL_USERS: UserProfile[] = [];
 
+export const VEHICLE_IMAGE_PRESETS = {
+  DRIFT: [
+    { label: 'Drift Kart Neon', url: 'https://images.unsplash.com/photo-1596707204928-87b6131c1955?auto=format&fit=crop&w=400&q=80' },
+    { label: 'Kart Pro Vermelho', url: 'https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?auto=format&fit=crop&w=400&q=80' },
+    { label: 'Trike Sport Racer', url: 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?auto=format&fit=crop&w=400&q=80' },
+    { label: 'Racer Azul Turbo', url: 'https://images.unsplash.com/photo-1511919884226-fd3cad34687c?auto=format&fit=crop&w=400&q=80' },
+  ],
+  JEEP: [
+    { label: 'Mini Jeep Militar', url: 'https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=400&q=80' },
+    { label: 'Jeep Safari Kids', url: 'https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=400&q=80' },
+    { label: 'Jeep 4x4 Aventura', url: 'https://images.unsplash.com/photo-1541899481282-d53bffe3c35d?auto=format&fit=crop&w=400&q=80' },
+  ],
+  BATE_BATE: [
+    { label: 'Bumper Retrô Neon', url: 'https://images.unsplash.com/photo-1579783902614-a3fb3927b675?auto=format&fit=crop&w=400&q=80' },
+    { label: 'Carrinho Park Led', url: 'https://images.unsplash.com/photo-1563245372-f21724e3856d?auto=format&fit=crop&w=400&q=80' },
+    { label: 'Bate-Bate Turbo', url: 'https://images.unsplash.com/photo-1513151233558-d860c5398176?auto=format&fit=crop&w=400&q=80' },
+  ],
+};
+
 export const INITIAL_VEHICLES: Vehicle[] = [
   // Tenant 1 Drift cars (6 total)
   {
@@ -49,6 +68,7 @@ export const INITIAL_VEHICLES: Vehicle[] = [
     batteryLevel: 88,
     totalRuns: 142,
     activeRentalId: 'rent_active_01',
+    imageUrl: 'https://images.unsplash.com/photo-1596707204928-87b6131c1955?auto=format&fit=crop&w=400&q=80',
   },
   {
     id: 'veh_drift_02',
@@ -59,6 +79,7 @@ export const INITIAL_VEHICLES: Vehicle[] = [
     status: 'disponivel',
     batteryLevel: 95,
     totalRuns: 120,
+    imageUrl: 'https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?auto=format&fit=crop&w=400&q=80',
   },
   {
     id: 'veh_drift_03',
@@ -69,6 +90,7 @@ export const INITIAL_VEHICLES: Vehicle[] = [
     status: 'disponivel',
     batteryLevel: 74,
     totalRuns: 98,
+    imageUrl: 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?auto=format&fit=crop&w=400&q=80',
   },
   {
     id: 'veh_drift_04',
@@ -79,6 +101,7 @@ export const INITIAL_VEHICLES: Vehicle[] = [
     status: 'disponivel',
     batteryLevel: 82,
     totalRuns: 115,
+    imageUrl: 'https://images.unsplash.com/photo-1511919884226-fd3cad34687c?auto=format&fit=crop&w=400&q=80',
   },
   {
     id: 'veh_drift_05',
@@ -89,6 +112,7 @@ export const INITIAL_VEHICLES: Vehicle[] = [
     status: 'disponivel',
     batteryLevel: 61,
     totalRuns: 87,
+    imageUrl: 'https://images.unsplash.com/photo-1596707204928-87b6131c1955?auto=format&fit=crop&w=400&q=80',
   },
   {
     id: 'veh_drift_06',
@@ -99,6 +123,7 @@ export const INITIAL_VEHICLES: Vehicle[] = [
     status: 'manutencao',
     batteryLevel: 15,
     totalRuns: 164,
+    imageUrl: 'https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?auto=format&fit=crop&w=400&q=80',
   },
 
   // Tenant 1 Jeep (3 total)
@@ -112,6 +137,7 @@ export const INITIAL_VEHICLES: Vehicle[] = [
     batteryLevel: 90,
     totalRuns: 84,
     activeRentalId: 'rent_active_02',
+    imageUrl: 'https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=400&q=80',
   },
   {
     id: 'veh_jeep_02',
@@ -122,6 +148,7 @@ export const INITIAL_VEHICLES: Vehicle[] = [
     status: 'disponivel',
     batteryLevel: 78,
     totalRuns: 73,
+    imageUrl: 'https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=400&q=80',
   },
   {
     id: 'veh_jeep_03',
@@ -132,6 +159,7 @@ export const INITIAL_VEHICLES: Vehicle[] = [
     status: 'disponivel',
     batteryLevel: 86,
     totalRuns: 69,
+    imageUrl: 'https://images.unsplash.com/photo-1541899481282-d53bffe3c35d?auto=format&fit=crop&w=400&q=80',
   },
 
   // Tenant 1 Bate-Bate (4 total)
@@ -144,6 +172,7 @@ export const INITIAL_VEHICLES: Vehicle[] = [
     status: 'disponivel',
     batteryLevel: 92,
     totalRuns: 210,
+    imageUrl: 'https://images.unsplash.com/photo-1579783902614-a3fb3927b675?auto=format&fit=crop&w=400&q=80',
   },
   {
     id: 'veh_bump_02',
@@ -154,6 +183,7 @@ export const INITIAL_VEHICLES: Vehicle[] = [
     status: 'disponivel',
     batteryLevel: 84,
     totalRuns: 195,
+    imageUrl: 'https://images.unsplash.com/photo-1563245372-f21724e3856d?auto=format&fit=crop&w=400&q=80',
   },
   {
     id: 'veh_bump_03',
@@ -164,6 +194,7 @@ export const INITIAL_VEHICLES: Vehicle[] = [
     status: 'disponivel',
     batteryLevel: 77,
     totalRuns: 180,
+    imageUrl: 'https://images.unsplash.com/photo-1513151233558-d860c5398176?auto=format&fit=crop&w=400&q=80',
   },
   {
     id: 'veh_bump_04',
@@ -174,6 +205,7 @@ export const INITIAL_VEHICLES: Vehicle[] = [
     status: 'manutencao',
     batteryLevel: 25,
     totalRuns: 160,
+    imageUrl: 'https://images.unsplash.com/photo-1579783902614-a3fb3927b675?auto=format&fit=crop&w=400&q=80',
   },
 
   // Tenant 2 Sample Vehicles

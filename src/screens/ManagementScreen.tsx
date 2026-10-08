@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useDriftPark } from '../context/DriftParkContext';
-import { VehicleCategory, VehicleStatus, UserRole } from '../types';
+import { Vehicle, VehicleCategory, VehicleStatus, UserRole } from '../types';
+import { VEHICLE_IMAGE_PRESETS } from '../data/initialData';
 import {
   ShieldCheck,
   Plus,
@@ -18,6 +19,10 @@ import {
   Zap,
   X,
   Sparkles,
+  Camera,
+  Upload,
+  Image as ImageIcon,
+  Pencil,
 } from 'lucide-react';
 
 export const ManagementScreen: React.FC = () => {
@@ -29,6 +34,7 @@ export const ManagementScreen: React.FC = () => {
     vehicles,
     users,
     addVehicle,
+    updateVehicle,
     updateVehicleStatus,
     deleteVehicle,
     createSubAccount,
@@ -43,10 +49,13 @@ export const ManagementScreen: React.FC = () => {
   const [isSubAccountModalOpen, setIsSubAccountModalOpen] = useState(false);
   const [isPricingModalOpen, setIsPricingModalOpen] = useState(false);
 
-  // New Vehicle Form
+  // Vehicle Form State
+  const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null);
   const [vehName, setVehName] = useState('');
   const [vehCode, setVehCode] = useState('');
   const [vehCategory, setVehCategory] = useState<VehicleCategory>('DRIFT');
+  const [vehImageUrl, setVehImageUrl] = useState<string>('');
+  const [isCustomUrlMode, setIsCustomUrlMode] = useState(false);
 
   // New Sub Account Form
   const [subName, setSubName] = useState('');
@@ -59,6 +68,9 @@ export const ManagementScreen: React.FC = () => {
   // Pricing Form
   const [selectedDuration, setSelectedDuration] = useState<number>(10);
   const [newPriceValue, setNewPriceValue] = useState<string>('25');
+
+  // Delete Operator Modal
+  const [operatorToDelete, setOperatorToDelete] = useState<{ id: string; name: string } | null>(null);
 
   const isAdmin = currentUser?.role === 'admin';
 
@@ -80,12 +92,89 @@ export const ManagementScreen: React.FC = () => {
     new Map(tenantOperators.map((op) => [op.email.toLowerCase(), op])).values()
   );
 
-  const handleAddVehicle = (e: React.FormEvent) => {
+  const handleOpenNewVehicle = () => {
+    setEditingVehicle(null);
+    setVehName('');
+    setVehCode(`#${vehicles.length + 1}`);
+    setVehCategory('DRIFT');
+    setVehImageUrl('');
+    setIsCustomUrlMode(false);
+    setIsVehicleModalOpen(true);
+  };
+
+  const handleOpenEditVehicle = (veh: Vehicle) => {
+    setEditingVehicle(veh);
+    setVehName(veh.name);
+    setVehCode(veh.code);
+    setVehCategory(veh.category);
+    setVehImageUrl(veh.imageUrl || '');
+    setIsCustomUrlMode(false);
+    setIsVehicleModalOpen(true);
+  };
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const maxDim = 400;
+        let width = img.width;
+        let height = img.height;
+        if (width > height) {
+          if (width > maxDim) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          }
+        } else {
+          if (height > maxDim) {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+          setVehImageUrl(dataUrl);
+        }
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSaveVehicle = (e: React.FormEvent) => {
     e.preventDefault();
     if (!vehName.trim()) return;
-    addVehicle(vehName, vehCode || `#${vehicles.length + 1}`, vehCategory);
+    const codeToUse = vehCode.trim() || `#${vehicles.length + 1}`;
+    const formattedCode = codeToUse.startsWith('#') ? codeToUse : `#${codeToUse}`;
+
+    if (editingVehicle) {
+      updateVehicle(editingVehicle.id, {
+        name: vehName.trim(),
+        code: formattedCode,
+        category: vehCategory,
+        imageUrl: vehImageUrl.trim() || undefined,
+      });
+    } else {
+      addVehicle(
+        vehName.trim(),
+        formattedCode,
+        vehCategory,
+        vehImageUrl.trim() || undefined
+      );
+    }
+
     setVehName('');
     setVehCode('');
+    setVehImageUrl('');
+    setEditingVehicle(null);
     setIsVehicleModalOpen(false);
   };
 
@@ -128,7 +217,7 @@ export const ManagementScreen: React.FC = () => {
             <span>Painel de Gestão da Pista</span>
           </h2>
           <p className="text-xs text-slate-400">
-            Apenas para Administrador · Isolamento total por <code>tenantId</code>
+            Apenas para Administrador · Gestão segura da equipe e frota
           </p>
         </div>
 
@@ -166,103 +255,7 @@ export const ManagementScreen: React.FC = () => {
         </div>
       ) : (
         <>
-          {/* CARD EM DESTAQUE: CRIAR CONTA DE OPERADOR (Conforme solicitado) */}
-          <div className="rounded-2xl bg-gradient-to-br from-[#1C2541] to-[#141E38] border border-cyan-500/40 p-4 shadow-xl">
-            <div className="flex items-center justify-between mb-3 border-b border-slate-700/80 pb-2">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-cyan-500/20 flex items-center justify-center text-cyan-300">
-                  <UserPlus size={16} />
-                </div>
-                <div>
-                  <h3 className="text-xs font-bold text-white uppercase tracking-wider">
-                    Criar Conta de Operador / Funcionário
-                  </h3>
-                  <p className="text-[10px] text-slate-400">
-                    Gere o acesso do seu funcionário vinculado ao seu <strong>tenantId</strong>
-                  </p>
-                </div>
-              </div>
-              <span className="text-[9px] font-mono px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-500/30">
-                RBAC Operador
-              </span>
-            </div>
 
-            <form onSubmit={handleCreateSubAccount} className="space-y-3">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                <div>
-                  <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">
-                    Nome do Funcionário
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={subName}
-                    onChange={(e) => setSubName(e.target.value)}
-                    placeholder="Ex: Carlos Oliveira"
-                    className="w-full px-3 py-2 rounded-xl bg-[#0B132B] border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">
-                    E-mail de Login
-                  </label>
-                  <input
-                    type="email"
-                    required
-                    value={subEmail}
-                    onChange={(e) => setSubEmail(e.target.value)}
-                    placeholder="carlos.operador@exemplo.com"
-                    className="w-full px-3 py-2 rounded-xl bg-[#0B132B] border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">
-                    Senha Provisória
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={subPass}
-                    onChange={(e) => setSubPass(e.target.value)}
-                    placeholder="Ex: 123456"
-                    className="w-full px-3 py-2 rounded-xl bg-[#0B132B] border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400 font-mono"
-                  />
-                </div>
-              </div>
-
-              {subFeedback && (
-                <div
-                  className={`p-2.5 rounded-xl text-xs flex items-center gap-2 ${
-                    subFeedback.type === 'success'
-                      ? 'bg-emerald-500/15 border border-emerald-500/40 text-emerald-300'
-                      : 'bg-rose-500/15 border border-rose-500/40 text-rose-300'
-                  }`}
-                >
-                  <span>{subFeedback.type === 'success' ? '✅' : '⚠️'}</span>
-                  <span>{subFeedback.msg}</span>
-                </div>
-              )}
-
-              <div className="flex items-center justify-between pt-1">
-                <span className="text-[10px] text-slate-400">
-                  🔒 O operador só poderá iniciar/parar corridas e não verá o faturamento total.
-                </span>
-
-                <button
-                  type="submit"
-                  disabled={subLoading}
-                  className={`px-4 py-2 rounded-xl bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-bold text-xs shadow-[0_0_12px_rgba(0,180,216,0.3)] transition-all flex items-center gap-1.5 shrink-0 ${
-                    subLoading ? 'opacity-60 cursor-wait' : ''
-                  }`}
-                >
-                  <UserPlus size={14} />
-                  <span>{subLoading ? 'CRIANDO NO FIREBASE...' : 'CRIAR CONTA IMEDIATAMENTE'}</span>
-                </button>
-              </div>
-            </form>
-          </div>
 
           {/* 1. Atalhos Rápidos em Cards (As specified in prompt) */}
       <div>
@@ -345,11 +338,11 @@ export const ManagementScreen: React.FC = () => {
 
           {isAdmin && (
             <button
-              onClick={() => setIsVehicleModalOpen(true)}
-              className="text-xs text-cyan-400 hover:text-cyan-300 font-bold flex items-center gap-1"
+              onClick={handleOpenNewVehicle}
+              className="text-xs text-cyan-400 hover:text-cyan-300 font-bold flex items-center gap-1 px-2.5 py-1 rounded-lg bg-cyan-500/10 border border-cyan-500/30 hover:bg-cyan-500/20 transition-all"
             >
               <Plus size={12} />
-              Novo
+              Novo Veículo
             </button>
           )}
         </div>
@@ -365,21 +358,29 @@ export const ManagementScreen: React.FC = () => {
                 key={veh.id}
                 className="rounded-xl bg-[#141E38] border border-slate-700/80 p-3 hover:border-cyan-500/50 transition-all flex items-center justify-between gap-2 shadow-sm"
               >
-                <div className="flex items-center gap-3">
-                  {/* Category / Code Avatar */}
-                  <div className="w-10 h-10 rounded-xl bg-[#0B132B] border border-slate-700 flex flex-col items-center justify-center font-display shrink-0">
-                    <span className="text-xs">
-                      {veh.category === 'DRIFT' ? '🏎️' : veh.category === 'JEEP' ? '🚙' : '⚡'}
-                    </span>
-                    <span className="text-[10px] font-extrabold text-cyan-400 leading-none mt-0.5">
+                <div className="flex items-center gap-3 min-w-0">
+                  {/* Photo or Category / Code Avatar */}
+                  <div className="relative w-12 h-12 rounded-xl overflow-hidden bg-[#0B132B] border border-slate-700 shrink-0 flex items-center justify-center">
+                    {veh.imageUrl ? (
+                      <img
+                        src={veh.imageUrl}
+                        alt={veh.name}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <span className="text-sm">
+                        {veh.category === 'DRIFT' ? '🏎️' : veh.category === 'JEEP' ? '🚙' : '⚡'}
+                      </span>
+                    )}
+                    <span className="absolute bottom-0 right-0 px-1 py-0.5 bg-black/80 rounded-tl text-[9px] font-black text-cyan-400 font-display leading-none">
                       {veh.code}
                     </span>
                   </div>
 
-                  <div>
-                    <h4 className="text-xs font-bold text-white">{veh.name}</h4>
+                  <div className="min-w-0">
+                    <h4 className="text-xs font-bold text-white truncate">{veh.name}</h4>
                     <div className="flex items-center gap-1.5 text-[10px] text-slate-400 mt-0.5">
-                      <span>{veh.category}</span>
+                      <span className="text-cyan-300 font-semibold">{veh.category}</span>
                       <span>·</span>
                       <span>{veh.totalRuns || 0} corridas</span>
                       <span>·</span>
@@ -389,7 +390,7 @@ export const ManagementScreen: React.FC = () => {
                 </div>
 
                 {/* Status Badge & Controls */}
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 shrink-0">
                   <span
                     className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                       isAvailable
@@ -403,7 +404,15 @@ export const ManagementScreen: React.FC = () => {
                   </span>
 
                   {isAdmin && (
-                    <div className="flex items-center">
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => handleOpenEditVehicle(veh)}
+                        className="p-1.5 rounded-lg bg-slate-800 text-slate-300 hover:text-cyan-300 border border-slate-700 hover:border-cyan-500/40 transition-colors"
+                        title="Editar veículo e alterar foto"
+                      >
+                        <Pencil size={12} />
+                      </button>
+
                       <button
                         onClick={() =>
                           updateVehicleStatus(
@@ -423,7 +432,7 @@ export const ManagementScreen: React.FC = () => {
 
                       <button
                         onClick={() => deleteVehicle(veh.id)}
-                        className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 transition-colors ml-1"
+                        className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/30 transition-colors"
                         title="Excluir veículo da frota"
                       >
                         <Trash2 size={12} />
@@ -486,20 +495,20 @@ export const ManagementScreen: React.FC = () => {
           </div>
 
           {/* ========================================================================= */}
-          {/* ABAIXO: APENAS OS OPERADORES VINCULADOS AO tenantId DESSE ADMINISTRADOR */}
+          {/* ABAIXO: APENAS OS OPERADORES VINCULADOS A ESTA CONTA */}
           {/* ========================================================================= */}
           <div className="pt-1.5 space-y-2">
             <div className="flex items-center justify-between text-[10px] uppercase font-bold text-slate-400 tracking-wider">
-              <span>Operadores Vinculados à Pista ({uniqueOperators.length})</span>
-              <span className="text-[9px] text-slate-500 font-mono">
-                Firestore: users.where('tenantId', '==', currentTenantId)
+              <span>Operadores Cadastrados ({uniqueOperators.length})</span>
+              <span className="text-[9px] text-cyan-400 font-medium">
+                Acesso Restrito à Pista
               </span>
             </div>
 
             {uniqueOperators.length === 0 ? (
               <div className="p-4 rounded-xl bg-[#0B132B]/60 border border-dashed border-slate-700 text-center space-y-1">
                 <p className="text-xs text-slate-300 font-medium">
-                  Nenhum operador cadastrado ainda nesta unidade.
+                  Nenhum operador cadastrado ainda.
                 </p>
                 <p className="text-[10px] text-slate-500">
                   Cadastre uma sub-conta acima para gerar login e senha para seu funcionário com perfil restrito.
@@ -531,12 +540,9 @@ export const ManagementScreen: React.FC = () => {
 
                       {isAdmin && (
                         <button
-                          onClick={() => {
-                            if (window.confirm(`Deseja remover o operador ${op.name}?`)) {
-                              deleteOperator(op.id);
-                            }
-                          }}
-                          className="p-1 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors ml-1"
+                          type="button"
+                          onClick={() => setOperatorToDelete({ id: op.id, name: op.name })}
+                          className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors ml-1"
                           title="Remover operador"
                         >
                           <Trash2 size={13} />
@@ -554,51 +560,65 @@ export const ManagementScreen: React.FC = () => {
       </>
       )}
 
-      {/* MODAL: NOVO VEÍCULO */}
+      {/* MODAL: NOVO VEÍCULO / EDITAR VEÍCULO COM FOTO */}
       {isVehicleModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in">
-          <div className="w-full max-w-sm rounded-2xl bg-[#0F172A] border border-cyan-500/40 p-5 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <Car size={16} className="text-cyan-400" />
-                Cadastrar Novo Veículo
-              </h3>
-              <button onClick={() => setIsVehicleModalOpen(false)} className="text-slate-400 hover:text-white">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-sm animate-in fade-in overflow-y-auto">
+          <div className="w-full max-w-md rounded-2xl bg-[#0F172A] border border-cyan-500/40 p-5 shadow-2xl space-y-4 my-8">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div>
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <Car size={16} className="text-cyan-400" />
+                  {editingVehicle ? 'Editar Veículo & Foto' : 'Cadastrar Novo Veículo'}
+                </h3>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  {editingVehicle
+                    ? `Atualize os dados e a imagem do veículo ${editingVehicle.code}`
+                    : 'Adicione um novo carrinho com foto personalizada à frota'}
+                </p>
+              </div>
+              <button
+                onClick={() => setIsVehicleModalOpen(false)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800"
+              >
                 <X size={18} />
               </button>
             </div>
 
-            <form onSubmit={handleAddVehicle} className="space-y-3.5">
-              <div>
-                <label className="text-[11px] uppercase font-bold text-slate-400 block mb-1">
-                  Nome do Carrinho
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={vehName}
-                  onChange={(e) => setVehName(e.target.value)}
-                  placeholder="Ex: Drift Venom GT"
-                  className="w-full px-3 py-2 rounded-xl bg-[#141E38] border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400"
-                />
+            <form onSubmit={handleSaveVehicle} className="space-y-4">
+              {/* 1. Nome e Código */}
+              <div className="grid grid-cols-3 gap-2">
+                <div className="col-span-2">
+                  <label className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block mb-1">
+                    Nome do Carrinho
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={vehName}
+                    onChange={(e) => setVehName(e.target.value)}
+                    placeholder="Ex: Drift Venom GT"
+                    className="w-full px-3 py-2 rounded-xl bg-[#141E38] border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block mb-1">
+                    Número / Código
+                  </label>
+                  <input
+                    type="text"
+                    value={vehCode}
+                    onChange={(e) => setVehCode(e.target.value)}
+                    placeholder="Ex: #14"
+                    className="w-full px-3 py-2 rounded-xl bg-[#141E38] border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400 font-mono"
+                  />
+                </div>
               </div>
 
+              {/* 2. Categoria */}
               <div>
-                <label className="text-[11px] uppercase font-bold text-slate-400 block mb-1">
-                  Número / Código da Pista
-                </label>
-                <input
-                  type="text"
-                  value={vehCode}
-                  onChange={(e) => setVehCode(e.target.value)}
-                  placeholder="Ex: #14"
-                  className="w-full px-3 py-2 rounded-xl bg-[#141E38] border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400"
-                />
-              </div>
-
-              <div>
-                <label className="text-[11px] uppercase font-bold text-slate-400 block mb-1">
-                  Categoria
+                <label className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block mb-1">
+                  Categoria do Veículo
                 </label>
                 <div className="grid grid-cols-3 gap-2">
                   {(['DRIFT', 'JEEP', 'BATE_BATE'] as const).map((cat) => (
@@ -608,29 +628,163 @@ export const ManagementScreen: React.FC = () => {
                       onClick={() => setVehCategory(cat)}
                       className={`py-2 px-1 rounded-xl border text-[11px] font-bold transition-all ${
                         vehCategory === cat
-                          ? 'bg-cyan-500 text-slate-950 border-cyan-400 shadow-sm'
-                          : 'bg-[#141E38] border-slate-700 text-slate-300'
+                          ? 'bg-cyan-500 text-slate-950 border-cyan-400 shadow-sm font-extrabold'
+                          : 'bg-[#141E38] border-slate-700 text-slate-300 hover:border-slate-500'
                       }`}
                     >
-                      {cat === 'DRIFT' ? '🏎️ Drift' : cat === 'JEEP' ? '🚙 Jeep' : '⚡ Bate'}
+                      {cat === 'DRIFT' ? '🏎️ Drift' : cat === 'JEEP' ? '🚙 Jeep' : '⚡ Bate-Bate'}
                     </button>
                   ))}
                 </div>
               </div>
 
-              <div className="pt-2 flex items-center gap-2">
+              {/* 3. Seção de Foto do Carro */}
+              <div className="space-y-2.5 pt-1 border-t border-slate-800">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] uppercase font-bold tracking-wider text-cyan-400 flex items-center gap-1.5">
+                    <Camera size={13} />
+                    Foto do Veículo
+                  </label>
+                  {vehImageUrl && (
+                    <button
+                      type="button"
+                      onClick={() => setVehImageUrl('')}
+                      className="text-[10px] text-rose-400 hover:text-rose-300 font-semibold"
+                    >
+                      Remover foto
+                    </button>
+                  )}
+                </div>
+
+                {/* Preview Box */}
+                <div className="flex items-center gap-3 p-2.5 rounded-xl bg-[#141E38]/80 border border-slate-700">
+                  <div className="relative w-20 h-20 rounded-xl overflow-hidden bg-[#0B132B] border border-cyan-500/40 shrink-0 flex items-center justify-center">
+                    {vehImageUrl ? (
+                      <img
+                        src={vehImageUrl}
+                        alt="Foto do carro"
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="text-center p-1">
+                        <Camera size={22} className="mx-auto text-slate-500 mb-0.5" />
+                        <span className="text-[9px] text-slate-500 leading-tight block">Sem foto</span>
+                      </div>
+                    )}
+                    {vehImageUrl && (
+                      <span className="absolute bottom-1 right-1 px-1 py-0.2 bg-black/80 rounded text-[9px] font-mono text-cyan-300 font-bold">
+                        {vehCode || '#00'}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex-1 space-y-1.5">
+                    {/* Botão de Upload / Câmera */}
+                    <div>
+                      <input
+                        type="file"
+                        id="car-photo-file-input"
+                        accept="image/*"
+                        onChange={handleImageUpload}
+                        className="hidden"
+                      />
+                      <label
+                        htmlFor="car-photo-file-input"
+                        className="w-full py-2 px-3 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/50 text-cyan-200 text-xs font-bold flex items-center justify-center gap-2 cursor-pointer transition-all shadow-sm"
+                      >
+                        <Upload size={14} className="text-cyan-400" />
+                        <span>Carregar do Aparelho / Câmera</span>
+                      </label>
+                    </div>
+
+                    <div className="flex items-center justify-between text-[10px] text-slate-400 px-1">
+                      <span>Formatos: JPG, PNG, WebP</span>
+                      <button
+                        type="button"
+                        onClick={() => setIsCustomUrlMode(!isCustomUrlMode)}
+                        className="text-cyan-400 hover:underline"
+                      >
+                        {isCustomUrlMode ? 'Ocultar Link' : 'Colar Link URL'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Campo Opcional de Link URL */}
+                {isCustomUrlMode && (
+                  <div className="p-2.5 rounded-xl bg-[#0B132B] border border-slate-700/80 space-y-1 animate-in fade-in">
+                    <label className="text-[10px] text-slate-400 font-semibold block">
+                      Link direto da imagem na internet:
+                    </label>
+                    <input
+                      type="url"
+                      value={vehImageUrl}
+                      onChange={(e) => setVehImageUrl(e.target.value)}
+                      placeholder="https://exemplo.com/foto-do-carro.jpg"
+                      className="w-full px-2.5 py-1.5 rounded-lg bg-[#141E38] border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400"
+                    />
+                  </div>
+                )}
+
+                {/* Galeria de Fotos Rápidas da Categoria */}
+                <div className="space-y-1.5 pt-1">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                    Ou escolha uma foto rápida ({vehCategory}):
+                  </span>
+                  <div className="grid grid-cols-4 gap-2">
+                    {VEHICLE_IMAGE_PRESETS[vehCategory]?.map((preset, idx) => {
+                      const isChosen = vehImageUrl === preset.url;
+                      return (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => setVehImageUrl(preset.url)}
+                          className={`relative rounded-xl overflow-hidden border transition-all aspect-square group ${
+                            isChosen
+                              ? 'border-cyan-400 ring-2 ring-cyan-400/50 scale-[1.03]'
+                              : 'border-slate-700 hover:border-slate-500 opacity-70 hover:opacity-100'
+                          }`}
+                          title={preset.label}
+                        >
+                          <img
+                            src={preset.url}
+                            alt={preset.label}
+                            className="w-full h-full object-cover"
+                          />
+                          {isChosen && (
+                            <div className="absolute inset-0 bg-cyan-950/40 flex items-center justify-center">
+                              <span className="w-5 h-5 rounded-full bg-cyan-400 text-slate-950 text-xs font-black flex items-center justify-center">
+                                ✓
+                              </span>
+                            </div>
+                          )}
+                          <span className="absolute bottom-0 inset-x-0 bg-black/70 text-[8px] text-slate-200 py-0.5 px-1 truncate block text-center">
+                            {preset.label}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* Botões de Ação */}
+              <div className="pt-3 border-t border-slate-800 flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => setIsVehicleModalOpen(false)}
-                  className="flex-1 py-2.5 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold"
+                  onClick={() => {
+                    setIsVehicleModalOpen(false);
+                    setEditingVehicle(null);
+                  }}
+                  className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-colors"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 rounded-xl bg-cyan-400 text-slate-950 text-xs font-bold shadow-[0_0_10px_rgba(0,180,216,0.3)]"
+                  className="flex-1 py-2.5 rounded-xl bg-cyan-400 hover:bg-cyan-300 text-slate-950 text-xs font-bold shadow-[0_0_12px_rgba(0,180,216,0.35)] transition-all"
                 >
-                  Cadastrar Veículo
+                  {editingVehicle ? 'Salvar Alterações' : 'Cadastrar Veículo'}
                 </button>
               </div>
             </form>
@@ -653,7 +807,7 @@ export const ManagementScreen: React.FC = () => {
             </div>
 
             <p className="text-[11px] text-slate-400">
-              Operadores têm acesso apenas para Iniciar/Finalizar Corridas, Mudar Status de Pagamento e Ver Fila.
+              A sub-conta será vinculada diretamente à sua conta e pista de administrador. Escolha se o funcionário terá acesso restrito de Operador ou acesso de Administrador.
             </p>
 
             <form onSubmit={handleCreateSubAccount} className="space-y-3.5">
@@ -835,6 +989,44 @@ export const ManagementScreen: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: CONFIRMAR EXCLUSÃO DE OPERADOR */}
+      {operatorToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in">
+          <div className="w-full max-w-sm rounded-2xl bg-[#0F172A] border border-rose-500/40 p-5 shadow-2xl space-y-3.5 text-center">
+            <div className="w-12 h-12 rounded-2xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center mx-auto text-rose-400">
+              <Trash2 size={24} />
+            </div>
+            <h3 className="text-sm font-bold text-white">Remover operador?</h3>
+            <p className="text-xs text-slate-300">
+              Deseja realmente remover o acesso de <strong>{operatorToDelete.name}</strong>?
+            </p>
+            <p className="text-[11px] text-slate-400">
+              Ele não poderá mais acessar o painel de operador desta pista.
+            </p>
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setOperatorToDelete(null)}
+                className="flex-1 py-2.5 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold hover:bg-slate-700"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const id = operatorToDelete.id;
+                  setOperatorToDelete(null);
+                  await deleteOperator(id);
+                }}
+                className="flex-1 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold shadow-md"
+              >
+                Sim, Remover
+              </button>
+            </div>
           </div>
         </div>
       )}

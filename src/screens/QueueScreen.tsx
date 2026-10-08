@@ -17,9 +17,10 @@ import {
 } from 'lucide-react';
 
 export const QueueScreen: React.FC = () => {
-  const { queue, addToQueue, removeFromQueue, callQueueItemToTrack, vehicles } = useDriftPark();
+  const { queue, addToQueue, removeFromQueue, clearQueue, callQueueItemToTrack, vehicles } = useDriftPark();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [showClearQueueConfirm, setShowClearQueueConfirm] = useState(false);
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [categoryDesired, setCategoryDesired] = useState<VehicleCategory>('DRIFT');
@@ -53,13 +54,26 @@ export const QueueScreen: React.FC = () => {
           </p>
         </div>
 
-        <button
-          onClick={() => setIsModalOpen(true)}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs shadow-[0_0_12px_rgba(0,180,216,0.3)] transition-all active:scale-95"
-        >
-          <Plus size={15} />
-          <span>+ Adicionar</span>
-        </button>
+        <div className="flex items-center gap-2">
+          {queue.length > 0 && (
+            <button
+              onClick={() => setShowClearQueueConfirm(true)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 font-bold text-xs transition-all active:scale-95"
+              title="Apagar todos da fila de espera"
+            >
+              <Trash2 size={13} />
+              <span>Limpar Fila</span>
+            </button>
+          )}
+
+          <button
+            onClick={() => setIsModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs shadow-[0_0_12px_rgba(0,180,216,0.3)] transition-all active:scale-95"
+          >
+            <Plus size={15} />
+            <span>+ Adicionar</span>
+          </button>
+        </div>
       </div>
 
       {/* Free Vehicles Quick Bar */}
@@ -270,6 +284,43 @@ export const QueueScreen: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: CONFIRMAR LIMPAR TODA A FILA */}
+      {showClearQueueConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in">
+          <div className="w-full max-w-sm rounded-2xl bg-[#0F172A] border border-rose-500/40 p-5 shadow-2xl space-y-3.5 text-center">
+            <div className="w-12 h-12 rounded-2xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center mx-auto text-rose-400">
+              <Trash2 size={24} />
+            </div>
+            <h3 className="text-sm font-bold text-white">Esvaziar a Fila de Espera?</h3>
+            <p className="text-xs text-slate-300">
+              Todos os {queue.length} clientes aguardando serão removidos da fila.
+            </p>
+            <p className="text-[11px] text-slate-400">
+              Essa ação não pode ser desfeita.
+            </p>
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setShowClearQueueConfirm(false)}
+                className="flex-1 py-2.5 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold hover:bg-slate-700"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  clearQueue();
+                  setShowClearQueueConfirm(false);
+                }}
+                className="flex-1 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold shadow-md"
+              >
+                Sim, Limpar Fila
+              </button>
+            </div>
           </div>
         </div>
       )}

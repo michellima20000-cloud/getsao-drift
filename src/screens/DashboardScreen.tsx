@@ -252,6 +252,9 @@ const ActiveRentalCard: React.FC<{
   onFinish: () => void;
   onExtend: () => void;
 }> = ({ rental, onFinish, onExtend }) => {
+  const { vehicles } = useDriftPark();
+  const vehicle = vehicles.find((v) => v.id === rental.vehicleId);
+
   const [timeLeftMs, setTimeLeftMs] = useState<number>(() =>
     Math.max(0, rental.endTime - Date.now())
   );
@@ -289,11 +292,19 @@ const ActiveRentalCard: React.FC<{
       <div className="flex items-start justify-between gap-2">
         {/* Left Info */}
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-[#0B132B] border border-cyan-500/40 flex flex-col items-center justify-center font-display">
-            <span className="text-[10px] text-cyan-400 font-bold leading-none">
-              {rental.vehicleCategory === 'DRIFT' ? '🏎️' : rental.vehicleCategory === 'JEEP' ? '🚙' : '⚡'}
-            </span>
-            <span className="text-xs font-extrabold text-white leading-none mt-0.5">
+          <div className="relative w-11 h-11 rounded-xl overflow-hidden bg-[#0B132B] border border-cyan-500/40 shrink-0 flex items-center justify-center">
+            {vehicle?.imageUrl ? (
+              <img
+                src={vehicle.imageUrl}
+                alt={rental.vehicleName}
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <span className="text-xs">
+                {rental.vehicleCategory === 'DRIFT' ? '🏎️' : rental.vehicleCategory === 'JEEP' ? '🚙' : '⚡'}
+              </span>
+            )}
+            <span className="absolute bottom-0 right-0 px-1 py-0.5 bg-black/80 rounded-tl text-[9px] font-black text-cyan-400 font-display leading-none">
               {rental.vehicleCode}
             </span>
           </div>

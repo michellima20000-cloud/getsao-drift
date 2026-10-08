@@ -14,10 +14,12 @@ export const LoginScreen: React.FC = () => {
   const [registerName, setRegisterName] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [infoMessage, setInfoMessage] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
+    setInfoMessage('');
 
     if (!email.trim()) {
       setErrorMessage('Por favor, informe seu e-mail de acesso.');
@@ -171,12 +173,22 @@ export const LoginScreen: React.FC = () => {
 
             <button
               type="button"
-              onClick={() => alert('Instruções de recuperação enviadas para o e-mail informado.')}
+              onClick={() => {
+                setInfoMessage('Instruções para redefinir senha enviadas para o e-mail informado.');
+                setErrorMessage('');
+              }}
               className="text-cyan-400 hover:text-cyan-300 transition-colors font-medium hover:underline"
             >
               Esqueceu a senha?
             </button>
           </div>
+
+          {infoMessage && (
+            <div className="p-3 rounded-xl bg-cyan-500/15 border border-cyan-500/40 text-cyan-300 text-xs flex items-center gap-2">
+              <Check size={16} className="shrink-0 text-cyan-400" />
+              <span>{infoMessage}</span>
+            </div>
+          )}
 
           {errorMessage && (
             <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/40 text-rose-300 text-xs flex items-center gap-2">

@@ -13,17 +13,13 @@ import { QueueScreen } from './screens/QueueScreen';
 import { ManagementScreen } from './screens/ManagementScreen';
 import { TopHeader } from './components/TopHeader';
 import { BottomNav } from './components/BottomNav';
-import { FlutterCodeViewerModal } from './components/FlutterCodeViewerModal';
-import { Wifi, BatteryMedium, Signal, Sparkles, Code2, Smartphone } from 'lucide-react';
+import { Wifi, BatteryMedium, Signal } from 'lucide-react';
 
 const AppContent: React.FC = () => {
   const {
     currentUser,
     activeTab,
     isDeviceFrame,
-    setIsDeviceFrame,
-    isCodeModalOpen,
-    setIsCodeModalOpen,
   } = useDriftPark();
 
   // Active Screen Renderer
@@ -50,7 +46,7 @@ const AppContent: React.FC = () => {
       <div
         className={`w-full transition-all duration-300 relative flex flex-col ${
           isDeviceFrame
-            ? 'max-w-[420px] h-[92vh] max-h-[890px] rounded-[44px] border-[10px] border-[#1C2541] shadow-[0_0_50px_rgba(0,0,0,0.8),0_0_30px_rgba(0,180,216,0.15)] overflow-hidden bg-[#0B132B]'
+            ? 'max-w-[420px] max-sm:max-w-full h-[92vh] max-sm:h-screen max-h-[890px] max-sm:max-h-none rounded-[44px] max-sm:rounded-none border-[10px] max-sm:border-0 border-[#1C2541] shadow-[0_0_50px_rgba(0,0,0,0.8),0_0_30px_rgba(0,180,216,0.15)] overflow-hidden bg-[#0B132B]'
             : 'max-w-2xl min-h-screen sm:min-h-[90vh] sm:rounded-2xl border border-slate-800 bg-[#0B132B] shadow-2xl overflow-hidden'
         }`}
       >
@@ -96,12 +92,6 @@ const AppContent: React.FC = () => {
           )}
         </div>
       </div>
-
-      {/* Floating Flutter Code Viewer Modal */}
-      <FlutterCodeViewerModal
-        isOpen={isCodeModalOpen}
-        onClose={() => setIsCodeModalOpen(false)}
-      />
     </div>
   );
 };

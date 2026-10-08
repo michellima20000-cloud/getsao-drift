@@ -17,10 +17,18 @@ import {
   Search,
   X,
   FileSpreadsheet,
+  Trash2,
 } from 'lucide-react';
 
 export const HistoryScreen: React.FC = () => {
-  const { rentals, exportDailyReport, updateRentalPayment, currentUser } = useDriftPark();
+  const {
+    rentals,
+    exportDailyReport,
+    updateRentalPayment,
+    deleteRental,
+    clearRentalHistory,
+    currentUser,
+  } = useDriftPark();
   const isAdmin = currentUser?.role === 'admin';
 
   // Search and filter
@@ -31,6 +39,10 @@ export const HistoryScreen: React.FC = () => {
   const [editingRental, setEditingRental] = useState<Rental | null>(null);
   const [editMethod, setEditMethod] = useState<PaymentMethod>('PIX');
   const [editStatus, setEditStatus] = useState<PaymentStatus>('PAGO');
+
+  // Delete confirmations
+  const [rentalToDelete, setRentalToDelete] = useState<Rental | null>(null);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
 
   // Today's rentals
   const todayStr = new Date().toDateString();
@@ -204,7 +216,20 @@ export const HistoryScreen: React.FC = () => {
       <div className="space-y-2">
         <div className="flex items-center justify-between text-xs text-slate-400 px-1">
           <span>{filteredRentals.length} corridas registradas</span>
-          <span className="text-[10px] text-cyan-400">Toque no card para editar pagamento</span>
+          <div className="flex items-center gap-3">
+            {filteredRentals.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowClearConfirm(true)}
+                className="text-[11px] text-rose-400 hover:text-rose-300 font-bold flex items-center gap-1 transition-colors"
+                title="Apagar corridas concluídas do histórico"
+              >
+                <Trash2 size={12} />
+                <span>Limpar Histórico</span>
+              </button>
+            )}
+            <span className="text-[10px] text-cyan-400 hidden sm:inline">Toque em Editar ou na lixeira</span>
+          </div>
         </div>
 
         {filteredRentals.length === 0 ? (
@@ -249,19 +274,30 @@ export const HistoryScreen: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Valor e Ação de Edição */}
+                  {/* Valor e Ações (Editar e Apagar) */}
                   <div className="text-right flex flex-col items-end">
                     <div className="text-sm font-extrabold text-white font-display">
                       R$ {rental.amount.toFixed(2)}
                     </div>
-                    <button
-                      onClick={() => handleOpenEdit(rental)}
-                      className="mt-1 flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-cyan-300 text-[10px] font-bold transition-colors"
-                      title="Alterar forma de pagamento ou status"
-                    >
-                      <Edit2 size={10} />
-                      <span>Editar</span>
-                    </button>
+                    <div className="mt-1 flex items-center gap-1.5">
+                      <button
+                        onClick={() => handleOpenEdit(rental)}
+                        className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-cyan-300 text-[10px] font-bold transition-colors"
+                        title="Alterar forma de pagamento ou status"
+                      >
+                        <Edit2 size={10} />
+                        <span>Editar</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setRentalToDelete(rental)}
+                        className="p-1 rounded-lg bg-slate-800 hover:bg-rose-500/20 border border-slate-700 hover:border-rose-500/40 text-slate-400 hover:text-rose-400 transition-colors"
+                        title="Apagar esta corrida do histórico"
+                      >
+                        <Trash2 size={11} />
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -379,20 +415,109 @@ export const HistoryScreen: React.FC = () => {
             </div>
 
             {/* Ações */}
-            <div className="pt-2 flex items-center gap-2">
+            <div className="pt-2 space-y-2">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingRental(null)}
+                  className="flex-1 py-2.5 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold hover:bg-slate-700"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveEdit}
+                  className="flex-1 py-2.5 rounded-xl bg-cyan-400 hover:bg-cyan-300 text-slate-950 text-xs font-bold shadow-[0_0_10px_rgba(0,180,216,0.3)]"
+                >
+                  Salvar Alterações
+                </button>
+              </div>
+
               <button
                 type="button"
-                onClick={() => setEditingRental(null)}
+                onClick={() => {
+                  const id = editingRental.id;
+                  setEditingRental(null);
+                  deleteRental(id);
+                }}
+                className="w-full py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 text-xs font-bold transition-colors flex items-center justify-center gap-1.5"
+              >
+                <Trash2 size={13} />
+                <span>Excluir Corrida do Histórico</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: CONFIRMAR EXCLUSÃO INDIVIDUAL */}
+      {rentalToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in">
+          <div className="w-full max-w-sm rounded-2xl bg-[#0F172A] border border-rose-500/40 p-5 shadow-2xl space-y-3.5 text-center">
+            <div className="w-12 h-12 rounded-2xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center mx-auto text-rose-400">
+              <Trash2 size={24} />
+            </div>
+            <h3 className="text-sm font-bold text-white">Excluir esta corrida?</h3>
+            <p className="text-xs text-slate-300">
+              Piloto: <strong>{rentalToDelete.customerName}</strong> ({rentalToDelete.vehicleName})
+            </p>
+            <p className="text-[11px] text-slate-400">
+              Essa ação removerá o registro desta corrida do histórico da pista.
+            </p>
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setRentalToDelete(null)}
                 className="flex-1 py-2.5 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold hover:bg-slate-700"
               >
                 Cancelar
               </button>
               <button
                 type="button"
-                onClick={handleSaveEdit}
-                className="flex-1 py-2.5 rounded-xl bg-cyan-400 hover:bg-cyan-300 text-slate-950 text-xs font-bold shadow-[0_0_10px_rgba(0,180,216,0.3)]"
+                onClick={() => {
+                  deleteRental(rentalToDelete.id);
+                  setRentalToDelete(null);
+                }}
+                className="flex-1 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold shadow-md"
               >
-                Salvar Alterações
+                Sim, Excluir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: CONFIRMAR LIMPAR TODO HISTÓRICO */}
+      {showClearConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in">
+          <div className="w-full max-w-sm rounded-2xl bg-[#0F172A] border border-rose-500/40 p-5 shadow-2xl space-y-3.5 text-center">
+            <div className="w-12 h-12 rounded-2xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center mx-auto text-rose-400">
+              <Trash2 size={24} />
+            </div>
+            <h3 className="text-sm font-bold text-white">Limpar Histórico de Corridas?</h3>
+            <p className="text-xs text-slate-300">
+              Todas as corridas concluídas desta pista serão removidas do histórico.
+            </p>
+            <p className="text-[11px] text-slate-400">
+              Corridas atualmente ativas na pista serão preservadas.
+            </p>
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setShowClearConfirm(false)}
+                className="flex-1 py-2.5 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold hover:bg-slate-700"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  clearRentalHistory();
+                  setShowClearConfirm(false);
+                }}
+                className="flex-1 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold shadow-md"
+              >
+                Sim, Limpar Tudo
               </button>
             </div>
           </div>

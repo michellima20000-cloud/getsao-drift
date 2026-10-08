@@ -36,6 +36,7 @@ import {
   deleteDoc,
   checkEmailAlreadyExists,
   createSubAccountInAuth,
+  getFirestoreUserProfile,
 } from '../services/firebase';
 
 interface DriftParkContextType {
@@ -79,15 +80,19 @@ interface DriftParkContextType {
   finishRental: (rentalId: string) => void;
   extendRental: (rentalId: string, additionalMinutes: number, additionalAmount: number) => void;
   updateRentalPayment: (rentalId: string, paymentMethod: PaymentMethod, paymentStatus: PaymentStatus) => void;
+  deleteRental: (rentalId: string) => void;
+  clearRentalHistory: () => void;
 
   // Fleet operations
-  addVehicle: (name: string, code: string, category: VehicleCategory) => boolean;
+  addVehicle: (name: string, code: string, category: VehicleCategory, imageUrl?: string) => boolean;
+  updateVehicle: (vehicleId: string, data: Partial<Omit<Vehicle, 'id' | 'tenantId'>>) => void;
   updateVehicleStatus: (vehicleId: string, status: VehicleStatus) => void;
   deleteVehicle: (vehicleId: string) => void;
 
   // Queue operations
   addToQueue: (customerName: string, customerPhone: string, categoryDesired: VehicleCategory, durationMinutes: number) => void;
   removeFromQueue: (queueId: string) => void;
+  clearQueue: () => void;
   callQueueItemToTrack: (queueItem: QueueItem) => void;
 
   // Settings & Reports
@@ -451,29 +456,65 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     }
 
     const userId = firebaseUid || `user_${Date.now()}`;
+    const generatedTenantId =
+      trimmedEmail === 'michel.lima20000@gmail.com'
+        ? 'tenant_drift_01'
+        : `tenant_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+
     const newUser: UserProfile = {
       id: userId,
       email: trimmedEmail,
       name: trimmedName,
-      role: 'admin', // Novos donos de negócio cadastrados recebem perfil Admin
-      tenantId: currentTenant.id,
+      role: 'admin', // Novos donos de pista cadastrados recebem perfil Admin
+      tenantId: generatedTenantId,
       createdAt: Date.now(),
     };
 
-    // Grava perfil no Firestore se Firebase conectado
-    if (firebaseUid) {
-      try {
-        const userDocRef = doc(db, 'usuarios', firebaseUid);
-        setDoc(userDocRef, {
-          name: trimmedName,
-          email: trimmedEmail,
-          role: 'admin',
-          tenantId: currentTenant.id,
-          createdAt: Date.now(),
-        }).catch(() => {});
-      } catch {
-        // Ignora erro de rede
-      }
+    // Garante que o tenant exista na lista interna invisível
+    setAllTenants((prev) => {
+      if (prev.some((t) => t.id === generatedTenantId)) return prev;
+      return [
+        ...prev,
+        {
+          id: generatedTenantId,
+          name: 'DRIFT PARK',
+          city: 'Pista Principal',
+          document: '00.000.000/0001-00',
+          active: true,
+          pricing: { 5: 15, 10: 25, 15: 35, 20: 45, 30: 60 },
+        },
+      ];
+    });
+    setCurrentTenantId(generatedTenantId);
+
+    // Garante frota inicial pronta para uso nesta conta exclusiva
+    setVehiclesState((prev) => {
+      const existing = prev.filter((v) => v.tenantId === generatedTenantId);
+      if (existing.length > 0) return prev;
+      const initialFleet: Vehicle[] = [
+        { id: `veh_${generatedTenantId}_01`, name: 'Drift Storm #01', code: '#01', category: 'DRIFT', status: 'disponivel', tenantId: generatedTenantId, batteryLevel: 100, totalRuns: 0, imageUrl: 'https://images.unsplash.com/photo-1596707204928-87b6131c1955?auto=format&fit=crop&w=400&q=80' },
+        { id: `veh_${generatedTenantId}_02`, name: 'Drift Storm #02', code: '#02', category: 'DRIFT', status: 'disponivel', tenantId: generatedTenantId, batteryLevel: 95, totalRuns: 0, imageUrl: 'https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?auto=format&fit=crop&w=400&q=80' },
+        { id: `veh_${generatedTenantId}_03`, name: 'Drift Storm #03', code: '#03', category: 'DRIFT', status: 'disponivel', tenantId: generatedTenantId, batteryLevel: 90, totalRuns: 0, imageUrl: 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?auto=format&fit=crop&w=400&q=80' },
+        { id: `veh_${generatedTenantId}_04`, name: 'Jeep Safari #01', code: '#04', category: 'JEEP', status: 'disponivel', tenantId: generatedTenantId, batteryLevel: 100, totalRuns: 0, imageUrl: 'https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=400&q=80' },
+        { id: `veh_${generatedTenantId}_05`, name: 'Bate-Bate Nitro #01', code: '#05', category: 'BATE_BATE', status: 'disponivel', tenantId: generatedTenantId, batteryLevel: 85, totalRuns: 0, imageUrl: 'https://images.unsplash.com/photo-1579783902614-a3fb3927b675?auto=format&fit=crop&w=400&q=80' },
+      ];
+      return [...prev, ...initialFleet];
+    });
+
+    // Grava perfil no Firestore em 'users' e 'usuarios' para redundância
+    try {
+      const payload = {
+        id: userId,
+        name: trimmedName,
+        email: trimmedEmail,
+        role: 'admin',
+        tenantId: generatedTenantId,
+        createdAt: Date.now(),
+      };
+      setDoc(doc(db, 'users', userId), payload).catch(() => {});
+      setDoc(doc(db, 'usuarios', userId), payload).catch(() => {});
+    } catch {
+      // Ignora erro de rede
     }
 
     // Persiste no estado e localStorage
@@ -515,7 +556,59 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       }
     }
 
-    // Procura no Firestore ou estado local
+    // 1. Procura perfil salvo no Firestore (users / usuarios) para obter o tenantId e papel exatos
+    const firestoreProfile = await getFirestoreUserProfile(firebaseUid || trimmedEmail);
+    if (firestoreProfile) {
+      const profile: UserProfile = {
+        id: firestoreProfile.id || firebaseUid || `user_${Date.now()}`,
+        email: trimmedEmail,
+        name: firestoreProfile.name || trimmedEmail.split('@')[0],
+        role: firestoreProfile.role === 'admin' ? 'admin' : 'operador',
+        tenantId: firestoreProfile.tenantId || (trimmedEmail === 'michel.lima20000@gmail.com' ? 'tenant_drift_01' : currentTenant.id),
+        phone: firestoreProfile.phone,
+        createdAt: firestoreProfile.createdAt || Date.now(),
+      };
+
+      // Garante tenant e frota
+      setAllTenants((prev) => {
+        if (prev.some((t) => t.id === profile.tenantId)) return prev;
+        return [
+          ...prev,
+          {
+            id: profile.tenantId,
+            name: 'DRIFT PARK',
+            city: 'Pista Principal',
+            document: '00.000.000/0001-00',
+            active: true,
+            pricing: { 5: 15, 10: 25, 15: 35, 20: 45, 30: 60 },
+          },
+        ];
+      });
+
+      setVehiclesState((prev) => {
+        const existing = prev.filter((v) => v.tenantId === profile.tenantId);
+        if (existing.length > 0) return prev;
+        const initialFleet: Vehicle[] = [
+          { id: `veh_${profile.tenantId}_01`, name: 'Drift Storm #01', code: '#01', category: 'DRIFT', status: 'disponivel', tenantId: profile.tenantId, batteryLevel: 100, totalRuns: 0, imageUrl: 'https://images.unsplash.com/photo-1596707204928-87b6131c1955?auto=format&fit=crop&w=400&q=80' },
+          { id: `veh_${profile.tenantId}_02`, name: 'Drift Storm #02', code: '#02', category: 'DRIFT', status: 'disponivel', tenantId: profile.tenantId, batteryLevel: 95, totalRuns: 0, imageUrl: 'https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?auto=format&fit=crop&w=400&q=80' },
+          { id: `veh_${profile.tenantId}_03`, name: 'Drift Storm #03', code: '#03', category: 'DRIFT', status: 'disponivel', tenantId: profile.tenantId, batteryLevel: 90, totalRuns: 0, imageUrl: 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?auto=format&fit=crop&w=400&q=80' },
+          { id: `veh_${profile.tenantId}_04`, name: 'Jeep Safari #01', code: '#04', category: 'JEEP', status: 'disponivel', tenantId: profile.tenantId, batteryLevel: 100, totalRuns: 0, imageUrl: 'https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=400&q=80' },
+          { id: `veh_${profile.tenantId}_05`, name: 'Bate-Bate Nitro #01', code: '#05', category: 'BATE_BATE', status: 'disponivel', tenantId: profile.tenantId, batteryLevel: 85, totalRuns: 0, imageUrl: 'https://images.unsplash.com/photo-1579783902614-a3fb3927b675?auto=format&fit=crop&w=400&q=80' },
+        ];
+        return [...prev, ...initialFleet];
+      });
+
+      setCurrentUser(profile);
+      setCurrentTenantId(profile.tenantId);
+      setUsers((prev) => {
+        const filtered = prev.filter((u) => u.email.toLowerCase() !== trimmedEmail);
+        return [...filtered, profile];
+      });
+      playTone('click');
+      return { success: true };
+    }
+
+    // 2. Procura no estado local
     const existing = users.find((u) => u.email.toLowerCase() === trimmedEmail);
     if (existing) {
       setCurrentUser(existing);
@@ -524,15 +617,70 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       return { success: true };
     }
 
-    const isNewAdmin = trimmedEmail.includes('admin') || users.length <= 4;
+    // 3. Novo cadastro de Administrador caso não seja sub-conta
+    const generatedTenantId =
+      trimmedEmail === 'michel.lima20000@gmail.com'
+        ? 'tenant_drift_01'
+        : `tenant_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+
     const newUser: UserProfile = {
       id: firebaseUid || `user_${Date.now()}`,
       email: trimmedEmail,
       name: trimmedEmail.split('@')[0],
-      role: isNewAdmin ? 'admin' : 'operador',
-      tenantId: currentTenant.id,
+      role: 'admin',
+      tenantId: generatedTenantId,
       createdAt: Date.now(),
     };
+
+    setAllTenants((prev) => {
+      if (prev.some((t) => t.id === generatedTenantId)) return prev;
+      return [
+        ...prev,
+        {
+          id: generatedTenantId,
+          name: 'DRIFT PARK',
+          city: 'Pista Principal',
+          document: '00.000.000/0001-00',
+          active: true,
+          pricing: { 5: 15, 10: 25, 15: 35, 20: 45, 30: 60 },
+        },
+      ];
+    });
+
+    setVehiclesState((prev) => {
+      const existing = prev.filter((v) => v.tenantId === generatedTenantId);
+      if (existing.length > 0) return prev;
+      const initialFleet: Vehicle[] = [
+        { id: `veh_${generatedTenantId}_01`, name: 'Drift Storm #01', code: '#01', category: 'DRIFT', status: 'disponivel', tenantId: generatedTenantId, batteryLevel: 100, totalRuns: 0, imageUrl: 'https://images.unsplash.com/photo-1596707204928-87b6131c1955?auto=format&fit=crop&w=400&q=80' },
+        { id: `veh_${generatedTenantId}_02`, name: 'Drift Storm #02', code: '#02', category: 'DRIFT', status: 'disponivel', tenantId: generatedTenantId, batteryLevel: 95, totalRuns: 0, imageUrl: 'https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?auto=format&fit=crop&w=400&q=80' },
+        { id: `veh_${generatedTenantId}_03`, name: 'Drift Storm #03', code: '#03', category: 'DRIFT', status: 'disponivel', tenantId: generatedTenantId, batteryLevel: 90, totalRuns: 0, imageUrl: 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?auto=format&fit=crop&w=400&q=80' },
+        { id: `veh_${generatedTenantId}_04`, name: 'Jeep Safari #01', code: '#04', category: 'JEEP', status: 'disponivel', tenantId: generatedTenantId, batteryLevel: 100, totalRuns: 0, imageUrl: 'https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=400&q=80' },
+        { id: `veh_${generatedTenantId}_05`, name: 'Bate-Bate Nitro #01', code: '#05', category: 'BATE_BATE', status: 'disponivel', tenantId: generatedTenantId, batteryLevel: 85, totalRuns: 0, imageUrl: 'https://images.unsplash.com/photo-1579783902614-a3fb3927b675?auto=format&fit=crop&w=400&q=80' },
+      ];
+      return [...prev, ...initialFleet];
+    });
+
+    setCurrentTenantId(generatedTenantId);
+
+    // Grava no Firestore para que seus operadores possam se vincular
+    try {
+      await setDoc(doc(db, 'users', newUser.id), {
+        id: newUser.id,
+        name: newUser.name,
+        email: newUser.email,
+        role: newUser.role,
+        tenantId: newUser.tenantId,
+        createdAt: newUser.createdAt,
+      });
+      await setDoc(doc(db, 'usuarios', newUser.id), {
+        id: newUser.id,
+        name: newUser.name,
+        email: newUser.email,
+        role: newUser.role,
+        tenantId: newUser.tenantId,
+        createdAt: newUser.createdAt,
+      }).catch(() => {});
+    } catch {}
 
     setUsers((prev) => [...prev, newUser]);
     setCurrentUser(newUser);
@@ -712,7 +860,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
   };
 
   // Fleet Operations
-  const addVehicle = (name: string, code: string, category: VehicleCategory) => {
+  const addVehicle = (name: string, code: string, category: VehicleCategory, imageUrl?: string) => {
     const newVehicle: Vehicle = {
       id: `veh_${Date.now()}`,
       tenantId: currentTenant.id,
@@ -722,10 +870,18 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       status: 'disponivel',
       batteryLevel: 100,
       totalRuns: 0,
+      imageUrl: imageUrl?.trim() || undefined,
     };
     setVehiclesState((prev) => [...prev, newVehicle]);
     playTone('click');
     return true;
+  };
+
+  const updateVehicle = (vehicleId: string, data: Partial<Omit<Vehicle, 'id' | 'tenantId'>>) => {
+    setVehiclesState((prev) =>
+      prev.map((v) => (v.id === vehicleId ? { ...v, ...data } : v))
+    );
+    playTone('click');
   };
 
   const updateVehicleStatus = (vehicleId: string, status: VehicleStatus) => {
@@ -803,6 +959,14 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       setPrefilledQueueItem(null);
     }
 
+    // Grava também no Firestore para persistência em tempo real
+    try {
+      setDoc(doc(db, 'corridas', rentalId), {
+        ...newRental,
+        tenantId: currentTenant.id,
+      }).catch(() => {});
+    } catch {}
+
     playTone('start');
     return rentalId;
   };
@@ -821,6 +985,14 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
         v.id === rental.vehicleId ? { ...v, status: 'disponivel', activeRentalId: undefined } : v
       )
     );
+
+    try {
+      setDoc(
+        doc(db, 'corridas', rentalId),
+        { status: 'concluida', endTime: Date.now() },
+        { merge: true }
+      ).catch(() => {});
+    } catch {}
 
     playTone('finish');
   };
@@ -852,7 +1024,40 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     setRentalsState((prev) =>
       prev.map((r) => (r.id === rentalId ? { ...r, paymentMethod, paymentStatus } : r))
     );
+    try {
+      setDoc(
+        doc(db, 'corridas', rentalId),
+        { paymentMethod, paymentStatus },
+        { merge: true }
+      ).catch(() => {});
+    } catch {}
     playTone('click');
+  };
+
+  const deleteRental = (rentalId: string) => {
+    const rental = rentalsState.find((r) => r.id === rentalId);
+    if (rental && rental.status === 'ativa') {
+      // Libera o carrinho caso a corrida ainda estivesse ativa
+      setVehiclesState((prev) =>
+        prev.map((v) =>
+          v.id === rental.vehicleId ? { ...v, status: 'disponivel', activeRentalId: undefined } : v
+        )
+      );
+    }
+    setRentalsState((prev) => prev.filter((r) => r.id !== rentalId));
+    try {
+      deleteDoc(doc(db, 'corridas', rentalId)).catch(() => {});
+      deleteDoc(doc(db, 'rentals', rentalId)).catch(() => {});
+    } catch {}
+    playTone('alert');
+  };
+
+  const clearRentalHistory = () => {
+    // Apaga todas as corridas concluídas do tenant atual (mantém as ativas se houver)
+    setRentalsState((prev) =>
+      prev.filter((r) => r.tenantId !== currentTenant.id || r.status === 'ativa')
+    );
+    playTone('alert');
   };
 
   // Queue Operations
@@ -878,6 +1083,11 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   const removeFromQueue = (queueId: string) => {
     setQueueState((prev) => prev.filter((q) => q.id !== queueId));
+    playTone('alert');
+  };
+
+  const clearQueue = () => {
+    setQueueState((prev) => prev.filter((q) => q.tenantId !== currentTenant.id));
     playTone('alert');
   };
 
@@ -980,11 +1190,15 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
         finishRental,
         extendRental,
         updateRentalPayment,
+        deleteRental,
+        clearRentalHistory,
         addVehicle,
+        updateVehicle,
         updateVehicleStatus,
         deleteVehicle,
         addToQueue,
         removeFromQueue,
+        clearQueue,
         callQueueItemToTrack,
         exportDailyReport,
         updatePriceTier,

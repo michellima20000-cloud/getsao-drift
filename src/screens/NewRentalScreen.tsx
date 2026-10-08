@@ -237,22 +237,44 @@ export const NewRentalScreen: React.FC = () => {
                   key={veh.id}
                   type="button"
                   onClick={() => setSelectedVehicleId(veh.id)}
-                  className={`p-3 rounded-xl border text-left transition-all ${
+                  className={`p-2.5 rounded-xl border text-left transition-all ${
                     isSelected
                       ? 'bg-gradient-to-br from-[#1C2541] to-[#141E38] border-[#00F0FF] shadow-[0_0_12px_rgba(0,240,255,0.3)]'
                       : 'bg-[#141E38]/80 border-slate-700/70 hover:border-slate-500'
                   }`}
                 >
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs font-black text-cyan-400 font-display">
-                      {veh.code}
-                    </span>
-                    <span className="text-[10px] text-emerald-400 font-mono">
-                      {veh.batteryLevel || 100}% bat
-                    </span>
+                  <div className="flex items-center gap-2.5 mb-1.5">
+                    {/* Vehicle Photo or Icon */}
+                    <div className="relative w-10 h-10 rounded-lg overflow-hidden bg-[#0B132B] border border-slate-700 shrink-0 flex items-center justify-center">
+                      {veh.imageUrl ? (
+                        <img
+                          src={veh.imageUrl}
+                          alt={veh.name}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <span className="text-sm">
+                          {veh.category === 'DRIFT' ? '🏎️' : veh.category === 'JEEP' ? '🚙' : '⚡'}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-black text-cyan-400 font-display">
+                          {veh.code}
+                        </span>
+                        <span className="text-[9px] text-emerald-400 font-mono">
+                          {veh.batteryLevel || 100}%
+                        </span>
+                      </div>
+                      <div className="text-xs font-bold text-white truncate">{veh.name}</div>
+                    </div>
                   </div>
-                  <div className="text-xs font-bold text-white truncate">{veh.name}</div>
-                  <div className="text-[10px] text-slate-400 mt-0.5">{veh.category}</div>
+                  <div className="text-[10px] text-slate-400 flex items-center justify-between">
+                    <span>{veh.category}</span>
+                    <span className="text-[9px] text-slate-500 font-mono">{veh.totalRuns || 0} corridas</span>
+                  </div>
                 </button>
               );
             })}
