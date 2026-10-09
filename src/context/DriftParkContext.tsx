@@ -80,6 +80,17 @@ interface DriftParkContextType {
   finishRental: (rentalId: string) => void;
   extendRental: (rentalId: string, additionalMinutes: number, additionalAmount: number) => void;
   updateRentalPayment: (rentalId: string, paymentMethod: PaymentMethod, paymentStatus: PaymentStatus) => void;
+  updateRentalDetails: (rentalId: string, updates: Partial<Rental>) => void;
+  addPastRental: (data: {
+    vehicleId: string;
+    customerName: string;
+    customerPhone?: string;
+    durationMinutes: number;
+    amount: number;
+    paymentMethod: PaymentMethod;
+    paymentStatus: PaymentStatus;
+    timestamp: number;
+  }) => Rental;
   deleteRental: (rentalId: string) => void;
   clearRentalHistory: () => void;
 
@@ -96,7 +107,7 @@ interface DriftParkContextType {
   callQueueItemToTrack: (queueItem: QueueItem) => void;
 
   // Settings & Reports
-  exportDailyReport: () => void;
+  exportDailyReport: (customDateStr?: string, customRentals?: Rental[]) => void;
   updatePriceTier: (durationMinutes: number, price: number) => void;
   playSound: (type: 'start' | 'finish' | 'click' | 'alert') => void;
 }
@@ -1034,6 +1045,82 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     playTone('click');
   };
 
+  const updateRentalDetails = (
+    rentalId: string,
+    updates: Partial<Rental>
+  ) => {
+    setRentalsState((prev) =>
+      prev.map((r) => (r.id === rentalId ? { ...r, ...updates } : r))
+    );
+    try {
+      setDoc(
+        doc(db, 'corridas', rentalId),
+        updates,
+        { merge: true }
+      ).catch(() => {});
+    } catch {}
+    playTone('click');
+  };
+
+  const addPastRental = (data: {
+    vehicleId: string;
+    customerName: string;
+    customerPhone?: string;
+    durationMinutes: number;
+    amount: number;
+    paymentMethod: PaymentMethod;
+    paymentStatus: PaymentStatus;
+    timestamp: number;
+  }): Rental => {
+    const vehicle = vehiclesState.find((v) => v.id === data.vehicleId);
+    const rentalId = `rent_retro_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const startTime = data.timestamp;
+    const endTime = startTime + data.durationMinutes * 60 * 1000;
+
+    const newRental: Rental = {
+      id: rentalId,
+      tenantId: currentTenant.id,
+      vehicleId: data.vehicleId,
+      vehicleName: vehicle ? vehicle.name : 'Carrinho Drift',
+      vehicleCode: vehicle ? vehicle.code : '#01',
+      vehicleCategory: vehicle ? vehicle.category : 'DRIFT',
+      customerName: data.customerName.trim(),
+      customerPhone: data.customerPhone?.trim() || '',
+      durationMinutes: data.durationMinutes,
+      amount: data.amount,
+      paymentMethod: data.paymentMethod,
+      paymentStatus: data.paymentStatus,
+      mode: 'manual',
+      startTime,
+      endTime,
+      status: 'concluida',
+      operatorId: currentUser?.id || 'op_admin',
+      operatorName: currentUser?.name || 'Administrador',
+      createdAt: startTime,
+    };
+
+    setRentalsState((prev) => [newRental, ...prev]);
+
+    // Atualiza contagem de corridas do veículo
+    if (vehicle) {
+      setVehiclesState((prev) =>
+        prev.map((v) =>
+          v.id === vehicle.id ? { ...v, totalRuns: (v.totalRuns || 0) + 1 } : v
+        )
+      );
+    }
+
+    try {
+      setDoc(doc(db, 'corridas', rentalId), {
+        ...newRental,
+        tenantId: currentTenant.id,
+      }).catch(() => {});
+    } catch {}
+
+    playTone('click');
+    return newRental;
+  };
+
   const deleteRental = (rentalId: string) => {
     const rental = rentalsState.find((r) => r.id === rentalId);
     if (rental && rental.status === 'ativa') {
@@ -1098,11 +1185,21 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
   };
 
   // Export CSV Daily Report
-  const exportDailyReport = () => {
-    const tenantRentals = rentals.filter((r) => {
-      const today = new Date().toDateString();
-      return new Date(r.createdAt).toDateString() === today;
-    });
+  const exportDailyReport = (customDateStr?: string, customRentals?: Rental[]) => {
+    let listToExport = customRentals;
+    if (!listToExport) {
+      if (customDateStr && customDateStr !== 'todas') {
+        listToExport = rentals.filter((r) => {
+          const d = new Date(r.createdAt);
+          const y = d.getFullYear();
+          const m = String(d.getMonth() + 1).padStart(2, '0');
+          const day = String(d.getDate()).padStart(2, '0');
+          return `${y}-${m}-${day}` === customDateStr;
+        });
+      } else {
+        listToExport = rentals;
+      }
+    }
 
     const headers = [
       'Data/Hora',
@@ -1116,10 +1213,10 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       'Status Pagamento',
       'Status Corrida',
       'Operador Responsável',
-      'Tenant/Parque',
+      'Pista/Unidade',
     ];
 
-    const rows = tenantRentals.map((r) => [
+    const rows = listToExport.map((r) => [
       new Date(r.startTime).toLocaleString('pt-BR'),
       `"${r.vehicleCode} - ${r.vehicleName}"`,
       r.vehicleCategory,
@@ -1141,8 +1238,8 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    const dateStr = new Date().toISOString().split('T')[0];
-    link.setAttribute('download', `DriftPark_Relatorio_Diario_${dateStr}.csv`);
+    const dateFileStr = customDateStr || new Date().toISOString().split('T')[0];
+    link.setAttribute('download', `DriftPark_Extrato_${dateFileStr}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -1190,6 +1287,8 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
         finishRental,
         extendRental,
         updateRentalPayment,
+        updateRentalDetails,
+        addPastRental,
         deleteRental,
         clearRentalHistory,
         addVehicle,

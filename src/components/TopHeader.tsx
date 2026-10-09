@@ -2,8 +2,6 @@ import React, { useState } from 'react';
 import { useDriftPark } from '../context/DriftParkContext';
 import { SpeedometerLogo } from './SpeedometerLogo';
 import {
-  Smartphone,
-  Maximize2,
   ChevronDown,
   LogOut,
 } from 'lucide-react';
@@ -12,8 +10,6 @@ export const TopHeader: React.FC = () => {
   const {
     currentUser,
     logout,
-    isDeviceFrame,
-    setIsDeviceFrame,
   } = useDriftPark();
 
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
@@ -34,17 +30,8 @@ export const TopHeader: React.FC = () => {
           </div>
         </div>
 
-        {/* Right Tools: Frame Toggle, User Menu */}
+        {/* Right Tools: User Menu */}
         <div className="flex items-center gap-1.5">
-
-          {/* Device Frame Toggle */}
-          <button
-            onClick={() => setIsDeviceFrame((prev) => !prev)}
-            className="p-1.5 rounded-lg bg-[#141E38] hover:bg-[#1C284C] text-slate-300 hover:text-cyan-400 border border-slate-700 transition-colors"
-            title={isDeviceFrame ? 'Alternar para tela cheia' : 'Alternar para moldura de celular'}
-          >
-            {isDeviceFrame ? <Maximize2 size={16} /> : <Smartphone size={16} />}
-          </button>
 
           {/* User Profile / Role menu */}
           <div className="relative">

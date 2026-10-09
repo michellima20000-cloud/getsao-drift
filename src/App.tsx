@@ -13,13 +13,10 @@ import { QueueScreen } from './screens/QueueScreen';
 import { ManagementScreen } from './screens/ManagementScreen';
 import { TopHeader } from './components/TopHeader';
 import { BottomNav } from './components/BottomNav';
-import { Wifi, BatteryMedium, Signal } from 'lucide-react';
-
 const AppContent: React.FC = () => {
   const {
     currentUser,
     activeTab,
-    isDeviceFrame,
   } = useDriftPark();
 
   // Active Screen Renderer
@@ -41,37 +38,9 @@ const AppContent: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#070D1E] text-slate-100 flex flex-col items-center justify-center p-0 sm:p-4 selection:bg-cyan-500 selection:text-slate-950">
-      {/* Main Container: Either Phone Mockup Frame or Full Width */}
-      <div
-        className={`w-full transition-all duration-300 relative flex flex-col ${
-          isDeviceFrame
-            ? 'max-w-[420px] max-sm:max-w-full h-[92vh] max-sm:h-screen max-h-[890px] max-sm:max-h-none rounded-[44px] max-sm:rounded-none border-[10px] max-sm:border-0 border-[#1C2541] shadow-[0_0_50px_rgba(0,0,0,0.8),0_0_30px_rgba(0,180,216,0.15)] overflow-hidden bg-[#0B132B]'
-            : 'max-w-2xl min-h-screen sm:min-h-[90vh] sm:rounded-2xl border border-slate-800 bg-[#0B132B] shadow-2xl overflow-hidden'
-        }`}
-      >
-        {/* Android / Phone Status Bar (Exact replica of top of screenshot: 3:12 with camera punch-hole) */}
-        {isDeviceFrame && (
-          <div className="sticky top-0 z-50 bg-[#0B132B] px-6 pt-3 pb-1 flex items-center justify-between text-xs text-slate-400 select-none">
-            {/* Time */}
-            <span className="font-semibold text-[11px] text-slate-300 tracking-tight">
-              3:12
-            </span>
-
-            {/* Camera Punch Hole */}
-            <div className="w-3.5 h-3.5 rounded-full bg-slate-950 border border-slate-800 flex items-center justify-center">
-              <div className="w-1.5 h-1.5 rounded-full bg-slate-900" />
-            </div>
-
-            {/* Status Icons */}
-            <div className="flex items-center gap-1.5 text-slate-300">
-              <Signal size={12} />
-              <Wifi size={12} />
-              <BatteryMedium size={14} />
-            </div>
-          </div>
-        )}
-
+    <div className="min-h-screen bg-[#070D1E] text-slate-100 flex flex-col items-center justify-start p-0 selection:bg-cyan-500 selection:text-slate-950">
+      {/* Main Responsive App Container */}
+      <div className="w-full max-w-2xl min-h-screen flex flex-col bg-[#0B132B] shadow-2xl border-x border-slate-800/80 relative overflow-hidden">
         {/* Content Wrapper */}
         <div className="flex-1 flex flex-col min-h-0 relative overflow-hidden">
           {!currentUser ? (

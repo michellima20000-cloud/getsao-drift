@@ -244,19 +244,9 @@ export const NewRentalScreen: React.FC = () => {
                   }`}
                 >
                   <div className="flex items-center gap-2.5 mb-1.5">
-                    {/* Vehicle Photo or Icon */}
-                    <div className="relative w-10 h-10 rounded-lg overflow-hidden bg-[#0B132B] border border-slate-700 shrink-0 flex items-center justify-center">
-                      {veh.imageUrl ? (
-                        <img
-                          src={veh.imageUrl}
-                          alt={veh.name}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <span className="text-sm">
-                          {veh.category === 'DRIFT' ? '🏎️' : veh.category === 'JEEP' ? '🚙' : '⚡'}
-                        </span>
-                      )}
+                    {/* Vehicle Category Icon */}
+                    <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-300 shrink-0 text-sm">
+                      {veh.category === 'DRIFT' ? '🏎️' : veh.category === 'JEEP' ? '🚙' : '⚡'}
                     </div>
 
                     <div className="min-w-0 flex-1">

@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useDriftPark } from '../context/DriftParkContext';
 import { Vehicle, VehicleCategory, VehicleStatus, UserRole } from '../types';
-import { VEHICLE_IMAGE_PRESETS } from '../data/initialData';
 import {
   ShieldCheck,
   Plus,
@@ -316,7 +315,7 @@ export const ManagementScreen: React.FC = () => {
 
           {/* [Exportar Diário] */}
           <button
-            onClick={exportDailyReport}
+            onClick={() => exportDailyReport()}
             className="p-3 rounded-xl border bg-[#141E38] hover:bg-[#1C2541] border-cyan-500/40 text-cyan-300 hover:scale-[1.02] shadow-sm flex flex-col items-center justify-center text-center transition-all"
           >
             <div className="w-8 h-8 rounded-lg bg-cyan-500/20 flex items-center justify-center mb-1 text-cyan-400">
@@ -726,46 +725,6 @@ export const ManagementScreen: React.FC = () => {
                   </div>
                 )}
 
-                {/* Galeria de Fotos Rápidas da Categoria */}
-                <div className="space-y-1.5 pt-1">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                    Ou escolha uma foto rápida ({vehCategory}):
-                  </span>
-                  <div className="grid grid-cols-4 gap-2">
-                    {VEHICLE_IMAGE_PRESETS[vehCategory]?.map((preset, idx) => {
-                      const isChosen = vehImageUrl === preset.url;
-                      return (
-                        <button
-                          key={idx}
-                          type="button"
-                          onClick={() => setVehImageUrl(preset.url)}
-                          className={`relative rounded-xl overflow-hidden border transition-all aspect-square group ${
-                            isChosen
-                              ? 'border-cyan-400 ring-2 ring-cyan-400/50 scale-[1.03]'
-                              : 'border-slate-700 hover:border-slate-500 opacity-70 hover:opacity-100'
-                          }`}
-                          title={preset.label}
-                        >
-                          <img
-                            src={preset.url}
-                            alt={preset.label}
-                            className="w-full h-full object-cover"
-                          />
-                          {isChosen && (
-                            <div className="absolute inset-0 bg-cyan-950/40 flex items-center justify-center">
-                              <span className="w-5 h-5 rounded-full bg-cyan-400 text-slate-950 text-xs font-black flex items-center justify-center">
-                                ✓
-                              </span>
-                            </div>
-                          )}
-                          <span className="absolute bottom-0 inset-x-0 bg-black/70 text-[8px] text-slate-200 py-0.5 px-1 truncate block text-center">
-                            {preset.label}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
               </div>
 
               {/* Botões de Ação */}
