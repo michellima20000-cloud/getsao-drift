@@ -9,6 +9,8 @@ import {
 export const TopHeader: React.FC = () => {
   const {
     currentUser,
+    isFirebaseAuthenticated,
+    loginWithGoogle,
     logout,
   } = useDriftPark();
 
@@ -55,11 +57,11 @@ export const TopHeader: React.FC = () => {
             </button>
 
             {userDropdownOpen && (
-              <div className="absolute right-0 mt-2 w-56 bg-[#0F172A] border border-cyan-500/30 rounded-xl shadow-2xl p-2 z-50 animate-in fade-in zoom-in-95">
+              <div className="absolute right-0 mt-2 w-60 bg-[#0F172A] border border-cyan-500/30 rounded-xl shadow-2xl p-2 z-50 animate-in fade-in zoom-in-95">
                 <div className="px-2 py-1.5 border-b border-slate-800">
                   <div className="text-xs font-semibold text-slate-200">{currentUser?.name}</div>
                   <div className="text-[10px] text-slate-400 truncate">{currentUser?.email}</div>
-                  <div className="mt-1 flex items-center gap-1 text-[10px]">
+                  <div className="mt-1 flex items-center gap-1.5 text-[10px]">
                     <span
                       className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${
                         currentUser?.role === 'admin'
@@ -72,9 +74,21 @@ export const TopHeader: React.FC = () => {
                   </div>
                 </div>
 
+                {!isFirebaseAuthenticated && (
+                  <div className="py-1 border-b border-slate-800">
+                    <button
+                      onClick={async () => {
+                        await loginWithGoogle();
+                        setUserDropdownOpen(false);
+                      }}
+                      className="w-full text-left px-2 py-1.5 rounded text-xs text-cyan-300 hover:bg-cyan-950/40 flex items-center gap-2 font-medium"
+                    >
+                      <span>☁️ Sincronizar Conta Google</span>
+                    </button>
+                  </div>
+                )}
 
-
-                <div className="pt-1 border-t border-slate-800">
+                <div className="pt-1">
                   <button
                     onClick={() => {
                       logout();

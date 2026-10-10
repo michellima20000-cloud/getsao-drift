@@ -22,9 +22,12 @@ import {
 import {
   auth,
   db,
+  googleProvider,
+  signInWithPopup,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signOut,
+  onAuthStateChanged,
   doc,
   setDoc,
   getDoc,
@@ -40,6 +43,8 @@ import {
   getIsFirestoreAvailable,
   markFirestoreUnavailable,
   testAndVerifyFirestore,
+  handleFirestoreError,
+  OperationType,
 } from '../services/firebase';
 
 interface DriftParkContextType {
@@ -56,10 +61,12 @@ interface DriftParkContextType {
   prefilledQueueItem: QueueItem | null;
   setPrefilledQueueItem: (item: QueueItem | null) => void;
   isFirestoreOnline: boolean;
+  isFirebaseAuthenticated: boolean;
   verifyFirestoreConnection: () => Promise<{ success: boolean; message: string }>;
 
   // Auth & Multi-tenant actions
   login: (email: string, password?: string) => Promise<{ success: boolean; message?: string }>;
+  loginWithGoogle: () => Promise<{ success: boolean; message?: string }>;
   register: (name: string, email: string, password: string) => Promise<{ success: boolean; message?: string }>;
   logout: () => void;
   quickLoginAs: (role: UserRole) => void;

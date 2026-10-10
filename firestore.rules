@@ -2,172 +2,244 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // =========================================================================
-    // REGRAS DE SEGURANÇA FIRESTORE - ISOLAMENTO MULTI-TENANT ESTRITO
-    // =========================================================================
-    // Todo acesso exige que request.auth.token.tenantId corresponda exatamente
-    // ao campo tenantId do documento acessado, impedindo qualquer vazamento
-    // de dados entre empresas / administradores diferentes.
-    // =========================================================================
+    // 1. Global Safety Net (Default-Deny Catch-All)
+    match /{document=**} {
+      allow read, write: if false;
+    }
 
-    // Verifica se o usuário está autenticado e possui uma claim válida de tenantId
+    // 2. Hardened Global Primitives
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
     function isSignedIn() {
-      return request.auth != null && request.auth.token.tenantId != null;
+      return request.auth != null;
     }
 
-    // Retorna o tenantId do usuário autenticado no Firebase Auth Custom Claims
-    function userTenantId() {
-      return request.auth.token.tenantId;
+    function isVerifiedAdminEmail() {
+      return isSignedIn() &&
+        request.auth.token.email_verified == true &&
+        (
+          request.auth.token.email == 'michelsilvallima123@gmail.com' ||
+          request.auth.token.email == 'michel.lima20000@gmail.com'
+        );
     }
 
-    // Retorna a role (perfil) do usuário ('admin' ou 'operador')
-    function userRole() {
-      return request.auth.token.role;
-    }
-
-    // Valida se o documento existente pertence ao mesmo tenant do usuário
-    function belongsToTenant(data) {
-      return isSignedIn() && data.tenantId == userTenantId();
-    }
-
-    // Valida se o novo documento a ser gravado mantém o mesmo tenantId do usuário
-    function isWritingSameTenant() {
-      return isSignedIn() && request.resource.data.tenantId == userTenantId();
-    }
-
-    // Valida se o usuário tem privilégio de Administrador dentro do seu tenant
-    function isTenantAdmin() {
-      return isSignedIn() && userRole() == 'admin';
-    }
-
-    // =========================================================================
-    // 1. USUÁRIOS ('usuarios' e 'users')
-    // Cada usuário pertence a um tenantId.
-    // O Administrador gerencia os operadores do seu próprio tenant.
-    // =========================================================================
-    match /usuarios/{userId} {
-      // Leitura permitida para o próprio usuário ou para o Admin do mesmo tenant
-      allow read: if isSignedIn() && (
-        (request.auth.uid == userId && resource.data.tenantId == userTenantId()) ||
-        (belongsToTenant(resource.data) && isTenantAdmin())
+    function isAdmin() {
+      return isSignedIn() && (
+        isVerifiedAdminEmail() ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
       );
-
-      // Apenas o Administrador pode cadastrar novas contas no seu próprio tenant
-      // (ou o próprio usuário se registrando inicialmente com seu tenantId)
-      allow create: if isSignedIn() && isWritingSameTenant() && (
-        isTenantAdmin() || request.auth.uid == userId
-      );
-
-      // Usuário pode atualizar seus dados ou o Admin do seu tenant
-      // Garante que o tenantId NUNCA seja alterado
-      allow update: if isSignedIn() && 
-                    belongsToTenant(resource.data) && 
-                    request.resource.data.tenantId == resource.data.tenantId && (
-                      request.auth.uid == userId || isTenantAdmin()
-                    );
-
-      // Apenas o Administrador pode excluir operadores do seu próprio tenant
-      allow delete: if isSignedIn() && belongsToTenant(resource.data) && isTenantAdmin();
     }
 
+    // 3. Entity Validation Blueprints
+    function isValidUser(data) {
+      return data.keys().hasAll(['id', 'name', 'email', 'role', 'tenantId', 'createdAt']) &&
+        data.keys().hasOnly(['id', 'name', 'email', 'role', 'tenantId', 'phone', 'createdBy', 'createdAt']) &&
+        data.id is string && data.id.size() >= 1 && data.id.size() <= 128 && data.id.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.name is string && data.name.size() >= 1 && data.name.size() <= 120 &&
+        data.email is string && data.email.size() >= 3 && data.email.size() <= 180 &&
+        data.role is string && (data.role == 'admin' || data.role == 'operador') &&
+        data.tenantId is string && data.tenantId.size() >= 1 && data.tenantId.size() <= 128 && data.tenantId.matches('^[a-zA-Z0-9_\\-]+$') &&
+        (!('phone' in data) || (data.phone is string && data.phone.size() <= 40)) &&
+        (!('createdBy' in data) || (data.createdBy is string && data.createdBy.size() <= 128)) &&
+        data.createdAt is number && data.createdAt > 0;
+    }
+
+    function isValidTenant(data) {
+      return data.keys().hasAll(['id', 'name', 'city', 'document', 'active']) &&
+        data.keys().hasOnly(['id', 'name', 'city', 'document', 'active', 'colorTheme', 'pricing', 'ownerId']) &&
+        data.id is string && data.id.size() >= 1 && data.id.size() <= 128 && data.id.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.name is string && data.name.size() >= 1 && data.name.size() <= 120 &&
+        data.city is string && data.city.size() >= 1 && data.city.size() <= 120 &&
+        data.document is string && data.document.size() >= 1 && data.document.size() <= 40 &&
+        data.active is bool &&
+        (!('colorTheme' in data) || (data.colorTheme is string && data.colorTheme.size() <= 40)) &&
+        (!('pricing' in data) || data.pricing is map) &&
+        (!('ownerId' in data) || (data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128));
+    }
+
+    function isValidVehicle(data) {
+      return data.keys().hasAll(['id', 'tenantId', 'name', 'code', 'category', 'status', 'totalRuns']) &&
+        data.keys().hasOnly(['id', 'tenantId', 'name', 'code', 'category', 'status', 'batteryLevel', 'totalRuns', 'activeRentalId', 'imageUrl']) &&
+        data.id is string && data.id.size() >= 1 && data.id.size() <= 128 && data.id.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.tenantId is string && data.tenantId.size() >= 1 && data.tenantId.size() <= 128 && data.tenantId.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.name is string && data.name.size() >= 1 && data.name.size() <= 120 &&
+        data.code is string && data.code.size() >= 1 && data.code.size() <= 20 &&
+        data.category is string && (data.category == 'DRIFT' || data.category == 'JEEP' || data.category == 'BATE_BATE') &&
+        data.status is string && (data.status == 'disponivel' || data.status == 'em_uso' || data.status == 'manutencao') &&
+        (!('batteryLevel' in data) || (data.batteryLevel is number && data.batteryLevel >= 0 && data.batteryLevel <= 100)) &&
+        data.totalRuns is number && data.totalRuns >= 0 &&
+        (!('activeRentalId' in data) || (data.activeRentalId is string && data.activeRentalId.size() <= 128)) &&
+        (!('imageUrl' in data) || (data.imageUrl is string && data.imageUrl.size() <= 600000));
+    }
+
+    function isValidRental(data) {
+      return data.keys().hasAll([
+          'id', 'tenantId', 'vehicleId', 'vehicleName', 'vehicleCode', 'vehicleCategory',
+          'customerName', 'customerPhone', 'durationMinutes', 'amount', 'paymentMethod',
+          'paymentStatus', 'mode', 'startTime', 'endTime', 'status', 'operatorId',
+          'operatorName', 'createdAt'
+        ]) &&
+        data.keys().hasOnly([
+          'id', 'tenantId', 'vehicleId', 'vehicleName', 'vehicleCode', 'vehicleCategory',
+          'customerName', 'customerPhone', 'durationMinutes', 'amount', 'paymentMethod',
+          'paymentStatus', 'mode', 'startTime', 'endTime', 'status', 'operatorId',
+          'operatorName', 'createdAt', 'notes', 'isManualPastEntry', 'isNightClosure',
+          'closureDetails'
+        ]) &&
+        data.id is string && data.id.size() >= 1 && data.id.size() <= 128 && data.id.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.tenantId is string && data.tenantId.size() >= 1 && data.tenantId.size() <= 128 && data.tenantId.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.vehicleId is string && data.vehicleId.size() >= 1 && data.vehicleId.size() <= 128 &&
+        data.vehicleName is string && data.vehicleName.size() >= 1 && data.vehicleName.size() <= 120 &&
+        data.vehicleCode is string && data.vehicleCode.size() >= 1 && data.vehicleCode.size() <= 20 &&
+        data.vehicleCategory is string && (data.vehicleCategory == 'DRIFT' || data.vehicleCategory == 'JEEP' || data.vehicleCategory == 'BATE_BATE') &&
+        data.customerName is string && data.customerName.size() >= 1 && data.customerName.size() <= 120 &&
+        data.customerPhone is string && data.customerPhone.size() >= 1 && data.customerPhone.size() <= 40 &&
+        data.durationMinutes is number && data.durationMinutes >= 0 && data.durationMinutes <= 10000 &&
+        data.amount is number && data.amount >= 0 && data.amount <= 1000000 &&
+        data.paymentMethod is string && (data.paymentMethod == 'PIX' || data.paymentMethod == 'CARTAO' || data.paymentMethod == 'DINHEIRO') &&
+        data.paymentStatus is string && (data.paymentStatus == 'PAGO' || data.paymentStatus == 'NAO_PAGO') &&
+        data.mode is string && (data.mode == 'padrao' || data.mode == 'agendado' || data.mode == 'manual') &&
+        data.startTime is number && data.startTime > 0 &&
+        data.endTime is number && data.endTime >= data.startTime &&
+        data.status is string && (data.status == 'ativa' || data.status == 'concluida' || data.status == 'cancelada' || data.status == 'anulada') &&
+        data.operatorId is string && data.operatorId.size() >= 1 && data.operatorId.size() <= 128 &&
+        data.operatorName is string && data.operatorName.size() >= 1 && data.operatorName.size() <= 120 &&
+        data.createdAt is number && data.createdAt > 0 &&
+        (!('notes' in data) || (data.notes is string && data.notes.size() <= 500)) &&
+        (!('isManualPastEntry' in data) || data.isManualPastEntry is bool) &&
+        (!('isNightClosure' in data) || data.isNightClosure is bool) &&
+        (!('closureDetails' in data) || data.closureDetails is map);
+    }
+
+    function isValidQueueItem(data) {
+      return data.keys().hasAll([
+          'id', 'tenantId', 'customerName', 'customerPhone',
+          'categoryDesired', 'durationMinutes', 'status', 'addedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'id', 'tenantId', 'customerName', 'customerPhone',
+          'categoryDesired', 'durationMinutes', 'status', 'addedAt', 'notes'
+        ]) &&
+        data.id is string && data.id.size() >= 1 && data.id.size() <= 128 && data.id.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.tenantId is string && data.tenantId.size() >= 1 && data.tenantId.size() <= 128 && data.tenantId.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.customerName is string && data.customerName.size() >= 1 && data.customerName.size() <= 120 &&
+        data.customerPhone is string && data.customerPhone.size() >= 1 && data.customerPhone.size() <= 40 &&
+        data.categoryDesired is string && (data.categoryDesired == 'DRIFT' || data.categoryDesired == 'JEEP' || data.categoryDesired == 'BATE_BATE') &&
+        data.durationMinutes is number && data.durationMinutes > 0 && data.durationMinutes <= 240 &&
+        data.status is string && (data.status == 'aguardando' || data.status == 'chamado' || data.status == 'cancelado') &&
+        data.addedAt is number && data.addedAt > 0 &&
+        (!('notes' in data) || (data.notes is string && data.notes.size() <= 500));
+    }
+
+    // 4. Collection Rules
+
+    // Admins lookup collection
+    match /admins/{adminId} {
+      allow get: if isSignedIn() && isValidId(adminId) && (request.auth.uid == adminId || isAdmin());
+      allow list: if isAdmin();
+      allow create, update, delete: if isAdmin() && isValidId(adminId);
+    }
+
+    // Users collection (PII protected)
     match /users/{userId} {
-      allow read: if isSignedIn() && (
-        (request.auth.uid == userId && resource.data.tenantId == userTenantId()) ||
-        (belongsToTenant(resource.data) && isTenantAdmin())
+      allow get: if isSignedIn() && isValidId(userId) && (request.auth.uid == userId || isAdmin());
+      allow list: if isSignedIn() && (resource.data.id == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && isValidId(userId) && isValidUser(incoming()) && incoming().id == userId && (
+        isAdmin() || (request.auth.uid == userId && incoming().role == 'operador')
       );
-
-      allow create: if isSignedIn() && isWritingSameTenant() && (
-        isTenantAdmin() || request.auth.uid == userId
-      );
-
-      allow update: if isSignedIn() && 
-                    belongsToTenant(resource.data) && 
-                    request.resource.data.tenantId == resource.data.tenantId && (
-                      request.auth.uid == userId || isTenantAdmin()
-                    );
-
-      allow delete: if isSignedIn() && belongsToTenant(resource.data) && isTenantAdmin();
+      allow update: if isSignedIn() && isValidId(userId) && isValidUser(incoming()) &&
+        incoming().id == existing().id &&
+        incoming().tenantId == existing().tenantId &&
+        incoming().createdAt == existing().createdAt && (
+          isAdmin() ||
+          (request.auth.uid == userId && incoming().role == existing().role && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'phone']))
+        );
+      allow delete: if isSignedIn() && isValidId(userId) && isAdmin();
     }
 
-    // =========================================================================
-    // 2. VEÍCULOS ('veiculos')
-    // Frota de carrinhos de Drift, Jeep e Bate-Bate isolada por tenantId.
-    // =========================================================================
+    // Mirror Usuarios collection (PII protected)
+    match /usuarios/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && (request.auth.uid == userId || isAdmin());
+      allow list: if isSignedIn() && (resource.data.id == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && isValidId(userId) && isValidUser(incoming()) && incoming().id == userId && (
+        isAdmin() || (request.auth.uid == userId && incoming().role == 'operador')
+      );
+      allow update: if isSignedIn() && isValidId(userId) && isValidUser(incoming()) &&
+        incoming().id == existing().id &&
+        incoming().tenantId == existing().tenantId &&
+        incoming().createdAt == existing().createdAt && (
+          isAdmin() ||
+          (request.auth.uid == userId && incoming().role == existing().role && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'phone']))
+        );
+      allow delete: if isSignedIn() && isValidId(userId) && isAdmin();
+    }
+
+    // Tenants collection
+    match /tenants/{tenantId} {
+      allow get: if isSignedIn() && isValidId(tenantId) && (existing().active == true || isAdmin());
+      allow list: if isSignedIn() && (resource.data.active == true || isAdmin());
+      allow create: if isSignedIn() && isValidId(tenantId) && isValidTenant(incoming()) && incoming().id == tenantId && isAdmin();
+      allow update: if isSignedIn() && isValidId(tenantId) && isValidTenant(incoming()) &&
+        incoming().id == existing().id && (
+          isAdmin() ||
+          (incoming().diff(existing()).affectedKeys().hasOnly(['pricing', 'name', 'city']))
+        );
+      allow delete: if isSignedIn() && isValidId(tenantId) && isAdmin();
+    }
+
+    // Fleet Vehicles collection
     match /veiculos/{veiculoId} {
-      // Todos os operadores e admins do tenant podem ler a frota da sua empresa
-      allow read: if isSignedIn() && belongsToTenant(resource.data);
-
-      // Apenas o Administrador daquela empresa pode cadastrar novos veículos
-      allow create: if isSignedIn() && isWritingSameTenant() && isTenantAdmin();
-
-      // Atualização: Admin altera tudo; Operadores do mesmo tenant podem atualizar
-      // o status de disponibilidade ('disponivel', 'em_uso', 'manutencao')
-      allow update: if isSignedIn() && 
-                    belongsToTenant(resource.data) && 
-                    request.resource.data.tenantId == resource.data.tenantId;
-
-      // Apenas o Administrador do tenant pode remover veículos
-      allow delete: if isSignedIn() && belongsToTenant(resource.data) && isTenantAdmin();
+      allow get: if isSignedIn() && isValidId(veiculoId) && existing().tenantId is string;
+      allow list: if isSignedIn() && resource.data.tenantId is string && resource.data.tenantId.size() >= 1;
+      allow create: if isSignedIn() && isValidId(veiculoId) && isValidVehicle(incoming()) && incoming().id == veiculoId;
+      allow update: if isSignedIn() && isValidId(veiculoId) && isValidVehicle(incoming()) &&
+        incoming().id == existing().id &&
+        incoming().tenantId == existing().tenantId && (
+          isAdmin() ||
+          incoming().diff(existing()).affectedKeys().hasOnly(['status', 'activeRentalId', 'totalRuns', 'batteryLevel', 'name', 'code', 'category', 'imageUrl'])
+        );
+      allow delete: if isSignedIn() && isValidId(veiculoId) && isAdmin();
     }
 
-    // =========================================================================
-    // 3. CORRIDAS E ALUGUÉIS ('corridas')
-    // Histórico e corridas em tempo real isoladas por tenantId.
-    // =========================================================================
+    // Rentals / Corridas collection
     match /corridas/{corridaId} {
-      // Visualização restrita aos membros (Admin/Operadores) do mesmo tenantId
-      allow read: if isSignedIn() && belongsToTenant(resource.data);
-
-      // Operadores e Administradores do mesmo tenant registram novas corridas
-      allow create: if isSignedIn() && isWritingSameTenant();
-
-      // Permite editar Forma de Pagamento e Status de Pagamento (Pago/Não Pago) pós-corrida
-      // Garante que o documento permaneça vinculado ao mesmo tenantId
-      allow update: if isSignedIn() && 
-                    belongsToTenant(resource.data) && 
-                    request.resource.data.tenantId == resource.data.tenantId;
-
-      // Exclusão de histórico permitida exclusivamente para o Administrador do tenant
-      allow delete: if isSignedIn() && belongsToTenant(resource.data) && isTenantAdmin();
+      allow get: if isSignedIn() && isValidId(corridaId) && (existing().operatorId == request.auth.uid || isAdmin() || existing().tenantId is string);
+      allow list: if isSignedIn() && resource.data.tenantId is string && resource.data.tenantId.size() >= 1;
+      allow create: if isSignedIn() && isValidId(corridaId) && isValidRental(incoming()) && incoming().id == corridaId;
+      allow update: if isSignedIn() && isValidId(corridaId) && isValidRental(incoming()) &&
+        incoming().id == existing().id &&
+        incoming().tenantId == existing().tenantId &&
+        incoming().createdAt == existing().createdAt && (
+          isAdmin() ||
+          (existing().status == 'ativa' && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'endTime', 'durationMinutes', 'amount', 'paymentMethod', 'paymentStatus'])) ||
+          (incoming().diff(existing()).affectedKeys().hasOnly(['paymentMethod', 'paymentStatus']))
+        );
+      allow delete: if isSignedIn() && isValidId(corridaId) && isAdmin();
     }
 
-    // =========================================================================
-    // 4. CLIENTES ('clientes')
-    // Cadastro de clientes e pilotos isolado por tenantId.
-    // =========================================================================
-    match /clientes/{clienteId} {
-      allow read: if isSignedIn() && belongsToTenant(resource.data);
-      allow create: if isSignedIn() && isWritingSameTenant();
-      allow update: if isSignedIn() && 
-                    belongsToTenant(resource.data) && 
-                    request.resource.data.tenantId == resource.data.tenantId;
-      allow delete: if isSignedIn() && belongsToTenant(resource.data) && isTenantAdmin();
-    }
-
-    // =========================================================================
-    // 5. CAIXA & FINANCEIRO ('caixa')
-    // Movimentações financeiras e fechamentos de caixa.
-    // Acesso EXCLUSIVO do Administrador do tenantId correspondente.
-    // =========================================================================
-    match /caixa/{caixaId} {
-      // Operadores NUNCA têm acesso ao caixa consolidado
-      allow read: if isSignedIn() && belongsToTenant(resource.data) && isTenantAdmin();
-      allow create: if isSignedIn() && isWritingSameTenant() && isTenantAdmin();
-      allow update: if isSignedIn() && 
-                    belongsToTenant(resource.data) && 
-                    request.resource.data.tenantId == resource.data.tenantId && 
-                    isTenantAdmin();
-      allow delete: if isSignedIn() && belongsToTenant(resource.data) && isTenantAdmin();
-    }
-
-    // =========================================================================
-    // 6. FILA DE ESPERA ('fila')
-    // Fila da pista daquela unidade/tenant
-    // =========================================================================
+    // Queue / Fila collection
     match /fila/{filaId} {
-      allow read: if isSignedIn() && belongsToTenant(resource.data);
-      allow create: if isSignedIn() && isWritingSameTenant();
-      allow update, delete: if isSignedIn() && belongsToTenant(resource.data);
+      allow get: if isSignedIn() && isValidId(filaId) && existing().tenantId is string;
+      allow list: if isSignedIn() && resource.data.tenantId is string && resource.data.tenantId.size() >= 1;
+      allow create: if isSignedIn() && isValidId(filaId) && isValidQueueItem(incoming()) && incoming().id == filaId;
+      allow update: if isSignedIn() && isValidId(filaId) && isValidQueueItem(incoming()) &&
+        incoming().id == existing().id &&
+        incoming().tenantId == existing().tenantId &&
+        incoming().addedAt == existing().addedAt && (
+          isAdmin() ||
+          incoming().diff(existing()).affectedKeys().hasOnly(['status', 'customerName', 'customerPhone', 'categoryDesired', 'durationMinutes', 'notes'])
+        );
+      allow delete: if isSignedIn() && isValidId(filaId);
     }
   }
 }

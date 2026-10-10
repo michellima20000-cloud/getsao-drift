@@ -1,7 +1,9 @@
 {
   "name": "Drift Park - Gestão de Aluguel e Pista",
   "description": "Sistema moderno e fluido para gestão e aluguel de carrinhos de bate-bate, drift e jeep com arquitetura multi-tenant e telemetria de pista.",
-  "requestFramePermissions": [],
+  "requestFramePermissions": [
+    "camera"
+  ],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
   ]
