@@ -1,0 +1,117 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile with role and track tenant association",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "email": { "type": "string" },
+        "name": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "operador"] },
+        "tenantId": { "type": "string" },
+        "phone": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["id", "email", "name", "role", "tenantId", "createdAt"]
+    },
+    "Rental": {
+      "title": "Rental",
+      "description": "Rental run telemetry, timing, and financial payment record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "tenantId": { "type": "string" },
+        "vehicleId": { "type": "string" },
+        "vehicleName": { "type": "string" },
+        "vehicleCode": { "type": "string" },
+        "vehicleCategory": { "type": "string", "enum": ["DRIFT", "JEEP", "BATE_BATE"] },
+        "customerName": { "type": "string" },
+        "customerPhone": { "type": "string" },
+        "durationMinutes": { "type": "number" },
+        "amount": { "type": "number" },
+        "paymentMethod": { "type": "string", "enum": ["PIX", "CARTAO", "DINHEIRO"] },
+        "paymentStatus": { "type": "string", "enum": ["PAGO", "NAO_PAGO"] },
+        "startTime": { "type": "number" },
+        "endTime": { "type": "number" },
+        "status": { "type": "string", "enum": ["ativa", "concluida", "cancelada"] },
+        "mode": { "type": "string", "enum": ["padrao", "agendado", "manual"] },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["id", "tenantId", "vehicleId", "customerName", "durationMinutes", "amount", "paymentMethod", "paymentStatus", "startTime", "endTime", "status", "createdAt"]
+    },
+    "Vehicle": {
+      "title": "Vehicle",
+      "description": "Track vehicle fleet asset with status, battery and photo",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "tenantId": { "type": "string" },
+        "name": { "type": "string" },
+        "code": { "type": "string" },
+        "category": { "type": "string", "enum": ["DRIFT", "JEEP", "BATE_BATE"] },
+        "status": { "type": "string", "enum": ["disponivel", "em_uso", "manutencao"] },
+        "batteryLevel": { "type": "number" },
+        "totalRuns": { "type": "number" },
+        "imageUrl": { "type": "string" },
+        "activeRentalId": { "type": "string" }
+      },
+      "required": ["id", "tenantId", "name", "code", "category", "status", "totalRuns"]
+    },
+    "QueueItem": {
+      "title": "QueueItem",
+      "description": "Waiting queue item for customers awaiting a car",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "tenantId": { "type": "string" },
+        "customerName": { "type": "string" },
+        "customerPhone": { "type": "string" },
+        "preferredCategory": { "type": "string", "enum": ["DRIFT", "JEEP", "BATE_BATE"] },
+        "durationMinutes": { "type": "number" },
+        "joinedAt": { "type": "number" },
+        "status": { "type": "string", "enum": ["aguardando", "chamado", "atendido", "cancelado"] }
+      },
+      "required": ["id", "tenantId", "customerName", "preferredCategory", "durationMinutes", "joinedAt", "status"]
+    },
+    "Tenant": {
+      "title": "Tenant",
+      "description": "Track business unit and pricing setup",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "city": { "type": "string" },
+        "document": { "type": "string" },
+        "active": { "type": "boolean" }
+      },
+      "required": ["id", "name", "city", "document", "active"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profiles by UID or email"
+    },
+    "/usuarios/{userId}": {
+      "schema": "UserProfile",
+      "description": "Redundant user profile lookup"
+    },
+    "/rentals/{rentalId}": {
+      "schema": "Rental",
+      "description": "Rental run history and live rentals"
+    },
+    "/vehicles/{vehicleId}": {
+      "schema": "Vehicle",
+      "description": "Track vehicle fleet items"
+    },
+    "/queue/{queueId}": {
+      "schema": "QueueItem",
+      "description": "Waiting queue items"
+    },
+    "/tenants/{tenantId}": {
+      "schema": "Tenant",
+      "description": "Tenant units configurations"
+    }
+  }
+}

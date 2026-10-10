@@ -39,8 +39,8 @@ const AppContent: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[#070D1E] text-slate-100 flex flex-col items-center justify-start p-0 selection:bg-cyan-500 selection:text-slate-950">
-      {/* Main Responsive App Container */}
-      <div className="w-full max-w-2xl min-h-screen flex flex-col bg-[#0B132B] shadow-2xl border-x border-slate-800/80 relative overflow-hidden">
+      {/* Main Responsive App Container (Mobile, Tablet, Desktop) */}
+      <div className="w-full max-w-2xl md:max-w-3xl min-h-screen flex flex-col bg-[#0B132B] shadow-2xl border-x border-slate-800/80 relative overflow-hidden">
         {/* Content Wrapper */}
         <div className="flex-1 flex flex-col min-h-0 relative overflow-hidden">
           {!currentUser ? (
@@ -50,8 +50,8 @@ const AppContent: React.FC = () => {
               {/* App Top Header */}
               <TopHeader />
 
-              {/* Scrollable Screen Content */}
-              <main className="flex-1 overflow-y-auto px-4 py-3.5 scroll-smooth">
+              {/* Scrollable Screen Content with bottom padding to avoid nav overlap */}
+              <main className="flex-1 overflow-y-auto px-4 py-3.5 pb-24 scroll-smooth">
                 {renderScreen()}
               </main>
 

@@ -69,26 +69,64 @@ export const ManagementScreen: React.FC = () => {
   const [newPriceValue, setNewPriceValue] = useState<string>('25');
 
   // Delete Operator Modal
-  const [operatorToDelete, setOperatorToDelete] = useState<{ id: string; name: string } | null>(null);
+  const [operatorToDelete, setOperatorToDelete] = useState<{ id: string; name: string; email?: string } | null>(null);
 
   const isAdmin = currentUser?.role === 'admin';
 
-  // HIERARQUIA & ISOLAMENTO ESTRITO POR tenantId
-  // 1. Administrador logado atual (apenas 1 card no topo)
+  // HIERARQUIA & EXIBIÇÃO DE SUB-CONTAS DESTE PERFIL
+  // 1. Administrador logado atual (card de destaque no topo)
   const adminUser = currentUser;
+  const currentEmail = (currentUser?.email || '').toLowerCase().trim();
+  const currentTenantId = currentUser?.tenantId;
 
-  // 2. Operadores vinculados estritamente ao tenantId do Administrador
-  const tenantOperators = users.filter(
-    (u) =>
-      u.tenantId === currentUser?.tenantId &&
-      u.role === 'operador' &&
-      u.id !== currentUser?.id &&
-      u.email.toLowerCase() !== (currentUser?.email || '').toLowerCase()
-  );
+  // 2. Sub-contas que pertencem ESTRITAMENTE a este administrador / este perfil
+  const allSubAccounts = users.filter((u) => {
+    const userEmail = (u.email || '').toLowerCase().trim();
+    if (!userEmail) return false;
+    if (userEmail === currentEmail) return false;
+    if (u.id === currentUser?.id) return false;
 
-  // Deduplicação estrita para garantir zero repetições na UI
-  const uniqueOperators = Array.from(
-    new Map(tenantOperators.map((op) => [op.email.toLowerCase(), op])).values()
+    // Não exibe outros administradores globais/de outros parques como sub-contas
+    if (u.role === 'admin' && u.tenantId !== currentTenantId) {
+      return false;
+    }
+
+    // Se este perfil é Michel Lima (Matriz):
+    // Carol Lima e qualquer conta criada por Adm Clécio NUNCA aparecem neste perfil!
+    if (currentEmail === 'michel.lima20000@gmail.com') {
+      if (userEmail === 'carollimap1993@gmail.com' || userEmail === 'admcledson@gmail.com') {
+        return false;
+      }
+      if (u.createdBy === 'admcledson@gmail.com' || u.adminEmail === 'admcledson@gmail.com') {
+        return false;
+      }
+      if (u.tenantId === 'tenant_clecio_drift') {
+        return false;
+      }
+    }
+
+    // Se este perfil é Adm Clécio:
+    // Exibe apenas as sub-contas criadas para a pista dele
+    if (currentEmail === 'admcledson@gmail.com') {
+      const isForClecio =
+        userEmail === 'carollimap1993@gmail.com' ||
+        u.tenantId === 'tenant_clecio_drift' ||
+        u.createdBy === 'admcledson@gmail.com' ||
+        u.adminEmail === 'admcledson@gmail.com';
+      return isForClecio;
+    }
+
+    // Regra geral para qualquer outro administrador:
+    return (
+      (u.tenantId && u.tenantId === currentTenantId) ||
+      (u.createdBy && u.createdBy.toLowerCase() === currentEmail) ||
+      (u.adminEmail && u.adminEmail.toLowerCase() === currentEmail)
+    );
+  });
+
+  // Deduplicação estrita por email para garantir lista perfeita na UI
+  const uniqueSubAccounts = Array.from(
+    new Map(allSubAccounts.map((op) => [op.email.toLowerCase(), op])).values()
   );
 
   const handleOpenNewVehicle = () => {
@@ -450,7 +488,7 @@ export const ManagementScreen: React.FC = () => {
         <div className="flex items-center justify-between">
           <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
             <UserPlus size={13} className="text-amber-400" />
-            Equipe & Sub-Contas (1 Dono · {uniqueOperators.length} Operador{uniqueOperators.length === 1 ? '' : 'es'})
+            Equipe & Sub-Contas ({uniqueSubAccounts.length} Cadastrada{uniqueSubAccounts.length === 1 ? '' : 's'})
           </div>
 
           {isAdmin && (
@@ -494,62 +532,121 @@ export const ManagementScreen: React.FC = () => {
           </div>
 
           {/* ========================================================================= */}
-          {/* ABAIXO: APENAS OS OPERADORES VINCULADOS A ESTA CONTA */}
+          {/* ABAIXO: TODAS AS SUB-CONTAS E CONTAS REGISTRADAS NO FIREBASE */}
           {/* ========================================================================= */}
           <div className="pt-1.5 space-y-2">
             <div className="flex items-center justify-between text-[10px] uppercase font-bold text-slate-400 tracking-wider">
-              <span>Operadores Cadastrados ({uniqueOperators.length})</span>
+              <span>Sub-Contas & Operadores do Firebase ({uniqueSubAccounts.length})</span>
               <span className="text-[9px] text-cyan-400 font-medium">
-                Acesso Restrito à Pista
+                Sincronizado na Nuvem
               </span>
             </div>
 
-            {uniqueOperators.length === 0 ? (
+            {uniqueSubAccounts.length === 0 ? (
               <div className="p-4 rounded-xl bg-[#0B132B]/60 border border-dashed border-slate-700 text-center space-y-1">
                 <p className="text-xs text-slate-300 font-medium">
-                  Nenhum operador cadastrado ainda.
+                  Nenhuma sub-conta cadastrada ainda.
                 </p>
                 <p className="text-[10px] text-slate-500">
-                  Cadastre uma sub-conta acima para gerar login e senha para seu funcionário com perfil restrito.
+                  Cadastre uma sub-conta acima para gerar login e senha para seu funcionário no Firebase.
                 </p>
               </div>
             ) : (
               <div className="space-y-2">
-                {uniqueOperators.map((op) => (
-                  <div
-                    key={op.id}
-                    className="p-3 rounded-xl bg-[#141E38] border border-slate-700/80 flex items-center justify-between text-xs hover:border-cyan-500/40 transition-colors"
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-300 text-xs shrink-0 font-bold">
-                        🏎️
-                      </div>
-                      <div>
-                        <div className="font-bold text-white flex items-center gap-1.5">
-                          <span>{op.name}</span>
-                        </div>
-                        <div className="text-[11px] text-slate-400 font-mono">{op.email}</div>
-                      </div>
-                    </div>
+                {uniqueSubAccounts.map((op) => {
+                  const isOpAdmin = op.role === 'admin';
+                  const isSameTenant = op.tenantId === currentUser?.tenantId;
+                  const isCurrentUserClecio = (currentUser?.email || '').toLowerCase() === 'admcledson@gmail.com';
+                  const isCarol = op.email.toLowerCase() === 'carollimap1993@gmail.com';
+                  const isClecioOp = op.email.toLowerCase() === 'admcledson@gmail.com';
+                  const isLinkedToClecio = isCarol || op.createdBy === 'admcledson@gmail.com' || op.adminEmail === 'admcledson@gmail.com';
 
-                    <div className="flex items-center gap-2">
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
-                        🏎️ Operador
-                      </span>
-
-                      {isAdmin && (
-                        <button
-                          type="button"
-                          onClick={() => setOperatorToDelete({ id: op.id, name: op.name })}
-                          className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors ml-1"
-                          title="Remover operador"
+                  return (
+                    <div
+                      key={op.id || op.email}
+                      className={`p-3 rounded-xl bg-[#141E38] border flex items-center justify-between text-xs transition-colors ${
+                        (isCarol && isCurrentUserClecio) || isLinkedToClecio
+                          ? 'border-cyan-500/60 shadow-[0_0_12px_rgba(0,240,255,0.08)]'
+                          : 'border-slate-700/80 hover:border-cyan-500/40'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <div
+                          className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs shrink-0 font-bold ${
+                            isOpAdmin
+                              ? 'bg-amber-500/15 border border-amber-500/30 text-amber-300'
+                              : 'bg-cyan-500/10 border border-cyan-500/30 text-cyan-300'
+                          }`}
                         >
-                          <Trash2 size={13} />
-                        </button>
-                      )}
+                          {isOpAdmin ? '👑' : '🏎️'}
+                        </div>
+                        <div>
+                          <div className="font-bold text-white flex items-center gap-1.5 flex-wrap">
+                            <span>{op.name}</span>
+                            {isClecioOp && (
+                              <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 font-semibold">
+                                Adm Clécio
+                              </span>
+                            )}
+                            {isCarol && isCurrentUserClecio && (
+                              <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-semibold">
+                                ⭐ Sua Sub-Conta
+                              </span>
+                            )}
+                            {isCarol && !isCurrentUserClecio && (
+                              <span className="text-[9px] px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-semibold">
+                                Sub-Conta de Adm Clécio
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-slate-400 font-mono flex items-center gap-1.5 mt-0.5">
+                            <span>{op.email}</span>
+                            {isLinkedToClecio && !isCurrentUserClecio && (
+                              <span className="text-[9px] text-slate-500 font-sans">
+                                (Admin: admcledson@gmail.com)
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            isOpAdmin
+                              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                              : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
+                          }`}
+                        >
+                          {isOpAdmin ? '👑 Administrador' : '🏎️ Operador'}
+                        </span>
+
+                        <span
+                          className={`text-[9px] px-1.5 py-0.5 rounded font-mono ${
+                            isSameTenant || (isCurrentUserClecio && isLinkedToClecio)
+                              ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                              : 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20'
+                          }`}
+                        >
+                          {isSameTenant || (isCurrentUserClecio && isLinkedToClecio)
+                            ? 'Mesma Pista'
+                            : 'Pista Vinculada'}
+                        </span>
+
+                        {isAdmin && (
+                          <button
+                            type="button"
+                            onClick={() => setOperatorToDelete({ id: op.id, name: op.name, email: op.email })}
+                            className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors ml-1"
+                            title="Remover essa conta deste perfil"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -952,19 +1049,20 @@ export const ManagementScreen: React.FC = () => {
         </div>
       )}
 
-      {/* MODAL: CONFIRMAR EXCLUSÃO DE OPERADOR */}
+      {/* MODAL: CONFIRMAR REMOÇÃO DE CONTA DESTE PERFIL */}
       {operatorToDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in">
           <div className="w-full max-w-sm rounded-2xl bg-[#0F172A] border border-rose-500/40 p-5 shadow-2xl space-y-3.5 text-center">
             <div className="w-12 h-12 rounded-2xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center mx-auto text-rose-400">
               <Trash2 size={24} />
             </div>
-            <h3 className="text-sm font-bold text-white">Remover operador?</h3>
+            <h3 className="text-sm font-bold text-white">Remover conta deste perfil?</h3>
             <p className="text-xs text-slate-300">
-              Deseja realmente remover o acesso de <strong>{operatorToDelete.name}</strong>?
+              Deseja realmente remover o acesso de <strong>{operatorToDelete.name}</strong>
+              {operatorToDelete.email ? ` (${operatorToDelete.email})` : ''}?
             </p>
             <p className="text-[11px] text-slate-400">
-              Ele não poderá mais acessar o painel de operador desta pista.
+              Esta sub-conta será removida deste perfil e desconectada do Firebase.
             </p>
             <div className="flex items-center gap-2 pt-1">
               <button
@@ -977,9 +1075,9 @@ export const ManagementScreen: React.FC = () => {
               <button
                 type="button"
                 onClick={async () => {
-                  const id = operatorToDelete.id;
+                  const target = operatorToDelete;
                   setOperatorToDelete(null);
-                  await deleteOperator(id);
+                  await deleteOperator(target.id, target.email);
                 }}
                 className="flex-1 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold shadow-md"
               >

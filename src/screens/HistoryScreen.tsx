@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useDriftPark } from '../context/DriftParkContext';
 import { Rental, PaymentMethod, PaymentStatus } from '../types';
 import {
@@ -21,9 +21,26 @@ import {
   Plus,
   ChevronLeft,
   ChevronRight,
-  CalendarDays,
   Sparkles,
+  CalendarDays,
 } from 'lucide-react';
+
+const MONTH_NAMES = [
+  'JANEIRO',
+  'FEVEREIRO',
+  'MARÇO',
+  'ABRIL',
+  'MAIO',
+  'JUNHO',
+  'JULHO',
+  'AGOSTO',
+  'SETEMBRO',
+  'OUTUBRO',
+  'NOVEMBRO',
+  'DEZEMBRO',
+];
+
+const WEEKDAYS = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB'];
 
 export const HistoryScreen: React.FC = () => {
   const {
@@ -49,13 +66,15 @@ export const HistoryScreen: React.FC = () => {
     return `${y}-${m}-${day}`;
   };
 
-  const todayKey = formatDateKey(Date.now());
-  const yesterdayKey = formatDateKey(Date.now() - 86400000);
+  const today = new Date();
+  const todayKey = formatDateKey(today);
 
-  // Filtro por Data / Calendário (Padrão: Hoje)
+  // Estados do Calendário Visual
+  const [calendarYear, setCalendarYear] = useState<number>(today.getFullYear());
+  const [calendarMonth, setCalendarMonth] = useState<number>(today.getMonth()); // 0-11
   const [selectedDate, setSelectedDate] = useState<string>(todayKey);
 
-  // Search and filter de status
+  // Search e filtro de status de pagamento
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'TODOS' | 'PAGO' | 'NAO_PAGO'>('TODOS');
 
@@ -87,28 +106,51 @@ export const HistoryScreen: React.FC = () => {
   const [rentalToDelete, setRentalToDelete] = useState<Rental | null>(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
 
-  // Navegação de dias no calendário
-  const handlePrevDay = () => {
-    if (selectedDate === 'todas') {
-      setSelectedDate(todayKey);
-      return;
+  // Conjunto de datas que possuem corridas gravadas (para exibir o pontinho verde no calendário)
+  const datesWithRaces = useMemo(() => {
+    const set = new Set<string>();
+    rentals.forEach((r) => {
+      set.add(formatDateKey(r.createdAt));
+    });
+    return set;
+  }, [rentals]);
+
+  // Controles de Navegação de Mês do Calendário
+  const handlePrevMonth = () => {
+    if (calendarMonth === 0) {
+      setCalendarMonth(11);
+      setCalendarYear((prev) => prev - 1);
+    } else {
+      setCalendarMonth((prev) => prev - 1);
     }
-    const [y, m, d] = selectedDate.split('-').map(Number);
-    const curr = new Date(y, m - 1, d);
-    curr.setDate(curr.getDate() - 1);
-    setSelectedDate(formatDateKey(curr));
   };
 
-  const handleNextDay = () => {
-    if (selectedDate === 'todas') {
-      setSelectedDate(todayKey);
-      return;
+  const handleNextMonth = () => {
+    if (calendarMonth === 11) {
+      setCalendarMonth(0);
+      setCalendarYear((prev) => prev + 1);
+    } else {
+      setCalendarMonth((prev) => prev + 1);
     }
-    const [y, m, d] = selectedDate.split('-').map(Number);
-    const curr = new Date(y, m - 1, d);
-    curr.setDate(curr.getDate() + 1);
-    setSelectedDate(formatDateKey(curr));
   };
+
+  const handleGoToToday = () => {
+    const now = new Date();
+    setCalendarYear(now.getFullYear());
+    setCalendarMonth(now.getMonth());
+    setSelectedDate(formatDateKey(now));
+  };
+
+  // Cálculo dos dias do mês do calendário
+  const calendarDays = useMemo(() => {
+    const firstDayIndex = new Date(calendarYear, calendarMonth, 1).getDay(); // 0 = DOM
+    const totalDays = new Date(calendarYear, calendarMonth + 1, 0).getDate();
+
+    const blanks: null[] = Array(firstDayIndex).fill(null);
+    const days: number[] = Array.from({ length: totalDays }, (_, i) => i + 1);
+
+    return [...blanks, ...days];
+  }, [calendarYear, calendarMonth]);
 
   // Corridas correspondentes à data selecionada no calendário
   const dateRentals = rentals.filter((r) => {
@@ -137,7 +179,7 @@ export const HistoryScreen: React.FC = () => {
     .filter((r) => r.paymentStatus === 'PAGO' && r.paymentMethod === 'DINHEIRO')
     .reduce((acc, curr) => acc + curr.amount, 0);
 
-  // Lista com busca e filtro de pagamento
+  // Lista com busca e filtro de status de pagamento
   const filteredRentals = dateRentals.filter((r) => {
     const matchesSearch =
       r.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -149,8 +191,9 @@ export const HistoryScreen: React.FC = () => {
   });
 
   // Ao abrir o modal de lançar corrida passada
-  const handleOpenAddModal = () => {
-    setAddDate(selectedDate !== 'todas' ? selectedDate : todayKey);
+  const handleOpenAddModal = (dateToUse?: string) => {
+    const dStr = dateToUse || (selectedDate !== 'todas' ? selectedDate : todayKey);
+    setAddDate(dStr);
     const d = new Date();
     setAddTime(`${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`);
     setAddVehicleId(vehicles[0]?.id || '');
@@ -192,8 +235,10 @@ export const HistoryScreen: React.FC = () => {
       timestamp: raceTimestamp,
     });
 
-    // Direciona o seletor para o dia da corrida lançada para o usuário conferir na hora
+    // Sincroniza calendário para o dia da corrida lançada
     setSelectedDate(addDate);
+    setCalendarYear(y);
+    setCalendarMonth(m - 1);
     setIsAddModalOpen(false);
   };
 
@@ -233,94 +278,148 @@ export const HistoryScreen: React.FC = () => {
 
   // Título dinâmico da data
   const getDateLabel = () => {
-    if (selectedDate === 'todas') return 'Todas as Datas (Acumulado)';
+    if (selectedDate === 'todas') return 'Todas as Datas (Geral)';
     if (selectedDate === todayKey) return `Hoje (${selectedDate.split('-').reverse().join('/')})`;
-    if (selectedDate === yesterdayKey) return `Ontem (${selectedDate.split('-').reverse().join('/')})`;
     return selectedDate.split('-').reverse().join('/');
   };
 
   return (
     <div className="space-y-4 pb-8">
-      {/* 1. SELETOR DE CALENDÁRIO & CONTROLE DE DATA */}
-      <div className="rounded-2xl bg-[#141E38] border border-cyan-500/30 p-3 shadow-md space-y-2.5">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          {/* Quick Dates Buttons */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
-            <button
-              type="button"
-              onClick={() => setSelectedDate(todayKey)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
-                selectedDate === todayKey
-                  ? 'bg-cyan-500 text-slate-950 shadow-[0_0_10px_rgba(0,180,216,0.4)]'
-                  : 'bg-[#0B132B] text-slate-300 hover:text-white border border-slate-700'
-              }`}
-            >
-              <Calendar size={13} />
-              <span>Hoje</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setSelectedDate(yesterdayKey)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                selectedDate === yesterdayKey
-                  ? 'bg-cyan-500 text-slate-950 shadow-[0_0_10px_rgba(0,180,216,0.4)]'
-                  : 'bg-[#0B132B] text-slate-300 hover:text-white border border-slate-700'
-              }`}
-            >
-              Ontem
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setSelectedDate('todas')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                selectedDate === 'todas'
-                  ? 'bg-cyan-500 text-slate-950 shadow-[0_0_10px_rgba(0,180,216,0.4)]'
-                  : 'bg-[#0B132B] text-slate-300 hover:text-white border border-slate-700'
-              }`}
-            >
-              Todas as Datas
-            </button>
+      {/* =========================================================================
+          1. CALENDÁRIO VISUAL ESTILIZADO (CONFORME IMAGEM DE REFERÊNCIA)
+          ========================================================================= */}
+      <div className="rounded-2xl bg-[#0F172A] border border-slate-800 p-4 shadow-xl">
+        {/* Top Header do Calendário: MÊS ANO, NAVEGAÇÃO DA AGENDA, HOJE, <, > */}
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-base font-extrabold text-white tracking-wider font-display">
+              {MONTH_NAMES[calendarMonth]} {calendarYear}
+            </h3>
+            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">
+              NAVEGAÇÃO DA AGENDA
+            </p>
           </div>
 
-          {/* Date Picker Input & Day Navigator */}
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1.5">
             <button
               type="button"
-              onClick={handlePrevDay}
-              className="p-1.5 rounded-xl bg-[#0B132B] hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-cyan-400 transition-colors"
-              title="Dia anterior"
+              onClick={handleGoToToday}
+              className="px-2.5 py-1 rounded-lg text-[10px] font-black text-amber-400 hover:text-amber-300 bg-amber-400/10 border border-amber-400/30 hover:bg-amber-400/20 transition-all uppercase tracking-wider"
+              title="Ir para a data de hoje"
+            >
+              HOJE
+            </button>
+
+            <button
+              type="button"
+              onClick={handlePrevMonth}
+              className="w-7 h-7 rounded-lg bg-[#141E38] hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center transition-colors border border-slate-700/60"
+              title="Mês anterior"
             >
               <ChevronLeft size={16} />
             </button>
 
-            <div className="relative">
-              <input
-                type="date"
-                value={selectedDate !== 'todas' ? selectedDate : ''}
-                onChange={(e) => {
-                  if (e.target.value) {
-                    setSelectedDate(e.target.value);
-                  }
-                }}
-                className="px-2.5 py-1.5 rounded-xl bg-[#0B132B] border border-cyan-500/40 text-xs text-cyan-300 font-bold focus:outline-none focus:border-cyan-400 cursor-pointer text-center"
-              />
-            </div>
-
             <button
               type="button"
-              onClick={handleNextDay}
-              className="p-1.5 rounded-xl bg-[#0B132B] hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-cyan-400 transition-colors"
-              title="Próximo dia"
+              onClick={handleNextMonth}
+              className="w-7 h-7 rounded-lg bg-[#141E38] hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center transition-colors border border-slate-700/60"
+              title="Próximo mês"
             >
               <ChevronRight size={16} />
             </button>
           </div>
         </div>
+
+        {/* Linha dos Dias da Semana (DOM SEG TER QUA QUI SEX SÁB) */}
+        <div className="grid grid-cols-7 mb-2 text-center">
+          {WEEKDAYS.map((wd) => (
+            <div
+              key={wd}
+              className="text-[10px] font-extrabold text-slate-400 tracking-wider py-1"
+            >
+              {wd}
+            </div>
+          ))}
+        </div>
+
+        {/* Grade dos Dias do Mês */}
+        <div className="grid grid-cols-7 gap-y-2 gap-x-1 place-items-center">
+          {calendarDays.map((dayNum, idx) => {
+            if (dayNum === null) {
+              return <div key={`blank-${idx}`} className="w-9 h-9" />;
+            }
+
+            const dayStr = String(dayNum).padStart(2, '0');
+            const monthStr = String(calendarMonth + 1).padStart(2, '0');
+            const dateKey = `${calendarYear}-${monthStr}-${dayStr}`;
+
+            const isSelected = selectedDate === dateKey;
+            const isToday = todayKey === dateKey;
+            const hasRaces = datesWithRaces.has(dateKey);
+
+            return (
+              <button
+                key={dateKey}
+                type="button"
+                onClick={() => setSelectedDate(dateKey)}
+                className={`w-9 h-9 rounded-full flex flex-col items-center justify-center transition-all relative ${
+                  isSelected
+                    ? 'bg-amber-500 text-slate-950 font-black shadow-[0_0_14px_rgba(245,158,11,0.5)] scale-105'
+                    : isToday
+                    ? 'bg-[#1C2541] text-amber-300 font-bold border border-amber-400/40 hover:bg-slate-700'
+                    : 'text-slate-300 hover:bg-slate-800/80 hover:text-white font-medium'
+                }`}
+                title={`${dayStr}/${monthStr}/${calendarYear}${hasRaces ? ' (Possui corridas)' : ''}`}
+              >
+                <span className="text-xs leading-none">{dayNum}</span>
+                {hasRaces && (
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full mt-0.5 ${
+                      isSelected
+                        ? 'bg-slate-950'
+                        : 'bg-emerald-400 shadow-[0_0_4px_rgba(52,211,153,0.8)]'
+                    }`}
+                  />
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Rodapé do Calendário: Status da Seleção e Ação Rápida */}
+        <div className="mt-4 pt-3 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-slate-400 font-medium">
+              Data selecionada:{' '}
+              <strong className="text-amber-400 font-bold">{getDateLabel()}</strong>
+            </span>
+            {selectedDate !== 'todas' && (
+              <button
+                type="button"
+                onClick={() => setSelectedDate('todas')}
+                className="text-[10px] text-cyan-400 hover:underline font-semibold"
+              >
+                Ver Geral (Todas as Datas)
+              </button>
+            )}
+          </div>
+
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={() => handleOpenAddModal(selectedDate !== 'todas' ? selectedDate : todayKey)}
+              className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold transition-all shadow-[0_0_10px_rgba(245,158,11,0.35)] flex items-center gap-1 active:scale-95"
+            >
+              <Plus size={13} />
+              <span>Lançar Corrida nesta Data</span>
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* 2. RESUMO FINANCEIRO DO DIA SELECIONADO NO TOPO */}
+      {/* =========================================================================
+          2. RESUMO FINANCEIRO DO DIA SELECIONADO NO TOPO
+          ========================================================================= */}
       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#141E38] via-[#101932] to-[#0B132B] border border-cyan-500/40 p-4 shadow-xl">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
@@ -339,29 +438,17 @@ export const HistoryScreen: React.FC = () => {
             </div>
           </div>
 
-          {/* Botões do Topo: Lançar Corrida Retrô e Exportar Diário */}
+          {/* Botão Exportar Diário */}
           <div className="flex items-center gap-1.5">
-            {isAdmin && (
-              <button
-                type="button"
-                onClick={handleOpenAddModal}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-slate-950 font-bold text-xs shadow-[0_0_12px_rgba(0,180,216,0.35)] transition-all active:scale-95"
-                title="Adicionar corridas que foram feitas em datas anteriores ou hoje"
-              >
-                <Plus size={14} />
-                <span>+ Lançar Corrida</span>
-              </button>
-            )}
-
             {isAdmin ? (
               <button
                 type="button"
                 onClick={() => exportDailyReport(selectedDate, dateRentals)}
-                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-[#0B132B] hover:bg-slate-800 border border-cyan-500/40 text-cyan-300 font-bold text-xs transition-all active:scale-95"
+                className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs shadow-[0_0_12px_rgba(0,180,216,0.3)] transition-all active:scale-95"
                 title="Exportar Relatório CSV desta data"
               >
                 <Download size={13} />
-                <span className="hidden sm:inline">Exportar Diário</span>
+                <span>Exportar Diário</span>
               </button>
             ) : (
               <span className="text-[10px] text-amber-400/90 font-medium flex items-center gap-1">
@@ -427,7 +514,9 @@ export const HistoryScreen: React.FC = () => {
         )}
       </div>
 
-      {/* 3. FILTROS & BUSCA */}
+      {/* =========================================================================
+          3. FILTROS & BUSCA
+          ========================================================================= */}
       <div className="flex items-center gap-2">
         <div className="relative flex-1">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -458,7 +547,9 @@ export const HistoryScreen: React.FC = () => {
         </div>
       </div>
 
-      {/* 4. LISTAGEM DE CORRIDAS */}
+      {/* =========================================================================
+          4. LISTAGEM DE CORRIDAS
+          ========================================================================= */}
       <div className="space-y-2">
         <div className="flex items-center justify-between text-xs text-slate-400 px-1">
           <span>{filteredRentals.length} corridas listadas para {getDateLabel()}</span>
@@ -484,8 +575,8 @@ export const HistoryScreen: React.FC = () => {
             {isAdmin && (
               <button
                 type="button"
-                onClick={handleOpenAddModal}
-                className="px-3.5 py-2 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/40 text-cyan-300 font-bold text-xs inline-flex items-center gap-1.5 transition-all"
+                onClick={() => handleOpenAddModal(selectedDate !== 'todas' ? selectedDate : todayKey)}
+                className="px-3.5 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/40 text-amber-300 font-bold text-xs inline-flex items-center gap-1.5 transition-all"
               >
                 <Plus size={14} />
                 <span>Lançar Corrida nesta Data</span>
@@ -592,14 +683,16 @@ export const HistoryScreen: React.FC = () => {
         )}
       </div>
 
-      {/* MODAL: LANÇAR CORRIDA RETRÔ / PASSADA NO HISTÓRICO */}
+      {/* =========================================================================
+          MODAL: LANÇAR CORRIDA RETRÔ / PASSADA NO HISTÓRICO
+          ========================================================================= */}
       {isAddModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-sm animate-in fade-in overflow-y-auto">
           <div className="w-full max-w-md rounded-2xl bg-[#0F172A] border border-cyan-500/40 p-5 shadow-2xl space-y-4 my-8">
             <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
               <div>
                 <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                  <Plus size={16} className="text-cyan-400" />
+                  <Plus size={16} className="text-amber-400" />
                   Lançar Corrida no Histórico
                 </h3>
                 <p className="text-[11px] text-slate-400 mt-0.5">
@@ -706,7 +799,7 @@ export const HistoryScreen: React.FC = () => {
                       onClick={() => handleDurationChange(dur)}
                       className={`py-1.5 rounded-lg border text-xs font-bold transition-all ${
                         addDuration === dur
-                          ? 'bg-cyan-500 text-slate-950 border-cyan-400 font-extrabold shadow-sm'
+                          ? 'bg-amber-500 text-slate-950 border-amber-400 font-extrabold shadow-sm'
                           : 'bg-[#141E38] border-slate-700 text-slate-300'
                       }`}
                     >
@@ -796,7 +889,7 @@ export const HistoryScreen: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 rounded-xl bg-cyan-400 hover:bg-cyan-300 text-slate-950 text-xs font-bold shadow-[0_0_12px_rgba(0,180,216,0.35)]"
+                  className="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold shadow-[0_0_12px_rgba(245,158,11,0.35)]"
                 >
                   Gravar no Histórico
                 </button>
@@ -806,7 +899,9 @@ export const HistoryScreen: React.FC = () => {
         </div>
       )}
 
-      {/* MODAL: EDITAR CORRIDA COMPLETA */}
+      {/* =========================================================================
+          MODAL: EDITAR CORRIDA COMPLETA
+          ========================================================================= */}
       {editingRental && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-sm animate-in fade-in overflow-y-auto">
           <div className="w-full max-w-sm rounded-2xl bg-[#0F172A] border border-cyan-500/40 p-5 shadow-2xl space-y-4 my-8">
@@ -972,7 +1067,9 @@ export const HistoryScreen: React.FC = () => {
         </div>
       )}
 
-      {/* MODAL: CONFIRMAR EXCLUSÃO INDIVIDUAL */}
+      {/* =========================================================================
+          MODAL: CONFIRMAR EXCLUSÃO INDIVIDUAL
+          ========================================================================= */}
       {rentalToDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in">
           <div className="w-full max-w-sm rounded-2xl bg-[#0F172A] border border-rose-500/40 p-5 shadow-2xl space-y-3.5 text-center">
@@ -1009,7 +1106,9 @@ export const HistoryScreen: React.FC = () => {
         </div>
       )}
 
-      {/* MODAL: CONFIRMAR LIMPAR TODO HISTÓRICO */}
+      {/* =========================================================================
+          MODAL: CONFIRMAR LIMPAR TODO HISTÓRICO
+          ========================================================================= */}
       {showClearConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in">
           <div className="w-full max-w-sm rounded-2xl bg-[#0F172A] border border-rose-500/40 p-5 shadow-2xl space-y-3.5 text-center">
