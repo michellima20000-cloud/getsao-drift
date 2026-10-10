@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useDriftPark } from '../context/DriftParkContext';
-import { Vehicle, VehicleCategory, VehicleStatus, UserRole } from '../types';
+import { Vehicle, VehicleCategory, UserRole } from '../types';
 import {
   ShieldCheck,
   Plus,
@@ -10,17 +10,8 @@ import {
   Settings,
   Trash2,
   Wrench,
-  CheckCircle,
-  Building2,
   Lock,
-  Flame,
-  Compass,
-  Zap,
   X,
-  Sparkles,
-  Camera,
-  Upload,
-  Image as ImageIcon,
   Pencil,
 } from 'lucide-react';
 
@@ -28,8 +19,6 @@ export const ManagementScreen: React.FC = () => {
   const {
     currentUser,
     currentTenant,
-    allTenants,
-    switchTenant,
     vehicles,
     users,
     addVehicle,
@@ -53,8 +42,6 @@ export const ManagementScreen: React.FC = () => {
   const [vehName, setVehName] = useState('');
   const [vehCode, setVehCode] = useState('');
   const [vehCategory, setVehCategory] = useState<VehicleCategory>('DRIFT');
-  const [vehImageUrl, setVehImageUrl] = useState<string>('');
-  const [isCustomUrlMode, setIsCustomUrlMode] = useState(false);
 
   // New Sub Account Form
   const [subName, setSubName] = useState('');
@@ -69,64 +56,26 @@ export const ManagementScreen: React.FC = () => {
   const [newPriceValue, setNewPriceValue] = useState<string>('25');
 
   // Delete Operator Modal
-  const [operatorToDelete, setOperatorToDelete] = useState<{ id: string; name: string; email?: string } | null>(null);
+  const [operatorToDelete, setOperatorToDelete] = useState<{ id: string; name: string } | null>(null);
 
   const isAdmin = currentUser?.role === 'admin';
 
-  // HIERARQUIA & EXIBIÇÃO DE SUB-CONTAS DESTE PERFIL
-  // 1. Administrador logado atual (card de destaque no topo)
+  // HIERARQUIA & ISOLAMENTO ESTRITO POR tenantId
+  // 1. Administrador logado atual (apenas 1 card no topo)
   const adminUser = currentUser;
-  const currentEmail = (currentUser?.email || '').toLowerCase().trim();
-  const currentTenantId = currentUser?.tenantId;
 
-  // 2. Sub-contas que pertencem ESTRITAMENTE a este administrador / este perfil
-  const allSubAccounts = users.filter((u) => {
-    const userEmail = (u.email || '').toLowerCase().trim();
-    if (!userEmail) return false;
-    if (userEmail === currentEmail) return false;
-    if (u.id === currentUser?.id) return false;
+  // 2. Operadores vinculados estritamente ao tenantId do Administrador
+  const tenantOperators = users.filter(
+    (u) =>
+      u.tenantId === currentUser?.tenantId &&
+      u.role === 'operador' &&
+      u.id !== currentUser?.id &&
+      u.email.toLowerCase() !== (currentUser?.email || '').toLowerCase()
+  );
 
-    // Não exibe outros administradores globais/de outros parques como sub-contas
-    if (u.role === 'admin' && u.tenantId !== currentTenantId) {
-      return false;
-    }
-
-    // Se este perfil é Michel Lima (Matriz):
-    // Carol Lima e qualquer conta criada por Adm Clécio NUNCA aparecem neste perfil!
-    if (currentEmail === 'michel.lima20000@gmail.com') {
-      if (userEmail === 'carollimap1993@gmail.com' || userEmail === 'admcledson@gmail.com') {
-        return false;
-      }
-      if (u.createdBy === 'admcledson@gmail.com' || u.adminEmail === 'admcledson@gmail.com') {
-        return false;
-      }
-      if (u.tenantId === 'tenant_clecio_drift') {
-        return false;
-      }
-    }
-
-    // Se este perfil é Adm Clécio:
-    // Exibe apenas as sub-contas criadas para a pista dele
-    if (currentEmail === 'admcledson@gmail.com') {
-      const isForClecio =
-        userEmail === 'carollimap1993@gmail.com' ||
-        u.tenantId === 'tenant_clecio_drift' ||
-        u.createdBy === 'admcledson@gmail.com' ||
-        u.adminEmail === 'admcledson@gmail.com';
-      return isForClecio;
-    }
-
-    // Regra geral para qualquer outro administrador:
-    return (
-      (u.tenantId && u.tenantId === currentTenantId) ||
-      (u.createdBy && u.createdBy.toLowerCase() === currentEmail) ||
-      (u.adminEmail && u.adminEmail.toLowerCase() === currentEmail)
-    );
-  });
-
-  // Deduplicação estrita por email para garantir lista perfeita na UI
-  const uniqueSubAccounts = Array.from(
-    new Map(allSubAccounts.map((op) => [op.email.toLowerCase(), op])).values()
+  // Deduplicação estrita para garantir zero repetições na UI
+  const uniqueOperators = Array.from(
+    new Map(tenantOperators.map((op) => [op.email.toLowerCase(), op])).values()
   );
 
   const handleOpenNewVehicle = () => {
@@ -134,8 +83,6 @@ export const ManagementScreen: React.FC = () => {
     setVehName('');
     setVehCode(`#${vehicles.length + 1}`);
     setVehCategory('DRIFT');
-    setVehImageUrl('');
-    setIsCustomUrlMode(false);
     setIsVehicleModalOpen(true);
   };
 
@@ -144,46 +91,7 @@ export const ManagementScreen: React.FC = () => {
     setVehName(veh.name);
     setVehCode(veh.code);
     setVehCategory(veh.category);
-    setVehImageUrl(veh.imageUrl || '');
-    setIsCustomUrlMode(false);
     setIsVehicleModalOpen(true);
-  };
-
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const maxDim = 400;
-        let width = img.width;
-        let height = img.height;
-        if (width > height) {
-          if (width > maxDim) {
-            height = Math.round((height * maxDim) / width);
-            width = maxDim;
-          }
-        } else {
-          if (height > maxDim) {
-            width = Math.round((width * maxDim) / height);
-            height = maxDim;
-          }
-        }
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(img, 0, 0, width, height);
-          const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
-          setVehImageUrl(dataUrl);
-        }
-      };
-      img.src = event.target?.result as string;
-    };
-    reader.readAsDataURL(file);
   };
 
   const handleSaveVehicle = (e: React.FormEvent) => {
@@ -197,20 +105,17 @@ export const ManagementScreen: React.FC = () => {
         name: vehName.trim(),
         code: formattedCode,
         category: vehCategory,
-        imageUrl: vehImageUrl.trim() || undefined,
       });
     } else {
       addVehicle(
         vehName.trim(),
         formattedCode,
-        vehCategory,
-        vehImageUrl.trim() || undefined
+        vehCategory
       );
     }
 
     setVehName('');
     setVehCode('');
-    setVehImageUrl('');
     setEditingVehicle(null);
     setIsVehicleModalOpen(false);
   };
@@ -353,7 +258,7 @@ export const ManagementScreen: React.FC = () => {
 
           {/* [Exportar Diário] */}
           <button
-            onClick={() => exportDailyReport()}
+            onClick={exportDailyReport}
             className="p-3 rounded-xl border bg-[#141E38] hover:bg-[#1C2541] border-cyan-500/40 text-cyan-300 hover:scale-[1.02] shadow-sm flex flex-col items-center justify-center text-center transition-all"
           >
             <div className="w-8 h-8 rounded-lg bg-cyan-500/20 flex items-center justify-center mb-1 text-cyan-400">
@@ -396,22 +301,9 @@ export const ManagementScreen: React.FC = () => {
                 className="rounded-xl bg-[#141E38] border border-slate-700/80 p-3 hover:border-cyan-500/50 transition-all flex items-center justify-between gap-2 shadow-sm"
               >
                 <div className="flex items-center gap-3 min-w-0">
-                  {/* Photo or Category / Code Avatar */}
-                  <div className="relative w-12 h-12 rounded-xl overflow-hidden bg-[#0B132B] border border-slate-700 shrink-0 flex items-center justify-center">
-                    {veh.imageUrl ? (
-                      <img
-                        src={veh.imageUrl}
-                        alt={veh.name}
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <span className="text-sm">
-                        {veh.category === 'DRIFT' ? '🏎️' : veh.category === 'JEEP' ? '🚙' : '⚡'}
-                      </span>
-                    )}
-                    <span className="absolute bottom-0 right-0 px-1 py-0.5 bg-black/80 rounded-tl text-[9px] font-black text-cyan-400 font-display leading-none">
-                      {veh.code}
-                    </span>
+                  {/* Code Avatar */}
+                  <div className="w-11 h-11 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-300 font-bold font-display text-sm shrink-0">
+                    {veh.code}
                   </div>
 
                   <div className="min-w-0">
@@ -445,7 +337,7 @@ export const ManagementScreen: React.FC = () => {
                       <button
                         onClick={() => handleOpenEditVehicle(veh)}
                         className="p-1.5 rounded-lg bg-slate-800 text-slate-300 hover:text-cyan-300 border border-slate-700 hover:border-cyan-500/40 transition-colors"
-                        title="Editar veículo e alterar foto"
+                        title="Editar dados do veículo"
                       >
                         <Pencil size={12} />
                       </button>
@@ -488,7 +380,7 @@ export const ManagementScreen: React.FC = () => {
         <div className="flex items-center justify-between">
           <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
             <UserPlus size={13} className="text-amber-400" />
-            Equipe & Sub-Contas ({uniqueSubAccounts.length} Cadastrada{uniqueSubAccounts.length === 1 ? '' : 's'})
+            Equipe & Sub-Contas (1 Dono · {uniqueOperators.length} Operador{uniqueOperators.length === 1 ? '' : 'es'})
           </div>
 
           {isAdmin && (
@@ -532,121 +424,62 @@ export const ManagementScreen: React.FC = () => {
           </div>
 
           {/* ========================================================================= */}
-          {/* ABAIXO: TODAS AS SUB-CONTAS E CONTAS REGISTRADAS NO FIREBASE */}
+          {/* ABAIXO: APENAS OS OPERADORES VINCULADOS A ESTA CONTA */}
           {/* ========================================================================= */}
           <div className="pt-1.5 space-y-2">
             <div className="flex items-center justify-between text-[10px] uppercase font-bold text-slate-400 tracking-wider">
-              <span>Sub-Contas & Operadores do Firebase ({uniqueSubAccounts.length})</span>
+              <span>Operadores Cadastrados ({uniqueOperators.length})</span>
               <span className="text-[9px] text-cyan-400 font-medium">
-                Sincronizado na Nuvem
+                Acesso Restrito à Pista
               </span>
             </div>
 
-            {uniqueSubAccounts.length === 0 ? (
+            {uniqueOperators.length === 0 ? (
               <div className="p-4 rounded-xl bg-[#0B132B]/60 border border-dashed border-slate-700 text-center space-y-1">
                 <p className="text-xs text-slate-300 font-medium">
-                  Nenhuma sub-conta cadastrada ainda.
+                  Nenhum operador cadastrado ainda.
                 </p>
                 <p className="text-[10px] text-slate-500">
-                  Cadastre uma sub-conta acima para gerar login e senha para seu funcionário no Firebase.
+                  Cadastre uma sub-conta acima para gerar login e senha para seu funcionário com perfil restrito.
                 </p>
               </div>
             ) : (
               <div className="space-y-2">
-                {uniqueSubAccounts.map((op) => {
-                  const isOpAdmin = op.role === 'admin';
-                  const isSameTenant = op.tenantId === currentUser?.tenantId;
-                  const isCurrentUserClecio = (currentUser?.email || '').toLowerCase() === 'admcledson@gmail.com';
-                  const isCarol = op.email.toLowerCase() === 'carollimap1993@gmail.com';
-                  const isClecioOp = op.email.toLowerCase() === 'admcledson@gmail.com';
-                  const isLinkedToClecio = isCarol || op.createdBy === 'admcledson@gmail.com' || op.adminEmail === 'admcledson@gmail.com';
-
-                  return (
-                    <div
-                      key={op.id || op.email}
-                      className={`p-3 rounded-xl bg-[#141E38] border flex items-center justify-between text-xs transition-colors ${
-                        (isCarol && isCurrentUserClecio) || isLinkedToClecio
-                          ? 'border-cyan-500/60 shadow-[0_0_12px_rgba(0,240,255,0.08)]'
-                          : 'border-slate-700/80 hover:border-cyan-500/40'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <div
-                          className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs shrink-0 font-bold ${
-                            isOpAdmin
-                              ? 'bg-amber-500/15 border border-amber-500/30 text-amber-300'
-                              : 'bg-cyan-500/10 border border-cyan-500/30 text-cyan-300'
-                          }`}
-                        >
-                          {isOpAdmin ? '👑' : '🏎️'}
-                        </div>
-                        <div>
-                          <div className="font-bold text-white flex items-center gap-1.5 flex-wrap">
-                            <span>{op.name}</span>
-                            {isClecioOp && (
-                              <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 font-semibold">
-                                Adm Clécio
-                              </span>
-                            )}
-                            {isCarol && isCurrentUserClecio && (
-                              <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-semibold">
-                                ⭐ Sua Sub-Conta
-                              </span>
-                            )}
-                            {isCarol && !isCurrentUserClecio && (
-                              <span className="text-[9px] px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-semibold">
-                                Sub-Conta de Adm Clécio
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-[11px] text-slate-400 font-mono flex items-center gap-1.5 mt-0.5">
-                            <span>{op.email}</span>
-                            {isLinkedToClecio && !isCurrentUserClecio && (
-                              <span className="text-[9px] text-slate-500 font-sans">
-                                (Admin: admcledson@gmail.com)
-                              </span>
-                            )}
-                          </div>
-                        </div>
+                {uniqueOperators.map((op) => (
+                  <div
+                    key={op.id}
+                    className="p-3 rounded-xl bg-[#141E38] border border-slate-700/80 flex items-center justify-between text-xs hover:border-cyan-500/40 transition-colors"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-300 text-xs shrink-0 font-bold">
+                        🏎️
                       </div>
-
-                      <div className="flex items-center gap-1.5">
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                            isOpAdmin
-                              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                              : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
-                          }`}
-                        >
-                          {isOpAdmin ? '👑 Administrador' : '🏎️ Operador'}
-                        </span>
-
-                        <span
-                          className={`text-[9px] px-1.5 py-0.5 rounded font-mono ${
-                            isSameTenant || (isCurrentUserClecio && isLinkedToClecio)
-                              ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                              : 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20'
-                          }`}
-                        >
-                          {isSameTenant || (isCurrentUserClecio && isLinkedToClecio)
-                            ? 'Mesma Pista'
-                            : 'Pista Vinculada'}
-                        </span>
-
-                        {isAdmin && (
-                          <button
-                            type="button"
-                            onClick={() => setOperatorToDelete({ id: op.id, name: op.name, email: op.email })}
-                            className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors ml-1"
-                            title="Remover essa conta deste perfil"
-                          >
-                            <Trash2 size={13} />
-                          </button>
-                        )}
+                      <div>
+                        <div className="font-bold text-white flex items-center gap-1.5">
+                          <span>{op.name}</span>
+                        </div>
+                        <div className="text-[11px] text-slate-400 font-mono">{op.email}</div>
                       </div>
                     </div>
-                  );
-                })}
+
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
+                        🏎️ Operador
+                      </span>
+
+                      {isAdmin && (
+                        <button
+                          type="button"
+                          onClick={() => setOperatorToDelete({ id: op.id, name: op.name })}
+                          className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors ml-1"
+                          title="Remover operador"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>
@@ -656,20 +489,20 @@ export const ManagementScreen: React.FC = () => {
       </>
       )}
 
-      {/* MODAL: NOVO VEÍCULO / EDITAR VEÍCULO COM FOTO */}
+      {/* MODAL: NOVO VEÍCULO / EDITAR VEÍCULO */}
       {isVehicleModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-sm animate-in fade-in overflow-y-auto">
-          <div className="w-full max-w-md rounded-2xl bg-[#0F172A] border border-cyan-500/40 p-5 shadow-2xl space-y-4 my-8">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in">
+          <div className="w-full max-w-sm rounded-2xl bg-[#0F172A] border border-cyan-500/40 p-5 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
               <div>
                 <h3 className="text-sm font-bold text-white flex items-center gap-2">
                   <Car size={16} className="text-cyan-400" />
-                  {editingVehicle ? 'Editar Veículo & Foto' : 'Cadastrar Novo Veículo'}
+                  {editingVehicle ? 'Editar Veículo' : 'Cadastrar Novo Veículo'}
                 </h3>
                 <p className="text-[11px] text-slate-400 mt-0.5">
                   {editingVehicle
-                    ? `Atualize os dados e a imagem do veículo ${editingVehicle.code}`
-                    : 'Adicione um novo carrinho com foto personalizada à frota'}
+                    ? `Atualize os dados do veículo ${editingVehicle.code}`
+                    : 'Adicione um novo carrinho à frota'}
                 </p>
               </div>
               <button
@@ -680,7 +513,7 @@ export const ManagementScreen: React.FC = () => {
               </button>
             </div>
 
-            <form onSubmit={handleSaveVehicle} className="space-y-4">
+            <form onSubmit={handleSaveVehicle} className="space-y-3.5">
               {/* 1. Nome e Código */}
               <div className="grid grid-cols-3 gap-2">
                 <div className="col-span-2">
@@ -734,98 +567,8 @@ export const ManagementScreen: React.FC = () => {
                 </div>
               </div>
 
-              {/* 3. Seção de Foto do Carro */}
-              <div className="space-y-2.5 pt-1 border-t border-slate-800">
-                <div className="flex items-center justify-between">
-                  <label className="text-[10px] uppercase font-bold tracking-wider text-cyan-400 flex items-center gap-1.5">
-                    <Camera size={13} />
-                    Foto do Veículo
-                  </label>
-                  {vehImageUrl && (
-                    <button
-                      type="button"
-                      onClick={() => setVehImageUrl('')}
-                      className="text-[10px] text-rose-400 hover:text-rose-300 font-semibold"
-                    >
-                      Remover foto
-                    </button>
-                  )}
-                </div>
-
-                {/* Preview Box */}
-                <div className="flex items-center gap-3 p-2.5 rounded-xl bg-[#141E38]/80 border border-slate-700">
-                  <div className="relative w-20 h-20 rounded-xl overflow-hidden bg-[#0B132B] border border-cyan-500/40 shrink-0 flex items-center justify-center">
-                    {vehImageUrl ? (
-                      <img
-                        src={vehImageUrl}
-                        alt="Foto do carro"
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <div className="text-center p-1">
-                        <Camera size={22} className="mx-auto text-slate-500 mb-0.5" />
-                        <span className="text-[9px] text-slate-500 leading-tight block">Sem foto</span>
-                      </div>
-                    )}
-                    {vehImageUrl && (
-                      <span className="absolute bottom-1 right-1 px-1 py-0.2 bg-black/80 rounded text-[9px] font-mono text-cyan-300 font-bold">
-                        {vehCode || '#00'}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="flex-1 space-y-1.5">
-                    {/* Botão de Upload / Câmera */}
-                    <div>
-                      <input
-                        type="file"
-                        id="car-photo-file-input"
-                        accept="image/*"
-                        onChange={handleImageUpload}
-                        className="hidden"
-                      />
-                      <label
-                        htmlFor="car-photo-file-input"
-                        className="w-full py-2 px-3 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/50 text-cyan-200 text-xs font-bold flex items-center justify-center gap-2 cursor-pointer transition-all shadow-sm"
-                      >
-                        <Upload size={14} className="text-cyan-400" />
-                        <span>Carregar do Aparelho / Câmera</span>
-                      </label>
-                    </div>
-
-                    <div className="flex items-center justify-between text-[10px] text-slate-400 px-1">
-                      <span>Formatos: JPG, PNG, WebP</span>
-                      <button
-                        type="button"
-                        onClick={() => setIsCustomUrlMode(!isCustomUrlMode)}
-                        className="text-cyan-400 hover:underline"
-                      >
-                        {isCustomUrlMode ? 'Ocultar Link' : 'Colar Link URL'}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Campo Opcional de Link URL */}
-                {isCustomUrlMode && (
-                  <div className="p-2.5 rounded-xl bg-[#0B132B] border border-slate-700/80 space-y-1 animate-in fade-in">
-                    <label className="text-[10px] text-slate-400 font-semibold block">
-                      Link direto da imagem na internet:
-                    </label>
-                    <input
-                      type="url"
-                      value={vehImageUrl}
-                      onChange={(e) => setVehImageUrl(e.target.value)}
-                      placeholder="https://exemplo.com/foto-do-carro.jpg"
-                      className="w-full px-2.5 py-1.5 rounded-lg bg-[#141E38] border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400"
-                    />
-                  </div>
-                )}
-
-              </div>
-
               {/* Botões de Ação */}
-              <div className="pt-3 border-t border-slate-800 flex items-center gap-2">
+              <div className="pt-2 flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => {
@@ -1049,20 +792,19 @@ export const ManagementScreen: React.FC = () => {
         </div>
       )}
 
-      {/* MODAL: CONFIRMAR REMOÇÃO DE CONTA DESTE PERFIL */}
+      {/* MODAL: CONFIRMAR EXCLUSÃO DE OPERADOR */}
       {operatorToDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in">
           <div className="w-full max-w-sm rounded-2xl bg-[#0F172A] border border-rose-500/40 p-5 shadow-2xl space-y-3.5 text-center">
             <div className="w-12 h-12 rounded-2xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center mx-auto text-rose-400">
               <Trash2 size={24} />
             </div>
-            <h3 className="text-sm font-bold text-white">Remover conta deste perfil?</h3>
+            <h3 className="text-sm font-bold text-white">Remover operador?</h3>
             <p className="text-xs text-slate-300">
-              Deseja realmente remover o acesso de <strong>{operatorToDelete.name}</strong>
-              {operatorToDelete.email ? ` (${operatorToDelete.email})` : ''}?
+              Deseja realmente remover o acesso de <strong>{operatorToDelete.name}</strong>?
             </p>
             <p className="text-[11px] text-slate-400">
-              Esta sub-conta será removida deste perfil e desconectada do Firebase.
+              Ele não poderá mais acessar o painel de operador desta pista.
             </p>
             <div className="flex items-center gap-2 pt-1">
               <button
@@ -1075,9 +817,9 @@ export const ManagementScreen: React.FC = () => {
               <button
                 type="button"
                 onClick={async () => {
-                  const target = operatorToDelete;
+                  const id = operatorToDelete.id;
                   setOperatorToDelete(null);
-                  await deleteOperator(target.id, target.email);
+                  await deleteOperator(id);
                 }}
                 className="flex-1 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold shadow-md"
               >

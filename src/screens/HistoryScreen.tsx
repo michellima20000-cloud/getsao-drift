@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import { useDriftPark } from '../context/DriftParkContext';
 import { Rental, PaymentMethod, PaymentStatus } from '../types';
 import {
@@ -18,87 +18,25 @@ import {
   X,
   FileSpreadsheet,
   Trash2,
-  Plus,
-  ChevronLeft,
-  ChevronRight,
-  Sparkles,
-  CalendarDays,
 } from 'lucide-react';
-
-const MONTH_NAMES = [
-  'JANEIRO',
-  'FEVEREIRO',
-  'MARÇO',
-  'ABRIL',
-  'MAIO',
-  'JUNHO',
-  'JULHO',
-  'AGOSTO',
-  'SETEMBRO',
-  'OUTUBRO',
-  'NOVEMBRO',
-  'DEZEMBRO',
-];
-
-const WEEKDAYS = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB'];
 
 export const HistoryScreen: React.FC = () => {
   const {
     rentals,
-    vehicles,
-    currentTenant,
     exportDailyReport,
     updateRentalPayment,
-    updateRentalDetails,
-    addPastRental,
     deleteRental,
     clearRentalHistory,
     currentUser,
   } = useDriftPark();
   const isAdmin = currentUser?.role === 'admin';
 
-  // Helper de formatação de data YYYY-MM-DD
-  const formatDateKey = (d: Date | number) => {
-    const date = new Date(d);
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${y}-${m}-${day}`;
-  };
-
-  const today = new Date();
-  const todayKey = formatDateKey(today);
-
-  // Estados do Calendário Visual
-  const [calendarYear, setCalendarYear] = useState<number>(today.getFullYear());
-  const [calendarMonth, setCalendarMonth] = useState<number>(today.getMonth()); // 0-11
-  const [selectedDate, setSelectedDate] = useState<string>(todayKey);
-
-  // Search e filtro de status de pagamento
+  // Search and filter
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'TODOS' | 'PAGO' | 'NAO_PAGO'>('TODOS');
 
-  // Modal: Lançar Corrida Retrô / Adicionar Corrida Passada
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [addDate, setAddDate] = useState<string>(todayKey);
-  const [addTime, setAddTime] = useState<string>(() => {
-    const d = new Date();
-    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-  });
-  const [addVehicleId, setAddVehicleId] = useState<string>(vehicles[0]?.id || '');
-  const [addCustomerName, setAddCustomerName] = useState('');
-  const [addCustomerPhone, setAddCustomerPhone] = useState('');
-  const [addDuration, setAddDuration] = useState<number>(10);
-  const [addAmount, setAddAmount] = useState<number>(() => currentTenant.pricing[10] || 25);
-  const [addMethod, setAddMethod] = useState<PaymentMethod>('PIX');
-  const [addStatus, setAddStatus] = useState<PaymentStatus>('PAGO');
-
-  // Modal: Editar Corrida Existente
+  // Edit modal state
   const [editingRental, setEditingRental] = useState<Rental | null>(null);
-  const [editCustomerName, setEditCustomerName] = useState('');
-  const [editAmount, setEditAmount] = useState<number>(25);
-  const [editDate, setEditDate] = useState<string>(todayKey);
-  const [editTime, setEditTime] = useState<string>('12:00');
   const [editMethod, setEditMethod] = useState<PaymentMethod>('PIX');
   const [editStatus, setEditStatus] = useState<PaymentStatus>('PAGO');
 
@@ -106,81 +44,35 @@ export const HistoryScreen: React.FC = () => {
   const [rentalToDelete, setRentalToDelete] = useState<Rental | null>(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
 
-  // Conjunto de datas que possuem corridas gravadas (para exibir o pontinho verde no calendário)
-  const datesWithRaces = useMemo(() => {
-    const set = new Set<string>();
-    rentals.forEach((r) => {
-      set.add(formatDateKey(r.createdAt));
-    });
-    return set;
-  }, [rentals]);
+  // Today's rentals
+  const todayStr = new Date().toDateString();
+  const todayRentals = rentals.filter(
+    (r) => new Date(r.createdAt).toDateString() === todayStr
+  );
 
-  // Controles de Navegação de Mês do Calendário
-  const handlePrevMonth = () => {
-    if (calendarMonth === 0) {
-      setCalendarMonth(11);
-      setCalendarYear((prev) => prev - 1);
-    } else {
-      setCalendarMonth((prev) => prev - 1);
-    }
-  };
-
-  const handleNextMonth = () => {
-    if (calendarMonth === 11) {
-      setCalendarMonth(0);
-      setCalendarYear((prev) => prev + 1);
-    } else {
-      setCalendarMonth((prev) => prev + 1);
-    }
-  };
-
-  const handleGoToToday = () => {
-    const now = new Date();
-    setCalendarYear(now.getFullYear());
-    setCalendarMonth(now.getMonth());
-    setSelectedDate(formatDateKey(now));
-  };
-
-  // Cálculo dos dias do mês do calendário
-  const calendarDays = useMemo(() => {
-    const firstDayIndex = new Date(calendarYear, calendarMonth, 1).getDay(); // 0 = DOM
-    const totalDays = new Date(calendarYear, calendarMonth + 1, 0).getDate();
-
-    const blanks: null[] = Array(firstDayIndex).fill(null);
-    const days: number[] = Array.from({ length: totalDays }, (_, i) => i + 1);
-
-    return [...blanks, ...days];
-  }, [calendarYear, calendarMonth]);
-
-  // Corridas correspondentes à data selecionada no calendário
-  const dateRentals = rentals.filter((r) => {
-    if (selectedDate === 'todas') return true;
-    return formatDateKey(r.createdAt) === selectedDate;
-  });
-
-  // Resumo financeiro calculado dinamicamente para a data selecionada
-  const totalRevenue = dateRentals
+  // Financial summary
+  const totalRevenue = todayRentals
     .filter((r) => r.paymentStatus === 'PAGO')
     .reduce((acc, curr) => acc + curr.amount, 0);
 
-  const pendingAmount = dateRentals
+  const pendingAmount = todayRentals
     .filter((r) => r.paymentStatus === 'NAO_PAGO')
     .reduce((acc, curr) => acc + curr.amount, 0);
 
-  const pixTotal = dateRentals
+  const pixTotal = todayRentals
     .filter((r) => r.paymentStatus === 'PAGO' && r.paymentMethod === 'PIX')
     .reduce((acc, curr) => acc + curr.amount, 0);
 
-  const cardTotal = dateRentals
+  const cardTotal = todayRentals
     .filter((r) => r.paymentStatus === 'PAGO' && r.paymentMethod === 'CARTAO')
     .reduce((acc, curr) => acc + curr.amount, 0);
 
-  const cashTotal = dateRentals
+  const cashTotal = todayRentals
     .filter((r) => r.paymentStatus === 'PAGO' && r.paymentMethod === 'DINHEIRO')
     .reduce((acc, curr) => acc + curr.amount, 0);
 
-  // Lista com busca e filtro de status de pagamento
-  const filteredRentals = dateRentals.filter((r) => {
+  // Filter list
+  const filteredRentals = rentals.filter((r) => {
     const matchesSearch =
       r.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       r.vehicleName.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -190,333 +82,107 @@ export const HistoryScreen: React.FC = () => {
     return matchesSearch && matchesStatus;
   });
 
-  // Ao abrir o modal de lançar corrida passada
-  const handleOpenAddModal = (dateToUse?: string) => {
-    const dStr = dateToUse || (selectedDate !== 'todas' ? selectedDate : todayKey);
-    setAddDate(dStr);
-    const d = new Date();
-    setAddTime(`${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`);
-    setAddVehicleId(vehicles[0]?.id || '');
-    setAddCustomerName('');
-    setAddCustomerPhone('');
-    setAddDuration(10);
-    setAddAmount(currentTenant.pricing[10] || 25);
-    setAddMethod('PIX');
-    setAddStatus('PAGO');
-    setIsAddModalOpen(true);
-  };
-
-  // Ao mudar duração na criação, atualiza valor padrão
-  const handleDurationChange = (dur: number) => {
-    setAddDuration(dur);
-    const price = currentTenant.pricing[dur];
-    if (price !== undefined) {
-      setAddAmount(price);
-    }
-  };
-
-  // Salvar corrida passada
-  const handleSavePastRental = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!addCustomerName.trim()) return;
-
-    const [y, m, d] = addDate.split('-').map(Number);
-    const [hours, minutes] = (addTime || '12:00').split(':').map(Number);
-    const raceTimestamp = new Date(y, m - 1, d, hours || 12, minutes || 0).getTime();
-
-    addPastRental({
-      vehicleId: addVehicleId || (vehicles[0]?.id ?? 'veh_01'),
-      customerName: addCustomerName.trim(),
-      customerPhone: addCustomerPhone.trim(),
-      durationMinutes: addDuration,
-      amount: Number(addAmount) || 0,
-      paymentMethod: addMethod,
-      paymentStatus: addStatus,
-      timestamp: raceTimestamp,
-    });
-
-    // Sincroniza calendário para o dia da corrida lançada
-    setSelectedDate(addDate);
-    setCalendarYear(y);
-    setCalendarMonth(m - 1);
-    setIsAddModalOpen(false);
-  };
-
-  // Ao abrir edição de corrida
   const handleOpenEdit = (rental: Rental) => {
     setEditingRental(rental);
-    setEditCustomerName(rental.customerName);
-    setEditAmount(rental.amount);
-    setEditDate(formatDateKey(rental.createdAt));
-    const d = new Date(rental.createdAt);
-    setEditTime(`${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`);
     setEditMethod(rental.paymentMethod);
     setEditStatus(rental.paymentStatus);
   };
 
-  // Salvar edição completa de corrida
-  const handleSaveEdit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingRental) return;
-
-    const [y, m, d] = editDate.split('-').map(Number);
-    const [hours, minutes] = (editTime || '12:00').split(':').map(Number);
-    const newTimestamp = new Date(y, m - 1, d, hours || 12, minutes || 0).getTime();
-
-    updateRentalDetails(editingRental.id, {
-      customerName: editCustomerName.trim() || editingRental.customerName,
-      amount: Number(editAmount) || editingRental.amount,
-      paymentMethod: editMethod,
-      paymentStatus: editStatus,
-      createdAt: newTimestamp,
-      startTime: newTimestamp,
-      endTime: newTimestamp + editingRental.durationMinutes * 60 * 1000,
-    });
-
-    setEditingRental(null);
-  };
-
-  // Título dinâmico da data
-  const getDateLabel = () => {
-    if (selectedDate === 'todas') return 'Todas as Datas (Geral)';
-    if (selectedDate === todayKey) return `Hoje (${selectedDate.split('-').reverse().join('/')})`;
-    return selectedDate.split('-').reverse().join('/');
+  const handleSaveEdit = () => {
+    if (editingRental) {
+      updateRentalPayment(editingRental.id, editMethod, editStatus);
+      setEditingRental(null);
+    }
   };
 
   return (
     <div className="space-y-4 pb-8">
-      {/* =========================================================================
-          1. CALENDÁRIO VISUAL ESTILIZADO (CONFORME IMAGEM DE REFERÊNCIA)
-          ========================================================================= */}
-      <div className="rounded-2xl bg-[#0F172A] border border-slate-800 p-4 shadow-xl">
-        {/* Top Header do Calendário: MÊS ANO, NAVEGAÇÃO DA AGENDA, HOJE, <, > */}
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h3 className="text-base font-extrabold text-white tracking-wider font-display">
-              {MONTH_NAMES[calendarMonth]} {calendarYear}
-            </h3>
-            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">
-              NAVEGAÇÃO DA AGENDA
-            </p>
-          </div>
-
-          <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={handleGoToToday}
-              className="px-2.5 py-1 rounded-lg text-[10px] font-black text-amber-400 hover:text-amber-300 bg-amber-400/10 border border-amber-400/30 hover:bg-amber-400/20 transition-all uppercase tracking-wider"
-              title="Ir para a data de hoje"
-            >
-              HOJE
-            </button>
-
-            <button
-              type="button"
-              onClick={handlePrevMonth}
-              className="w-7 h-7 rounded-lg bg-[#141E38] hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center transition-colors border border-slate-700/60"
-              title="Mês anterior"
-            >
-              <ChevronLeft size={16} />
-            </button>
-
-            <button
-              type="button"
-              onClick={handleNextMonth}
-              className="w-7 h-7 rounded-lg bg-[#141E38] hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center transition-colors border border-slate-700/60"
-              title="Próximo mês"
-            >
-              <ChevronRight size={16} />
-            </button>
-          </div>
-        </div>
-
-        {/* Linha dos Dias da Semana (DOM SEG TER QUA QUI SEX SÁB) */}
-        <div className="grid grid-cols-7 mb-2 text-center">
-          {WEEKDAYS.map((wd) => (
-            <div
-              key={wd}
-              className="text-[10px] font-extrabold text-slate-400 tracking-wider py-1"
-            >
-              {wd}
-            </div>
-          ))}
-        </div>
-
-        {/* Grade dos Dias do Mês */}
-        <div className="grid grid-cols-7 gap-y-2 gap-x-1 place-items-center">
-          {calendarDays.map((dayNum, idx) => {
-            if (dayNum === null) {
-              return <div key={`blank-${idx}`} className="w-9 h-9" />;
-            }
-
-            const dayStr = String(dayNum).padStart(2, '0');
-            const monthStr = String(calendarMonth + 1).padStart(2, '0');
-            const dateKey = `${calendarYear}-${monthStr}-${dayStr}`;
-
-            const isSelected = selectedDate === dateKey;
-            const isToday = todayKey === dateKey;
-            const hasRaces = datesWithRaces.has(dateKey);
-
-            return (
-              <button
-                key={dateKey}
-                type="button"
-                onClick={() => setSelectedDate(dateKey)}
-                className={`w-9 h-9 rounded-full flex flex-col items-center justify-center transition-all relative ${
-                  isSelected
-                    ? 'bg-amber-500 text-slate-950 font-black shadow-[0_0_14px_rgba(245,158,11,0.5)] scale-105'
-                    : isToday
-                    ? 'bg-[#1C2541] text-amber-300 font-bold border border-amber-400/40 hover:bg-slate-700'
-                    : 'text-slate-300 hover:bg-slate-800/80 hover:text-white font-medium'
-                }`}
-                title={`${dayStr}/${monthStr}/${calendarYear}${hasRaces ? ' (Possui corridas)' : ''}`}
-              >
-                <span className="text-xs leading-none">{dayNum}</span>
-                {hasRaces && (
-                  <span
-                    className={`w-1.5 h-1.5 rounded-full mt-0.5 ${
-                      isSelected
-                        ? 'bg-slate-950'
-                        : 'bg-emerald-400 shadow-[0_0_4px_rgba(52,211,153,0.8)]'
-                    }`}
-                  />
-                )}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Rodapé do Calendário: Status da Seleção e Ação Rápida */}
-        <div className="mt-4 pt-3 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-2 text-xs">
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] text-slate-400 font-medium">
-              Data selecionada:{' '}
-              <strong className="text-amber-400 font-bold">{getDateLabel()}</strong>
-            </span>
-            {selectedDate !== 'todas' && (
-              <button
-                type="button"
-                onClick={() => setSelectedDate('todas')}
-                className="text-[10px] text-cyan-400 hover:underline font-semibold"
-              >
-                Ver Geral (Todas as Datas)
-              </button>
-            )}
-          </div>
-
-          {isAdmin && (
-            <button
-              type="button"
-              onClick={() => handleOpenAddModal(selectedDate !== 'todas' ? selectedDate : todayKey)}
-              className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold transition-all shadow-[0_0_10px_rgba(245,158,11,0.35)] flex items-center gap-1 active:scale-95"
-            >
-              <Plus size={13} />
-              <span>Lançar Corrida nesta Data</span>
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* =========================================================================
-          2. RESUMO FINANCEIRO DO DIA SELECIONADO NO TOPO
-          ========================================================================= */}
+      {/* 1. Resumo Financeiro no Topo (Acessível apenas ao Admin) */}
       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#141E38] via-[#101932] to-[#0B132B] border border-cyan-500/40 p-4 shadow-xl">
         <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-2">
-            <div className="p-1.5 rounded-lg bg-cyan-500/20 text-cyan-400">
-              <DollarSign size={16} />
-            </div>
-            <div>
-              <div className="text-[11px] font-bold uppercase tracking-wider text-cyan-400">
-                {selectedDate === 'todas'
-                  ? 'Faturamento Total Acumulado'
-                  : `Extrato Diário · ${getDateLabel()}`}
-              </div>
-              <p className="text-[10px] text-slate-400">
-                {dateRentals.length} corridas registradas nesta data
-              </p>
-            </div>
+          <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-cyan-400">
+            <DollarSign size={15} />
+            {isAdmin ? 'Faturamento do Dia' : 'Resumo de Corridas do Dia'}
           </div>
 
-          {/* Botão Exportar Diário */}
-          <div className="flex items-center gap-1.5">
-            {isAdmin ? (
-              <button
-                type="button"
-                onClick={() => exportDailyReport(selectedDate, dateRentals)}
-                className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs shadow-[0_0_12px_rgba(0,180,216,0.3)] transition-all active:scale-95"
-                title="Exportar Relatório CSV desta data"
-              >
-                <Download size={13} />
-                <span>Exportar Diário</span>
-              </button>
-            ) : (
-              <span className="text-[10px] text-amber-400/90 font-medium flex items-center gap-1">
-                🔒 Operador
-              </span>
-            )}
-          </div>
+          {/* Botão Exportar Diário (Admin) */}
+          {isAdmin ? (
+            <button
+              onClick={exportDailyReport}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs shadow-[0_0_12px_rgba(0,180,216,0.3)] transition-all active:scale-95"
+              title="Exportar Relatório Diário CSV / Excel"
+            >
+              <Download size={13} />
+              <span>Exportar Diário</span>
+            </button>
+          ) : (
+            <span className="text-[10px] text-amber-400/90 font-medium flex items-center gap-1">
+              🔒 Perfil Operador
+            </span>
+          )}
         </div>
 
         {isAdmin ? (
           <>
-            {/* Display do Faturamento da Data Selecionada */}
-            <div className="my-2.5">
+            {/* Big Display of Day Revenue (Admin only) */}
+            <div className="my-2">
               <span className="text-3xl font-black text-white font-display tracking-tight glow-cyan-text">
                 R$ {totalRevenue.toFixed(2)}
               </span>
               <span className="text-xs text-slate-400 ml-2">
-                ({dateRentals.filter((r) => r.paymentStatus === 'PAGO').length} pagas)
+                ({todayRentals.length} corridas realizadas)
               </span>
             </div>
 
-            {/* Breakdown dos Métodos de Pagamento */}
+            {/* Breakdown by Payment Method */}
             <div className="grid grid-cols-4 gap-1.5 mt-3 pt-3 border-t border-slate-700/80 text-center">
-              <div className="p-2 rounded-xl bg-[#0B132B]/90 border border-emerald-500/30">
+              <div className="p-1.5 rounded-lg bg-[#0B132B]/80 border border-emerald-500/30">
                 <div className="text-[9px] uppercase font-bold text-emerald-400">PIX</div>
                 <div className="text-xs font-extrabold text-white">R$ {pixTotal.toFixed(0)}</div>
               </div>
 
-              <div className="p-2 rounded-xl bg-[#0B132B]/90 border border-cyan-500/30">
+              <div className="p-1.5 rounded-lg bg-[#0B132B]/80 border border-cyan-500/30">
                 <div className="text-[9px] uppercase font-bold text-cyan-400">Cartão</div>
                 <div className="text-xs font-extrabold text-white">R$ {cardTotal.toFixed(0)}</div>
               </div>
 
-              <div className="p-2 rounded-xl bg-[#0B132B]/90 border border-amber-500/30">
+              <div className="p-1.5 rounded-lg bg-[#0B132B]/80 border border-amber-500/30">
                 <div className="text-[9px] uppercase font-bold text-amber-400">Dinheiro</div>
                 <div className="text-xs font-extrabold text-white">R$ {cashTotal.toFixed(0)}</div>
               </div>
 
-              <div className="p-2 rounded-xl bg-[#0B132B]/90 border border-rose-500/30">
+              <div className="p-1.5 rounded-lg bg-[#0B132B]/80 border border-rose-500/30">
                 <div className="text-[9px] uppercase font-bold text-rose-400">Pendente</div>
                 <div className="text-xs font-extrabold text-white">R$ {pendingAmount.toFixed(0)}</div>
               </div>
             </div>
           </>
         ) : (
-          /* Visão do Operador */
+          /* Operator View: Only operational race count, revenue hidden */
           <div className="my-2 space-y-2">
             <div className="flex items-center justify-between">
               <div>
                 <span className="text-2xl font-black text-white font-display">
-                  {dateRentals.length}
+                  {todayRentals.length}
                 </span>
-                <span className="text-xs text-slate-400 ml-1.5">corridas nesta data</span>
+                <span className="text-xs text-slate-400 ml-1.5">corridas realizadas hoje</span>
               </div>
               <div className="text-right text-[11px] text-cyan-300 font-semibold">
-                Operação Registrada
+                Sua Operação Ativa
               </div>
             </div>
-            <div className="p-2 rounded-xl bg-slate-900/80 border border-slate-800 text-[11px] text-slate-400">
-              Valores financeiros totais são restritos ao Administrador.
+
+            <div className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800 text-[11px] text-slate-400 flex items-center gap-2">
+              <span className="text-amber-400 font-bold text-xs">🔒</span>
+              <span>
+                Valores de faturamento total e extratos financeiros são restritos exclusivamente ao <strong>Administrador</strong>.
+              </span>
             </div>
           </div>
         )}
       </div>
 
-      {/* =========================================================================
-          3. FILTROS & BUSCA
-          ========================================================================= */}
+      {/* 2. Filtros e Busca */}
       <div className="flex items-center gap-2">
         <div className="relative flex-1">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -524,7 +190,7 @@ export const HistoryScreen: React.FC = () => {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Buscar por piloto ou veículo..."
+            placeholder="Buscar por cliente ou veículo..."
             className="w-full pl-9 pr-3 py-2 rounded-xl bg-[#141E38]/80 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400"
           />
         </div>
@@ -533,7 +199,6 @@ export const HistoryScreen: React.FC = () => {
           {(['TODOS', 'PAGO', 'NAO_PAGO'] as const).map((filter) => (
             <button
               key={filter}
-              type="button"
               onClick={() => setStatusFilter(filter)}
               className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
                 statusFilter === filter
@@ -547,41 +212,29 @@ export const HistoryScreen: React.FC = () => {
         </div>
       </div>
 
-      {/* =========================================================================
-          4. LISTAGEM DE CORRIDAS
-          ========================================================================= */}
+      {/* 3. Lista de Corridas em Cards Limpos */}
       <div className="space-y-2">
         <div className="flex items-center justify-between text-xs text-slate-400 px-1">
-          <span>{filteredRentals.length} corridas listadas para {getDateLabel()}</span>
+          <span>{filteredRentals.length} corridas registradas</span>
           <div className="flex items-center gap-3">
-            {isAdmin && filteredRentals.length > 0 && (
+            {filteredRentals.length > 0 && (
               <button
                 type="button"
                 onClick={() => setShowClearConfirm(true)}
                 className="text-[11px] text-rose-400 hover:text-rose-300 font-bold flex items-center gap-1 transition-colors"
-                title="Apagar corridas do histórico"
+                title="Apagar corridas concluídas do histórico"
               >
                 <Trash2 size={12} />
                 <span>Limpar Histórico</span>
               </button>
             )}
-            <span className="text-[10px] text-cyan-400 hidden sm:inline">Toque em Editar para alterar dados</span>
+            <span className="text-[10px] text-cyan-400 hidden sm:inline">Toque em Editar ou na lixeira</span>
           </div>
         </div>
 
         {filteredRentals.length === 0 ? (
-          <div className="p-8 rounded-2xl bg-[#141E38]/40 border border-dashed border-slate-800 text-center text-slate-400 text-xs space-y-2">
-            <div>Nenhuma corrida encontrada para {getDateLabel()}.</div>
-            {isAdmin && (
-              <button
-                type="button"
-                onClick={() => handleOpenAddModal(selectedDate !== 'todas' ? selectedDate : todayKey)}
-                className="px-3.5 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/40 text-amber-300 font-bold text-xs inline-flex items-center gap-1.5 transition-all"
-              >
-                <Plus size={14} />
-                <span>Lançar Corrida nesta Data</span>
-              </button>
-            )}
+          <div className="p-8 rounded-2xl bg-[#141E38]/40 border border-slate-800 text-center text-slate-400 text-xs">
+            Nenhuma corrida encontrada para os filtros selecionados.
           </div>
         ) : (
           filteredRentals.map((rental) => {
@@ -592,90 +245,90 @@ export const HistoryScreen: React.FC = () => {
             ).padStart(2, '0')} - ${String(endDate.getHours()).padStart(2, '0')}:${String(
               endDate.getMinutes()
             ).padStart(2, '0')}`;
-            const dateDisplay = `${String(startDate.getDate()).padStart(2, '0')}/${String(
-              startDate.getMonth() + 1
-            ).padStart(2, '0')}`;
 
             const isPaid = rental.paymentStatus === 'PAGO';
 
             return (
               <div
                 key={rental.id}
-                className="rounded-xl bg-[#141E38] border border-slate-700/80 p-3 hover:border-cyan-500/40 transition-all flex items-center justify-between gap-3 shadow-sm"
+                className="rounded-xl bg-[#141E38] border border-slate-700/80 p-3.5 hover:border-cyan-500/50 transition-all shadow-sm"
               >
-                {/* Esquerda: Info do Veículo e Cliente */}
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-10 h-10 rounded-xl bg-[#0B132B] border border-cyan-500/30 flex flex-col items-center justify-center font-display shrink-0">
-                    <span className="text-[10px] font-extrabold text-cyan-400 leading-none">
-                      {rental.vehicleCode}
-                    </span>
-                    <span className="text-[9px] text-slate-400 leading-none mt-0.5">
-                      {rental.durationMinutes}m
-                    </span>
-                  </div>
-
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <h4 className="text-xs font-bold text-white truncate">{rental.customerName}</h4>
-                      <span className="text-[10px] text-slate-400">· {rental.vehicleName}</span>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-lg bg-[#0B132B] border border-slate-700 flex flex-col items-center justify-center font-display shrink-0">
+                      <span className="text-[10px] text-cyan-400 font-bold leading-none">
+                        {rental.vehicleCode}
+                      </span>
                     </div>
 
-                    <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5">
-                      <span className="text-cyan-300 font-semibold">{dateDisplay}</span>
-                      <span>·</span>
-                      <span>{timeFormatted}</span>
-                      {rental.customerPhone && (
-                        <>
-                          <span>·</span>
-                          <span className="truncate">{rental.customerPhone}</span>
-                        </>
-                      )}
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-xs font-bold text-white">{rental.vehicleName}</h4>
+                        <span className="text-[10px] text-slate-400 font-mono">
+                          {timeFormatted}
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-slate-300 font-medium">
+                        {rental.customerName} · <span className="text-slate-400">{rental.durationMinutes} min</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Valor e Ações (Editar e Apagar) */}
+                  <div className="text-right flex flex-col items-end">
+                    <div className="text-sm font-extrabold text-white font-display">
+                      R$ {rental.amount.toFixed(2)}
+                    </div>
+                    <div className="mt-1 flex items-center gap-1.5">
+                      <button
+                        onClick={() => handleOpenEdit(rental)}
+                        className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-cyan-300 text-[10px] font-bold transition-colors"
+                        title="Alterar forma de pagamento ou status"
+                      >
+                        <Edit2 size={10} />
+                        <span>Editar</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setRentalToDelete(rental)}
+                        className="p-1 rounded-lg bg-slate-800 hover:bg-rose-500/20 border border-slate-700 hover:border-rose-500/40 text-slate-400 hover:text-rose-400 transition-colors"
+                        title="Apagar esta corrida do histórico"
+                      >
+                        <Trash2 size={11} />
+                      </button>
                     </div>
                   </div>
                 </div>
 
-                {/* Direita: Valor, Status e Botão Editar */}
-                <div className="flex items-center gap-2.5 shrink-0">
-                  <div className="text-right">
-                    <div className="text-xs font-black text-white font-mono">
-                      R$ {rental.amount.toFixed(2)}
-                    </div>
-                    <div className="flex items-center justify-end gap-1 mt-0.5">
-                      <span
-                        className={`text-[9px] font-bold px-1.5 py-0.2 rounded-full border ${
-                          isPaid
-                            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
-                            : 'bg-rose-500/20 text-rose-300 border-rose-500/30'
-                        }`}
-                      >
-                        {isPaid ? 'PAGO' : 'PENDENTE'}
-                      </span>
-                      <span className="text-[9px] text-slate-400 font-semibold uppercase">
-                        {rental.paymentMethod}
-                      </span>
-                    </div>
+                {/* Footer Badges */}
+                <div className="mt-2.5 pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px]">
+                  <div className="flex items-center gap-1.5 text-slate-400">
+                    <span className="flex items-center gap-1">
+                      {rental.paymentMethod === 'PIX' ? (
+                        <QrCode size={11} className="text-emerald-400" />
+                      ) : rental.paymentMethod === 'CARTAO' ? (
+                        <CreditCard size={11} className="text-cyan-400" />
+                      ) : (
+                        <Banknote size={11} className="text-amber-400" />
+                      )}
+                      <span>{rental.paymentMethod}</span>
+                    </span>
+                    <span>·</span>
+                    <span className="text-[10px] text-slate-500">
+                      Op: {rental.operatorName.split(' ')[0]}
+                    </span>
                   </div>
 
-                  {/* Botão de Edição */}
-                  <button
-                    type="button"
-                    onClick={() => handleOpenEdit(rental)}
-                    className="p-1.5 rounded-lg bg-slate-800 text-slate-300 hover:text-cyan-300 hover:bg-slate-700 transition-colors border border-slate-700"
-                    title="Editar informações e pagamento desta corrida"
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                      isPaid
+                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                        : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                    }`}
                   >
-                    <Edit2 size={13} />
-                  </button>
-
-                  {isAdmin && (
-                    <button
-                      type="button"
-                      onClick={() => setRentalToDelete(rental)}
-                      className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
-                      title="Excluir corrida"
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  )}
+                    {isPaid ? 'PAGO' : 'NÃO PAGO'}
+                  </span>
                 </div>
               </div>
             );
@@ -683,235 +336,16 @@ export const HistoryScreen: React.FC = () => {
         )}
       </div>
 
-      {/* =========================================================================
-          MODAL: LANÇAR CORRIDA RETRÔ / PASSADA NO HISTÓRICO
-          ========================================================================= */}
-      {isAddModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-sm animate-in fade-in overflow-y-auto">
-          <div className="w-full max-w-md rounded-2xl bg-[#0F172A] border border-cyan-500/40 p-5 shadow-2xl space-y-4 my-8">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
-              <div>
-                <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                  <Plus size={16} className="text-amber-400" />
-                  Lançar Corrida no Histórico
-                </h3>
-                <p className="text-[11px] text-slate-400 mt-0.5">
-                  Adicione corridas passadas para manter o controle e extrato 100% exatos
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsAddModalOpen(false)}
-                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <form onSubmit={handleSavePastRental} className="space-y-3.5">
-              {/* 1. Data e Horário */}
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">
-                    Data da Corrida
-                  </label>
-                  <input
-                    type="date"
-                    required
-                    value={addDate}
-                    onChange={(e) => setAddDate(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-[#141E38] border border-slate-700 text-xs text-white focus:outline-none focus:border-cyan-400"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">
-                    Horário da Corrida
-                  </label>
-                  <input
-                    type="time"
-                    required
-                    value={addTime}
-                    onChange={(e) => setAddTime(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-[#141E38] border border-slate-700 text-xs text-white focus:outline-none focus:border-cyan-400"
-                  />
-                </div>
-              </div>
-
-              {/* 2. Seleção de Veículo */}
-              <div>
-                <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">
-                  Veículo Utilizado
-                </label>
-                <select
-                  value={addVehicleId}
-                  onChange={(e) => setAddVehicleId(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-[#141E38] border border-slate-700 text-xs text-white focus:outline-none focus:border-cyan-400"
-                >
-                  {vehicles.map((v) => (
-                    <option key={v.id} value={v.id}>
-                      {v.code} - {v.name} ({v.category})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* 3. Piloto e WhatsApp */}
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">
-                    Nome do Piloto
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={addCustomerName}
-                    onChange={(e) => setAddCustomerName(e.target.value)}
-                    placeholder="Ex: Carlos Silva"
-                    className="w-full px-3 py-2 rounded-xl bg-[#141E38] border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">
-                    WhatsApp (Opcional)
-                  </label>
-                  <input
-                    type="tel"
-                    value={addCustomerPhone}
-                    onChange={(e) => setAddCustomerPhone(e.target.value)}
-                    placeholder="11 99999-9999"
-                    className="w-full px-3 py-2 rounded-xl bg-[#141E38] border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400"
-                  />
-                </div>
-              </div>
-
-              {/* 4. Duração e Valor */}
-              <div>
-                <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">
-                  Tempo de Pista
-                </label>
-                <div className="grid grid-cols-5 gap-1.5 mb-2">
-                  {[5, 10, 15, 20, 30].map((dur) => (
-                    <button
-                      key={dur}
-                      type="button"
-                      onClick={() => handleDurationChange(dur)}
-                      className={`py-1.5 rounded-lg border text-xs font-bold transition-all ${
-                        addDuration === dur
-                          ? 'bg-amber-500 text-slate-950 border-amber-400 font-extrabold shadow-sm'
-                          : 'bg-[#141E38] border-slate-700 text-slate-300'
-                      }`}
-                    >
-                      {dur}m
-                    </button>
-                  ))}
-                </div>
-
-                <div>
-                  <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">
-                    Valor Total da Corrida (R$)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    required
-                    value={addAmount}
-                    onChange={(e) => setAddAmount(Number(e.target.value))}
-                    className="w-full px-3 py-2 rounded-xl bg-[#141E38] border border-slate-700 text-xs text-white font-mono focus:outline-none focus:border-cyan-400"
-                  />
-                </div>
-              </div>
-
-              {/* 5. Forma de Pagamento */}
-              <div>
-                <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">
-                  Forma de Pagamento
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  {(['PIX', 'CARTAO', 'DINHEIRO'] as const).map((m) => (
-                    <button
-                      key={m}
-                      type="button"
-                      onClick={() => setAddMethod(m)}
-                      className={`py-2 rounded-xl border text-xs font-bold transition-all ${
-                        addMethod === m
-                          ? 'bg-cyan-500 text-slate-950 border-cyan-400 shadow-sm'
-                          : 'bg-[#141E38] border-slate-700 text-slate-300'
-                      }`}
-                    >
-                      {m}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* 6. Status do Pagamento */}
-              <div>
-                <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">
-                  Status do Pagamento
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setAddStatus('PAGO')}
-                    className={`py-2 rounded-xl border text-xs font-bold transition-all ${
-                      addStatus === 'PAGO'
-                        ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-sm'
-                        : 'bg-[#141E38] border-slate-700 text-slate-300'
-                    }`}
-                  >
-                    ✓ PAGO
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAddStatus('NAO_PAGO')}
-                    className={`py-2 rounded-xl border text-xs font-bold transition-all ${
-                      addStatus === 'NAO_PAGO'
-                        ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-sm'
-                        : 'bg-[#141E38] border-slate-700 text-slate-300'
-                    }`}
-                  >
-                    ⚠ PENDENTE
-                  </button>
-                </div>
-              </div>
-
-              {/* Botões */}
-              <div className="pt-2 flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsAddModalOpen(false)}
-                  className="flex-1 py-2.5 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold hover:bg-slate-700"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold shadow-[0_0_12px_rgba(245,158,11,0.35)]"
-                >
-                  Gravar no Histórico
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* =========================================================================
-          MODAL: EDITAR CORRIDA COMPLETA
-          ========================================================================= */}
+      {/* 4. Modal para Editar Forma de Pagamento e Status (Permitido pós-corrida conforme solicitado) */}
       {editingRental && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-sm animate-in fade-in overflow-y-auto">
-          <div className="w-full max-w-sm rounded-2xl bg-[#0F172A] border border-cyan-500/40 p-5 shadow-2xl space-y-4 my-8">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in">
+          <div className="w-full max-w-sm rounded-2xl bg-[#0F172A] border border-cyan-500/40 p-5 shadow-2xl space-y-4">
             <div className="flex items-center justify-between border-b border-slate-800 pb-2">
               <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <Edit2 size={16} className="text-cyan-400" />
-                Editar Dados da Corrida
+                <Edit2 size={15} className="text-cyan-400" />
+                Editar Pagamento da Corrida
               </h3>
               <button
-                type="button"
                 onClick={() => setEditingRental(null)}
                 className="text-slate-400 hover:text-white"
               >
@@ -919,157 +353,104 @@ export const HistoryScreen: React.FC = () => {
               </button>
             </div>
 
-            <form onSubmit={handleSaveEdit} className="space-y-3.5">
-              <div>
-                <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">
-                  Nome do Piloto
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={editCustomerName}
-                  onChange={(e) => setEditCustomerName(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-[#141E38] border border-slate-700 text-xs text-white focus:outline-none focus:border-cyan-400"
-                />
-              </div>
+            <div className="text-xs text-slate-300">
+              <div className="font-semibold text-white">{editingRental.vehicleName} ({editingRental.vehicleCode})</div>
+              <div>Piloto: {editingRental.customerName}</div>
+              <div className="text-cyan-400 font-bold mt-1">Valor: R$ {editingRental.amount.toFixed(2)}</div>
+            </div>
 
+            {/* Forma de Pagamento */}
+            <div className="space-y-1.5">
+              <label className="text-[11px] uppercase font-bold text-slate-400">
+                Forma de Pagamento
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                {(['PIX', 'CARTAO', 'DINHEIRO'] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setEditMethod(m)}
+                    className={`py-2 px-1 rounded-xl border text-xs font-bold transition-all ${
+                      editMethod === m
+                        ? 'bg-cyan-500 text-slate-950 border-cyan-400 shadow-sm'
+                        : 'bg-[#141E38] border-slate-700 text-slate-300'
+                    }`}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Status de Pagamento */}
+            <div className="space-y-1.5">
+              <label className="text-[11px] uppercase font-bold text-slate-400">
+                Status do Pagamento
+              </label>
               <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">
-                    Data da Corrida
-                  </label>
-                  <input
-                    type="date"
-                    required
-                    value={editDate}
-                    onChange={(e) => setEditDate(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-[#141E38] border border-slate-700 text-xs text-white focus:outline-none focus:border-cyan-400"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">
-                    Horário
-                  </label>
-                  <input
-                    type="time"
-                    required
-                    value={editTime}
-                    onChange={(e) => setEditTime(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-[#141E38] border border-slate-700 text-xs text-white focus:outline-none focus:border-cyan-400"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">
-                  Valor da Corrida (R$)
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  required
-                  value={editAmount}
-                  onChange={(e) => setEditAmount(Number(e.target.value))}
-                  className="w-full px-3 py-2 rounded-xl bg-[#141E38] border border-slate-700 text-xs text-white font-mono focus:outline-none focus:border-cyan-400"
-                />
-              </div>
-
-              {/* Forma de Pagamento */}
-              <div>
-                <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">
-                  Forma de Pagamento
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  {(['PIX', 'CARTAO', 'DINHEIRO'] as const).map((m) => (
-                    <button
-                      key={m}
-                      type="button"
-                      onClick={() => setEditMethod(m)}
-                      className={`py-2 px-1 rounded-xl border text-xs font-bold transition-all ${
-                        editMethod === m
-                          ? 'bg-cyan-500 text-slate-950 border-cyan-400 shadow-sm'
-                          : 'bg-[#141E38] border-slate-700 text-slate-300'
-                      }`}
-                    >
-                      {m}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Status de Pagamento */}
-              <div>
-                <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">
-                  Status do Pagamento
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setEditStatus('PAGO')}
-                    className={`py-2 px-2 rounded-xl border text-xs font-bold transition-all ${
-                      editStatus === 'PAGO'
-                        ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-sm'
-                        : 'bg-[#141E38] border-slate-700 text-slate-300'
-                    }`}
-                  >
-                    ✓ PAGO
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setEditStatus('NAO_PAGO')}
-                    className={`py-2 px-2 rounded-xl border text-xs font-bold transition-all ${
-                      editStatus === 'NAO_PAGO'
-                        ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-sm'
-                        : 'bg-[#141E38] border-slate-700 text-slate-300'
-                    }`}
-                  >
-                    ⚠ PENDENTE
-                  </button>
-                </div>
-              </div>
-
-              {/* Ações */}
-              <div className="pt-2 space-y-2">
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setEditingRental(null)}
-                    className="flex-1 py-2.5 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold hover:bg-slate-700"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    className="flex-1 py-2.5 rounded-xl bg-cyan-400 hover:bg-cyan-300 text-slate-950 text-xs font-bold shadow-[0_0_10px_rgba(0,180,216,0.3)]"
-                  >
-                    Salvar Alterações
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setEditStatus('PAGO')}
+                  className={`py-2 px-2 rounded-xl border text-xs font-bold transition-all ${
+                    editStatus === 'PAGO'
+                      ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-sm'
+                      : 'bg-[#141E38] border-slate-700 text-slate-300'
+                  }`}
+                >
+                  ✓ PAGO
+                </button>
 
                 <button
                   type="button"
-                  onClick={() => {
-                    const id = editingRental.id;
-                    setEditingRental(null);
-                    deleteRental(id);
-                  }}
-                  className="w-full py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 text-xs font-bold transition-colors flex items-center justify-center gap-1.5"
+                  onClick={() => setEditStatus('NAO_PAGO')}
+                  className={`py-2 px-2 rounded-xl border text-xs font-bold transition-all ${
+                    editStatus === 'NAO_PAGO'
+                      ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-sm'
+                      : 'bg-[#141E38] border-slate-700 text-slate-300'
+                  }`}
                 >
-                  <Trash2 size={13} />
-                  <span>Excluir Corrida do Histórico</span>
+                  ⚠ NÃO PAGO
                 </button>
               </div>
-            </form>
+            </div>
+
+            {/* Ações */}
+            <div className="pt-2 space-y-2">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingRental(null)}
+                  className="flex-1 py-2.5 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold hover:bg-slate-700"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveEdit}
+                  className="flex-1 py-2.5 rounded-xl bg-cyan-400 hover:bg-cyan-300 text-slate-950 text-xs font-bold shadow-[0_0_10px_rgba(0,180,216,0.3)]"
+                >
+                  Salvar Alterações
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const id = editingRental.id;
+                  setEditingRental(null);
+                  deleteRental(id);
+                }}
+                className="w-full py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 text-xs font-bold transition-colors flex items-center justify-center gap-1.5"
+              >
+                <Trash2 size={13} />
+                <span>Excluir Corrida do Histórico</span>
+              </button>
+            </div>
           </div>
         </div>
       )}
 
-      {/* =========================================================================
-          MODAL: CONFIRMAR EXCLUSÃO INDIVIDUAL
-          ========================================================================= */}
+      {/* MODAL: CONFIRMAR EXCLUSÃO INDIVIDUAL */}
       {rentalToDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in">
           <div className="w-full max-w-sm rounded-2xl bg-[#0F172A] border border-rose-500/40 p-5 shadow-2xl space-y-3.5 text-center">
@@ -1106,9 +487,7 @@ export const HistoryScreen: React.FC = () => {
         </div>
       )}
 
-      {/* =========================================================================
-          MODAL: CONFIRMAR LIMPAR TODO HISTÓRICO
-          ========================================================================= */}
+      {/* MODAL: CONFIRMAR LIMPAR TODO HISTÓRICO */}
       {showClearConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in">
           <div className="w-full max-w-sm rounded-2xl bg-[#0F172A] border border-rose-500/40 p-5 shadow-2xl space-y-3.5 text-center">

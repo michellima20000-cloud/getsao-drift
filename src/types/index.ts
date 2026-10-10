@@ -18,8 +18,6 @@ export interface UserProfile {
   tenantId: string;
   phone?: string;
   createdAt: number;
-  createdBy?: string;
-  adminEmail?: string;
 }
 
 export interface Tenant {

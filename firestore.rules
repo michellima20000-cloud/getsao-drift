@@ -1,11 +1,173 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Permite leitura e escrita completa para o app Drift Park
-    // O isolamento multi-tenant por empresa/unidade é gerido e garantido
-    // estritamente pelas coleções e pelo tenantId no código do app.
-    match /{document=**} {
-      allow read, write: if true;
+
+    // =========================================================================
+    // REGRAS DE SEGURANÇA FIRESTORE - ISOLAMENTO MULTI-TENANT ESTRITO
+    // =========================================================================
+    // Todo acesso exige que request.auth.token.tenantId corresponda exatamente
+    // ao campo tenantId do documento acessado, impedindo qualquer vazamento
+    // de dados entre empresas / administradores diferentes.
+    // =========================================================================
+
+    // Verifica se o usuário está autenticado e possui uma claim válida de tenantId
+    function isSignedIn() {
+      return request.auth != null && request.auth.token.tenantId != null;
+    }
+
+    // Retorna o tenantId do usuário autenticado no Firebase Auth Custom Claims
+    function userTenantId() {
+      return request.auth.token.tenantId;
+    }
+
+    // Retorna a role (perfil) do usuário ('admin' ou 'operador')
+    function userRole() {
+      return request.auth.token.role;
+    }
+
+    // Valida se o documento existente pertence ao mesmo tenant do usuário
+    function belongsToTenant(data) {
+      return isSignedIn() && data.tenantId == userTenantId();
+    }
+
+    // Valida se o novo documento a ser gravado mantém o mesmo tenantId do usuário
+    function isWritingSameTenant() {
+      return isSignedIn() && request.resource.data.tenantId == userTenantId();
+    }
+
+    // Valida se o usuário tem privilégio de Administrador dentro do seu tenant
+    function isTenantAdmin() {
+      return isSignedIn() && userRole() == 'admin';
+    }
+
+    // =========================================================================
+    // 1. USUÁRIOS ('usuarios' e 'users')
+    // Cada usuário pertence a um tenantId.
+    // O Administrador gerencia os operadores do seu próprio tenant.
+    // =========================================================================
+    match /usuarios/{userId} {
+      // Leitura permitida para o próprio usuário ou para o Admin do mesmo tenant
+      allow read: if isSignedIn() && (
+        (request.auth.uid == userId && resource.data.tenantId == userTenantId()) ||
+        (belongsToTenant(resource.data) && isTenantAdmin())
+      );
+
+      // Apenas o Administrador pode cadastrar novas contas no seu próprio tenant
+      // (ou o próprio usuário se registrando inicialmente com seu tenantId)
+      allow create: if isSignedIn() && isWritingSameTenant() && (
+        isTenantAdmin() || request.auth.uid == userId
+      );
+
+      // Usuário pode atualizar seus dados ou o Admin do seu tenant
+      // Garante que o tenantId NUNCA seja alterado
+      allow update: if isSignedIn() && 
+                    belongsToTenant(resource.data) && 
+                    request.resource.data.tenantId == resource.data.tenantId && (
+                      request.auth.uid == userId || isTenantAdmin()
+                    );
+
+      // Apenas o Administrador pode excluir operadores do seu próprio tenant
+      allow delete: if isSignedIn() && belongsToTenant(resource.data) && isTenantAdmin();
+    }
+
+    match /users/{userId} {
+      allow read: if isSignedIn() && (
+        (request.auth.uid == userId && resource.data.tenantId == userTenantId()) ||
+        (belongsToTenant(resource.data) && isTenantAdmin())
+      );
+
+      allow create: if isSignedIn() && isWritingSameTenant() && (
+        isTenantAdmin() || request.auth.uid == userId
+      );
+
+      allow update: if isSignedIn() && 
+                    belongsToTenant(resource.data) && 
+                    request.resource.data.tenantId == resource.data.tenantId && (
+                      request.auth.uid == userId || isTenantAdmin()
+                    );
+
+      allow delete: if isSignedIn() && belongsToTenant(resource.data) && isTenantAdmin();
+    }
+
+    // =========================================================================
+    // 2. VEÍCULOS ('veiculos')
+    // Frota de carrinhos de Drift, Jeep e Bate-Bate isolada por tenantId.
+    // =========================================================================
+    match /veiculos/{veiculoId} {
+      // Todos os operadores e admins do tenant podem ler a frota da sua empresa
+      allow read: if isSignedIn() && belongsToTenant(resource.data);
+
+      // Apenas o Administrador daquela empresa pode cadastrar novos veículos
+      allow create: if isSignedIn() && isWritingSameTenant() && isTenantAdmin();
+
+      // Atualização: Admin altera tudo; Operadores do mesmo tenant podem atualizar
+      // o status de disponibilidade ('disponivel', 'em_uso', 'manutencao')
+      allow update: if isSignedIn() && 
+                    belongsToTenant(resource.data) && 
+                    request.resource.data.tenantId == resource.data.tenantId;
+
+      // Apenas o Administrador do tenant pode remover veículos
+      allow delete: if isSignedIn() && belongsToTenant(resource.data) && isTenantAdmin();
+    }
+
+    // =========================================================================
+    // 3. CORRIDAS E ALUGUÉIS ('corridas')
+    // Histórico e corridas em tempo real isoladas por tenantId.
+    // =========================================================================
+    match /corridas/{corridaId} {
+      // Visualização restrita aos membros (Admin/Operadores) do mesmo tenantId
+      allow read: if isSignedIn() && belongsToTenant(resource.data);
+
+      // Operadores e Administradores do mesmo tenant registram novas corridas
+      allow create: if isSignedIn() && isWritingSameTenant();
+
+      // Permite editar Forma de Pagamento e Status de Pagamento (Pago/Não Pago) pós-corrida
+      // Garante que o documento permaneça vinculado ao mesmo tenantId
+      allow update: if isSignedIn() && 
+                    belongsToTenant(resource.data) && 
+                    request.resource.data.tenantId == resource.data.tenantId;
+
+      // Exclusão de histórico permitida exclusivamente para o Administrador do tenant
+      allow delete: if isSignedIn() && belongsToTenant(resource.data) && isTenantAdmin();
+    }
+
+    // =========================================================================
+    // 4. CLIENTES ('clientes')
+    // Cadastro de clientes e pilotos isolado por tenantId.
+    // =========================================================================
+    match /clientes/{clienteId} {
+      allow read: if isSignedIn() && belongsToTenant(resource.data);
+      allow create: if isSignedIn() && isWritingSameTenant();
+      allow update: if isSignedIn() && 
+                    belongsToTenant(resource.data) && 
+                    request.resource.data.tenantId == resource.data.tenantId;
+      allow delete: if isSignedIn() && belongsToTenant(resource.data) && isTenantAdmin();
+    }
+
+    // =========================================================================
+    // 5. CAIXA & FINANCEIRO ('caixa')
+    // Movimentações financeiras e fechamentos de caixa.
+    // Acesso EXCLUSIVO do Administrador do tenantId correspondente.
+    // =========================================================================
+    match /caixa/{caixaId} {
+      // Operadores NUNCA têm acesso ao caixa consolidado
+      allow read: if isSignedIn() && belongsToTenant(resource.data) && isTenantAdmin();
+      allow create: if isSignedIn() && isWritingSameTenant() && isTenantAdmin();
+      allow update: if isSignedIn() && 
+                    belongsToTenant(resource.data) && 
+                    request.resource.data.tenantId == resource.data.tenantId && 
+                    isTenantAdmin();
+      allow delete: if isSignedIn() && belongsToTenant(resource.data) && isTenantAdmin();
+    }
+
+    // =========================================================================
+    // 6. FILA DE ESPERA ('fila')
+    // Fila da pista daquela unidade/tenant
+    // =========================================================================
+    match /fila/{filaId} {
+      allow read: if isSignedIn() && belongsToTenant(resource.data);
+      allow create: if isSignedIn() && isWritingSameTenant();
+      allow update, delete: if isSignedIn() && belongsToTenant(resource.data);
     }
   }
 }

@@ -31,52 +31,11 @@ export const INITIAL_TENANTS: Tenant[] = [
       30: 70.0,
     },
   },
-  {
-    id: 'tenant_clecio_drift',
-    name: 'Drift Park - Pista Clécio',
-    city: 'Pista Principal',
-    document: '23.456.789/0001-01',
-    active: true,
-    colorTheme: '#00F0FF',
-    pricing: {
-      5: 15.0,
-      10: 25.0,
-      15: 35.0,
-      20: 45.0,
-      30: 60.0,
-    },
-  },
 ];
 
-// Contas oficiais sincronizadas com Firebase Authentication e Firestore
-export const INITIAL_USERS: UserProfile[] = [
-  {
-    id: 'usr_adm_clecio',
-    name: 'Adm Clécio',
-    email: 'admcledson@gmail.com',
-    role: 'admin',
-    tenantId: 'tenant_clecio_drift',
-    createdAt: Date.now() - 7200000,
-  },
-  {
-    id: 'usr_op_carol',
-    name: 'Carol Lima',
-    email: 'carollimap1993@gmail.com',
-    role: 'operador',
-    tenantId: 'tenant_clecio_drift',
-    createdBy: 'admcledson@gmail.com',
-    adminEmail: 'admcledson@gmail.com',
-    createdAt: Date.now() - 3600000,
-  },
-  {
-    id: 'usr_admin_michel',
-    name: 'Michel Lima',
-    email: 'michel.lima20000@gmail.com',
-    role: 'admin',
-    tenantId: 'tenant_drift_01',
-    createdAt: Date.now() - 86400000,
-  },
-];
+// Usuários são carregados 100% em tempo real do Cloud Firestore
+// Sem dados fictícios ou mocks hardcoded
+export const INITIAL_USERS: UserProfile[] = [];
 
 export const INITIAL_VEHICLES: Vehicle[] = [
   // Tenant 1 Drift cars (6 total)
@@ -237,58 +196,6 @@ export const INITIAL_VEHICLES: Vehicle[] = [
     status: 'disponivel',
     batteryLevel: 90,
     totalRuns: 28,
-  },
-
-  // Tenant Clécio Vehicles
-  {
-    id: 'veh_clecio_01',
-    tenantId: 'tenant_clecio_drift',
-    name: 'Drift Storm #01',
-    code: '#01',
-    category: 'DRIFT',
-    status: 'disponivel',
-    batteryLevel: 100,
-    totalRuns: 12,
-  },
-  {
-    id: 'veh_clecio_02',
-    tenantId: 'tenant_clecio_drift',
-    name: 'Drift Storm #02',
-    code: '#02',
-    category: 'DRIFT',
-    status: 'disponivel',
-    batteryLevel: 95,
-    totalRuns: 8,
-  },
-  {
-    id: 'veh_clecio_03',
-    tenantId: 'tenant_clecio_drift',
-    name: 'Turbo Slide #03',
-    code: '#03',
-    category: 'DRIFT',
-    status: 'disponivel',
-    batteryLevel: 90,
-    totalRuns: 15,
-  },
-  {
-    id: 'veh_clecio_04',
-    tenantId: 'tenant_clecio_drift',
-    name: 'Jeep Safari Kids #04',
-    code: '#04',
-    category: 'JEEP',
-    status: 'disponivel',
-    batteryLevel: 88,
-    totalRuns: 5,
-  },
-  {
-    id: 'veh_clecio_05',
-    tenantId: 'tenant_clecio_drift',
-    name: 'Bate-Bate Nitro #05',
-    code: '#05',
-    category: 'BATE_BATE',
-    status: 'disponivel',
-    batteryLevel: 92,
-    totalRuns: 18,
   },
 ];
 

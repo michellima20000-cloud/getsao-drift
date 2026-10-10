@@ -6,14 +6,10 @@ import { Mail, Lock, Eye, EyeOff, User, Check, AlertCircle } from 'lucide-react'
 export const LoginScreen: React.FC = () => {
   const { login, register } = useDriftPark();
 
-  const [email, setEmail] = useState(() => {
-    return localStorage.getItem('driftpark_remembered_email') || '';
-  });
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [rememberMe, setRememberMe] = useState(() => {
-    return localStorage.getItem('driftpark_remembered_email') !== null;
-  });
+  const [rememberMe, setRememberMe] = useState(true);
   const [isRegisterMode, setIsRegisterMode] = useState(false);
   const [registerName, setRegisterName] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -41,42 +37,22 @@ export const LoginScreen: React.FC = () => {
     }
 
     setIsSubmitting(true);
-
-    // Timeout de segurança absoluto para garantir que NUNCA fique travado carregando
-    const safetyTimer = setTimeout(() => {
-      setIsSubmitting(false);
-      setErrorMessage('Tempo limite de resposta esgotado. Verifique sua conexão e tente novamente.');
-    }, 4000);
-
     try {
       if (isRegisterMode) {
         const res = await register(registerName, email, password);
         if (!res.success) {
           setErrorMessage(res.message || 'Erro ao realizar cadastro.');
-        } else {
-          if (rememberMe) {
-            localStorage.setItem('driftpark_remembered_email', email.trim().toLowerCase());
-          } else {
-            localStorage.removeItem('driftpark_remembered_email');
-          }
         }
       } else {
         const res = await login(email, password);
         if (!res.success) {
           setErrorMessage(res.message || 'Erro ao realizar login.');
-        } else {
-          if (rememberMe) {
-            localStorage.setItem('driftpark_remembered_email', email.trim().toLowerCase());
-          } else {
-            localStorage.removeItem('driftpark_remembered_email');
-          }
         }
       }
     } catch (err: unknown) {
       const e = err as { message?: string };
       setErrorMessage(e?.message || 'Erro inesperado.');
     } finally {
-      clearTimeout(safetyTimer);
       setIsSubmitting(false);
     }
   };
@@ -252,88 +228,6 @@ export const LoginScreen: React.FC = () => {
                 <span>Ainda não tem cadastro? <strong className="text-cyan-400">Clique para cadastrar.</strong></span>
               )}
             </button>
-          </div>
-
-          {/* Atalhos de Acesso Rápido para as Contas do Firebase */}
-          <div className="pt-3 border-t border-slate-800/80">
-            <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider text-center mb-2">
-              Acesso Rápido às Contas do Firebase
-            </div>
-            <div className="grid grid-cols-1 gap-1.5">
-              <button
-                type="button"
-                onClick={() => {
-                  setEmail('admcledson@gmail.com');
-                  setPassword('123456');
-                  setErrorMessage('');
-                  setInfoMessage('Conta do Adm Clécio preenchida. Clique em ENTRAR.');
-                }}
-                className="w-full px-2.5 py-1.5 rounded-lg bg-[#141E38]/80 hover:bg-[#141E38] border border-amber-500/30 hover:border-amber-500/60 text-left text-xs flex items-center justify-between transition-all group"
-              >
-                <div className="flex items-center gap-2">
-                  <span className="text-xs">👑</span>
-                  <div>
-                    <div className="text-[11px] font-bold text-amber-300">Adm Clécio (Administrador)</div>
-                    <div className="text-[10px] text-slate-400 font-mono">admcledson@gmail.com</div>
-                  </div>
-                </div>
-                <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-300 font-semibold group-hover:bg-amber-500/20">
-                  Preencher
-                </span>
-              </button>
-
-              {(() => {
-                try {
-                  const del = JSON.parse(localStorage.getItem('driftpark_deleted_accounts_v1') || '[]');
-                  if (del.includes('carollimap1993@gmail.com')) return null;
-                } catch {}
-                return (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEmail('carollimap1993@gmail.com');
-                      setPassword('123456');
-                      setErrorMessage('');
-                      setInfoMessage('Sub-conta de Carol Lima preenchida. Clique em ENTRAR.');
-                    }}
-                    className="w-full px-2.5 py-1.5 rounded-lg bg-[#141E38]/80 hover:bg-[#141E38] border border-cyan-500/30 hover:border-cyan-500/60 text-left text-xs flex items-center justify-between transition-all group"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs">🏎️</span>
-                      <div>
-                        <div className="text-[11px] font-bold text-cyan-300">Carol Lima (Sub-conta / Operador)</div>
-                        <div className="text-[10px] text-slate-400 font-mono">carollimap1993@gmail.com</div>
-                      </div>
-                    </div>
-                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-300 font-semibold group-hover:bg-cyan-500/20">
-                      Preencher
-                    </span>
-                  </button>
-                );
-              })()}
-
-              <button
-                type="button"
-                onClick={() => {
-                  setEmail('michel.lima20000@gmail.com');
-                  setPassword('123456');
-                  setErrorMessage('');
-                  setInfoMessage('Conta do Michel Lima preenchida. Clique em ENTRAR.');
-                }}
-                className="w-full px-2.5 py-1.5 rounded-lg bg-[#141E38]/40 hover:bg-[#141E38] border border-slate-700/60 hover:border-slate-500 text-left text-xs flex items-center justify-between transition-all group"
-              >
-                <div className="flex items-center gap-2">
-                  <span className="text-xs">👑</span>
-                  <div>
-                    <div className="text-[11px] font-semibold text-slate-300">Michel Lima (Admin Matriz)</div>
-                    <div className="text-[10px] text-slate-500 font-mono">michel.lima20000@gmail.com</div>
-                  </div>
-                </div>
-                <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 group-hover:text-slate-200">
-                  Preencher
-                </span>
-              </button>
-            </div>
           </div>
         </form>
       </div>
