@@ -1,7 +1,89 @@
 <!doctype html>
-<html lang="en">
+<html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
+    <script>
+      (function () {
+        // 1. Suppress third-party browser extension errors (e.g., VPN/adblock fetch interceptors)
+        var isExtensionFetchError = function (msg, filename) {
+          var m = String(msg || '');
+          var f = String(filename || '');
+          return (
+            f.indexOf('chrome-extension://') !== -1 ||
+            f.indexOf('moz-extension://') !== -1 ||
+            m.indexOf('Cannot set property fetch') !== -1 ||
+            m.indexOf('propriedade fetch') !== -1 ||
+            m.indexOf('only a getter') !== -1 ||
+            m.indexOf('apenas um getter') !== -1
+          );
+        };
+
+        window.addEventListener(
+          'error',
+          function (e) {
+            if (
+              isExtensionFetchError(
+                e.message || (e.error && e.error.message),
+                e.filename || (e.error && e.error.stack)
+              )
+            ) {
+              e.stopImmediatePropagation();
+              e.preventDefault();
+              return true;
+            }
+          },
+          true
+        );
+
+        window.addEventListener(
+          'unhandledrejection',
+          function (e) {
+            var reason = e.reason ? String(e.reason.message || e.reason.stack || e.reason) : '';
+            if (isExtensionFetchError(reason, reason)) {
+              e.stopImmediatePropagation();
+              e.preventDefault();
+              return true;
+            }
+          },
+          true
+        );
+
+        var prevOnError = window.onerror;
+        window.onerror = function (msg, url, lineNo, columnNo, error) {
+          if (isExtensionFetchError(msg, url || (error && error.stack))) {
+            return true;
+          }
+          return prevOnError ? prevOnError.apply(this, arguments) : false;
+        };
+
+        // 2. Make window.fetch and Window.prototype.fetch assignable with a getter/setter pair
+        try {
+          var origFetch = window.fetch ? window.fetch.bind(window) : undefined;
+          var makeWritableFetch = function (target) {
+            if (!target) return;
+            var desc = Object.getOwnPropertyDescriptor(target, 'fetch');
+            if (!desc || desc.configurable !== false) {
+              Object.defineProperty(target, 'fetch', {
+                configurable: true,
+                enumerable: true,
+                get: function () {
+                  return origFetch;
+                },
+                set: function (fn) {
+                  if (typeof fn === 'function') {
+                    origFetch = fn;
+                  }
+                },
+              });
+            }
+          };
+          makeWritableFetch(window);
+          if (typeof Window !== 'undefined' && Window.prototype) {
+            makeWritableFetch(Window.prototype);
+          }
+        } catch (err) {}
+      })();
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Drift Park - Gestão de Aluguel e Pista</title>
     <meta name="description" content="Sistema moderno e fluido para gestão e aluguel de carrinhos de bate-bate, drift e jeep com arquitetura multi-tenant e telemetria de pista." />
@@ -12,26 +94,9 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
-    <script>
-      (function () {
-        try {
-          var desc = Object.getOwnPropertyDescriptor(window, 'fetch') || Object.getOwnPropertyDescriptor(Window.prototype, 'fetch');
-          if (desc && !desc.writable && !desc.set && desc.configurable !== false) {
-            var currentFetch = window.fetch.bind(window);
-            Object.defineProperty(window, 'fetch', {
-              configurable: true,
-              enumerable: true,
-              get: function () { return currentFetch; },
-              set: function (fn) { if (typeof fn === 'function') currentFetch = fn; }
-            });
-          }
-        } catch (e) {}
-      })();
-    </script>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-

@@ -9,8 +9,6 @@ import {
 export const TopHeader: React.FC = () => {
   const {
     currentUser,
-    isFirebaseAuthenticated,
-    loginWithGoogle,
     logout,
   } = useDriftPark();
 
@@ -73,20 +71,6 @@ export const TopHeader: React.FC = () => {
                     </span>
                   </div>
                 </div>
-
-                {!isFirebaseAuthenticated && (
-                  <div className="py-1 border-b border-slate-800">
-                    <button
-                      onClick={async () => {
-                        await loginWithGoogle();
-                        setUserDropdownOpen(false);
-                      }}
-                      className="w-full text-left px-2 py-1.5 rounded text-xs text-cyan-300 hover:bg-cyan-950/40 flex items-center gap-2 font-medium"
-                    >
-                      <span>☁️ Sincronizar Conta Google</span>
-                    </button>
-                  </div>
-                )}
 
                 <div className="pt-1">
                   <button
