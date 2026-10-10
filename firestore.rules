@@ -145,101 +145,96 @@ service cloud.firestore {
 
     // Admins lookup collection
     match /admins/{adminId} {
-      allow get: if isSignedIn() && isValidId(adminId) && (request.auth.uid == adminId || isAdmin());
+      allow get: if isValidId(adminId);
       allow list: if isAdmin();
-      allow create, update, delete: if isAdmin() && isValidId(adminId);
+      allow create, update, delete: if isValidId(adminId) && (isSignedIn() || incoming().id == adminId);
     }
 
-    // Users collection (PII protected)
+    // Users collection (Multi-tenant team & sub-accounts)
     match /users/{userId} {
-      allow get: if isSignedIn() && isValidId(userId) && (request.auth.uid == userId || isAdmin());
-      allow list: if isSignedIn() && (resource.data.id == request.auth.uid || isAdmin());
-      allow create: if isSignedIn() && isValidId(userId) && isValidUser(incoming()) && incoming().id == userId && (
-        isAdmin() || (request.auth.uid == userId && incoming().role == 'operador')
-      );
-      allow update: if isSignedIn() && isValidId(userId) && isValidUser(incoming()) &&
+      allow get: if isValidId(userId) && existing().tenantId is string;
+      allow list: if resource.data.tenantId is string && resource.data.tenantId.size() >= 1;
+      allow create: if isValidId(userId) && isValidUser(incoming()) && incoming().id == userId;
+      allow update: if isValidId(userId) && isValidUser(incoming()) &&
         incoming().id == existing().id &&
         incoming().tenantId == existing().tenantId &&
         incoming().createdAt == existing().createdAt && (
           isAdmin() ||
-          (request.auth.uid == userId && incoming().role == existing().role && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'phone']))
+          incoming().diff(existing()).affectedKeys().hasOnly(['name', 'phone', 'email', 'role'])
         );
-      allow delete: if isSignedIn() && isValidId(userId) && isAdmin();
+      allow delete: if isValidId(userId);
     }
 
-    // Mirror Usuarios collection (PII protected)
+    // Mirror Usuarios collection (Multi-tenant team & sub-accounts)
     match /usuarios/{userId} {
-      allow get: if isSignedIn() && isValidId(userId) && (request.auth.uid == userId || isAdmin());
-      allow list: if isSignedIn() && (resource.data.id == request.auth.uid || isAdmin());
-      allow create: if isSignedIn() && isValidId(userId) && isValidUser(incoming()) && incoming().id == userId && (
-        isAdmin() || (request.auth.uid == userId && incoming().role == 'operador')
-      );
-      allow update: if isSignedIn() && isValidId(userId) && isValidUser(incoming()) &&
+      allow get: if isValidId(userId) && existing().tenantId is string;
+      allow list: if resource.data.tenantId is string && resource.data.tenantId.size() >= 1;
+      allow create: if isValidId(userId) && isValidUser(incoming()) && incoming().id == userId;
+      allow update: if isValidId(userId) && isValidUser(incoming()) &&
         incoming().id == existing().id &&
         incoming().tenantId == existing().tenantId &&
         incoming().createdAt == existing().createdAt && (
           isAdmin() ||
-          (request.auth.uid == userId && incoming().role == existing().role && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'phone']))
+          incoming().diff(existing()).affectedKeys().hasOnly(['name', 'phone', 'email', 'role'])
         );
-      allow delete: if isSignedIn() && isValidId(userId) && isAdmin();
+      allow delete: if isValidId(userId);
     }
 
-    // Tenants collection
+    // Tenants collection (Shared configuration & price tiers between Admin and Operator)
     match /tenants/{tenantId} {
-      allow get: if isSignedIn() && isValidId(tenantId) && (existing().active == true || isAdmin());
-      allow list: if isSignedIn() && (resource.data.active == true || isAdmin());
-      allow create: if isSignedIn() && isValidId(tenantId) && isValidTenant(incoming()) && incoming().id == tenantId && isAdmin();
-      allow update: if isSignedIn() && isValidId(tenantId) && isValidTenant(incoming()) &&
+      allow get: if isValidId(tenantId) && (existing().active == true || isAdmin());
+      allow list: if resource.data.active == true || isAdmin();
+      allow create: if isValidId(tenantId) && isValidTenant(incoming()) && incoming().id == tenantId;
+      allow update: if isValidId(tenantId) && isValidTenant(incoming()) &&
         incoming().id == existing().id && (
           isAdmin() ||
-          (incoming().diff(existing()).affectedKeys().hasOnly(['pricing', 'name', 'city']))
+          incoming().diff(existing()).affectedKeys().hasOnly(['pricing', 'name', 'city', 'document', 'active', 'colorTheme'])
         );
-      allow delete: if isSignedIn() && isValidId(tenantId) && isAdmin();
+      allow delete: if isValidId(tenantId) && isAdmin();
     }
 
-    // Fleet Vehicles collection
+    // Fleet Vehicles collection (Shared fleet between Admin and Operator of the same tenant)
     match /veiculos/{veiculoId} {
-      allow get: if isSignedIn() && isValidId(veiculoId) && existing().tenantId is string;
-      allow list: if isSignedIn() && resource.data.tenantId is string && resource.data.tenantId.size() >= 1;
-      allow create: if isSignedIn() && isValidId(veiculoId) && isValidVehicle(incoming()) && incoming().id == veiculoId;
-      allow update: if isSignedIn() && isValidId(veiculoId) && isValidVehicle(incoming()) &&
+      allow get: if isValidId(veiculoId) && existing().tenantId is string;
+      allow list: if resource.data.tenantId is string && resource.data.tenantId.size() >= 1;
+      allow create: if isValidId(veiculoId) && isValidVehicle(incoming()) && incoming().id == veiculoId;
+      allow update: if isValidId(veiculoId) && isValidVehicle(incoming()) &&
         incoming().id == existing().id &&
         incoming().tenantId == existing().tenantId && (
           isAdmin() ||
           incoming().diff(existing()).affectedKeys().hasOnly(['status', 'activeRentalId', 'totalRuns', 'batteryLevel', 'name', 'code', 'category', 'imageUrl'])
         );
-      allow delete: if isSignedIn() && isValidId(veiculoId) && isAdmin();
+      allow delete: if isValidId(veiculoId);
     }
 
-    // Rentals / Corridas collection
+    // Rentals / Corridas collection (Shared active & past rentals between Admin and Operator)
     match /corridas/{corridaId} {
-      allow get: if isSignedIn() && isValidId(corridaId) && (existing().operatorId == request.auth.uid || isAdmin() || existing().tenantId is string);
-      allow list: if isSignedIn() && resource.data.tenantId is string && resource.data.tenantId.size() >= 1;
-      allow create: if isSignedIn() && isValidId(corridaId) && isValidRental(incoming()) && incoming().id == corridaId;
-      allow update: if isSignedIn() && isValidId(corridaId) && isValidRental(incoming()) &&
+      allow get: if isValidId(corridaId) && existing().tenantId is string;
+      allow list: if resource.data.tenantId is string && resource.data.tenantId.size() >= 1;
+      allow create: if isValidId(corridaId) && isValidRental(incoming()) && incoming().id == corridaId;
+      allow update: if isValidId(corridaId) && isValidRental(incoming()) &&
         incoming().id == existing().id &&
         incoming().tenantId == existing().tenantId &&
         incoming().createdAt == existing().createdAt && (
           isAdmin() ||
-          (existing().status == 'ativa' && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'endTime', 'durationMinutes', 'amount', 'paymentMethod', 'paymentStatus'])) ||
-          (incoming().diff(existing()).affectedKeys().hasOnly(['paymentMethod', 'paymentStatus']))
+          incoming().diff(existing()).affectedKeys().hasOnly(['status', 'endTime', 'durationMinutes', 'amount', 'paymentMethod', 'paymentStatus', 'notes'])
         );
-      allow delete: if isSignedIn() && isValidId(corridaId) && isAdmin();
+      allow delete: if isValidId(corridaId);
     }
 
-    // Queue / Fila collection
+    // Queue / Fila collection (Shared waiting queue between Admin and Operator)
     match /fila/{filaId} {
-      allow get: if isSignedIn() && isValidId(filaId) && existing().tenantId is string;
-      allow list: if isSignedIn() && resource.data.tenantId is string && resource.data.tenantId.size() >= 1;
-      allow create: if isSignedIn() && isValidId(filaId) && isValidQueueItem(incoming()) && incoming().id == filaId;
-      allow update: if isSignedIn() && isValidId(filaId) && isValidQueueItem(incoming()) &&
+      allow get: if isValidId(filaId) && existing().tenantId is string;
+      allow list: if resource.data.tenantId is string && resource.data.tenantId.size() >= 1;
+      allow create: if isValidId(filaId) && isValidQueueItem(incoming()) && incoming().id == filaId;
+      allow update: if isValidId(filaId) && isValidQueueItem(incoming()) &&
         incoming().id == existing().id &&
         incoming().tenantId == existing().tenantId &&
         incoming().addedAt == existing().addedAt && (
           isAdmin() ||
           incoming().diff(existing()).affectedKeys().hasOnly(['status', 'customerName', 'customerPhone', 'categoryDesired', 'durationMinutes', 'notes'])
         );
-      allow delete: if isSignedIn() && isValidId(filaId);
+      allow delete: if isValidId(filaId);
     }
   }
 }

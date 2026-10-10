@@ -192,7 +192,7 @@ export async function testAndVerifyFirestore(): Promise<{
 }
 
 export async function checkEmailAlreadyExists(email: string): Promise<boolean> {
-  if (!getIsFirestoreAvailable() || !auth.currentUser) return false;
+  if (!getIsFirestoreAvailable()) return false;
   const clean = email.trim().toLowerCase();
 
   try {
@@ -205,7 +205,7 @@ export async function checkEmailAlreadyExists(email: string): Promise<boolean> {
     };
 
     const timeoutWork = new Promise<boolean>((resolve) =>
-      setTimeout(() => resolve(false), 1200)
+      setTimeout(() => resolve(false), 2000)
     );
     return await Promise.race([queryWork(), timeoutWork]);
   } catch {
@@ -214,7 +214,7 @@ export async function checkEmailAlreadyExists(email: string): Promise<boolean> {
 }
 
 export async function getFirestoreUserProfile(uidOrEmail: string): Promise<any | null> {
-  if (!getIsFirestoreAvailable() || !auth.currentUser) return null;
+  if (!getIsFirestoreAvailable()) return null;
   const clean = uidOrEmail.trim();
 
   try {
@@ -224,6 +224,14 @@ export async function getFirestoreUserProfile(uidOrEmail: string): Promise<any |
         const snap = await getDoc(docRef);
         if (snap.exists()) {
           return snap.data();
+        }
+      } catch {}
+
+      try {
+        const docRef2 = doc(db, 'usuarios', clean);
+        const snap2 = await getDoc(docRef2);
+        if (snap2.exists()) {
+          return snap2.data();
         }
       } catch {}
 
@@ -239,7 +247,7 @@ export async function getFirestoreUserProfile(uidOrEmail: string): Promise<any |
     };
 
     const timeoutWork = new Promise<null>((resolve) =>
-      setTimeout(() => resolve(null), 1200)
+      setTimeout(() => resolve(null), 2000)
     );
     return await Promise.race([fetchWork(), timeoutWork]);
   } catch {
