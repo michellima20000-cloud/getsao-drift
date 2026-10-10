@@ -100,7 +100,6 @@ interface DriftParkContextType {
     paymentStatus: PaymentStatus;
     timestamp: number;
   }) => Rental;
-  cancelRental: (rentalId: string, reason?: string) => Promise<boolean>;
   deleteRental: (rentalId: string) => void;
   clearRentalHistory: () => void;
 
@@ -119,7 +118,7 @@ interface DriftParkContextType {
   // Settings & Reports
   exportDailyReport: (customDateStr?: string, customRentals?: Rental[]) => void;
   updatePriceTier: (durationMinutes: number, price: number) => void;
-  playSound: (type: 'start' | 'finish' | 'click' | 'alert' | 'countdown-tick' | 'countdown-go', step?: number) => void;
+  playSound: (type: 'start' | 'finish' | 'click' | 'alert') => void;
 }
 
 const DriftParkContext = createContext<DriftParkContextType | undefined>(undefined);
@@ -204,46 +203,13 @@ const markAccountAsDeleted = (identifier: string) => {
 };
 
 // Simple Web Audio API sound synthesizer
-const playTone = (
-  type: 'start' | 'finish' | 'click' | 'alert' | 'countdown-tick' | 'countdown-go',
-  step?: number
-) => {
+const playTone = (type: 'start' | 'finish' | 'click' | 'alert') => {
   try {
-    const AudioContextClass =
-      window.AudioContext ||
-      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     if (!AudioContextClass) return;
     const ctx = new AudioContextClass();
 
-    if (type === 'countdown-tick') {
-      // Beep de contagem da largada (frequência cresce a cada segundo que passa: 5 -> 1)
-      const baseFreq = 500;
-      const freq = step ? baseFreq + (6 - step) * 60 : 620;
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.frequency.setValueAtTime(freq, ctx.currentTime);
-      gain.gain.setValueAtTime(0.25, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.14);
-      osc.start(ctx.currentTime);
-      osc.stop(ctx.currentTime + 0.15);
-    } else if (type === 'countdown-go') {
-      // Sirene/fanfarra triunfal de LARGADA (sinal verde F1 / Kart)
-      [1046, 1318].forEach((freq) => {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = 'sawtooth';
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.frequency.setValueAtTime(freq, ctx.currentTime);
-        gain.gain.setValueAtTime(0.2, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.55);
-        osc.start(ctx.currentTime);
-        osc.stop(ctx.currentTime + 0.56);
-      });
-    } else if (type === 'start') {
+    if (type === 'start') {
       // 3 racing beeps: low, mid, high
       [0, 0.15, 0.3].forEach((offset, idx) => {
         const osc = ctx.createOscillator();
@@ -1753,74 +1719,15 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     return newRental;
   };
 
-  const cancelRental = async (rentalId: string, reason?: string): Promise<boolean> => {
-    const rental = rentalsState.find((r) => r.id === rentalId);
-    if (!rental) return false;
-
-    const cancelReason = reason?.trim() || 'Corrida anulada pelo administrador';
-
-    // 1. Libera o veículo na pista
-    if (rental.vehicleId) {
-      setVehiclesState((prev) =>
-        prev.map((v) =>
-          v.id === rental.vehicleId ? { ...v, status: 'disponivel', activeRentalId: undefined } : v
-        )
-      );
-      syncVehicleToFirestore({
-        id: rental.vehicleId,
-        tenantId: rental.tenantId,
-        status: 'disponivel',
-        activeRentalId: null,
-      });
-    }
-
-    // 2. Atualiza estado da corrida para cancelada/anulada
-    setRentalsState((prev) =>
-      prev.map((r) =>
-        r.id === rentalId
-          ? {
-              ...r,
-              status: 'cancelada',
-              notes: cancelReason,
-            }
-          : r
-      )
-    );
-
-    // 3. Atualiza no Firestore (ambas as coleções para consistência total)
-    syncRentalToFirestore({
-      id: rentalId,
-      tenantId: rental.tenantId,
-      status: 'cancelada',
-      notes: cancelReason,
-    });
-    try {
-      await setDoc(
-        doc(db, 'corridas', rentalId),
-        { status: 'cancelada', notes: cancelReason },
-        { merge: true }
-      );
-    } catch {}
-
-    playTone('alert');
-    return true;
-  };
-
   const deleteRental = (rentalId: string) => {
     const rental = rentalsState.find((r) => r.id === rentalId);
-    if (rental && rental.status === 'ativa' && rental.vehicleId) {
+    if (rental && rental.status === 'ativa') {
       // Libera o carrinho caso a corrida ainda estivesse ativa
       setVehiclesState((prev) =>
         prev.map((v) =>
           v.id === rental.vehicleId ? { ...v, status: 'disponivel', activeRentalId: undefined } : v
         )
       );
-      syncVehicleToFirestore({
-        id: rental.vehicleId,
-        tenantId: rental.tenantId,
-        status: 'disponivel',
-        activeRentalId: null,
-      });
     }
     setRentalsState((prev) => prev.filter((r) => r.id !== rentalId));
     deleteRentalFromFirestore(rentalId);
@@ -1987,7 +1894,6 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
         updateRentalPayment,
         updateRentalDetails,
         addPastRental,
-        cancelRental,
         deleteRental,
         clearRentalHistory,
         addVehicle,

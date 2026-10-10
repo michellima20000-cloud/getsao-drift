@@ -15,7 +15,7 @@ export const BottomNav: React.FC = () => {
     },
     {
       id: 'novo' as const,
-      label: 'Partida',
+      label: 'Novo',
       icon: PlusCircle,
       highlight: true,
     },
