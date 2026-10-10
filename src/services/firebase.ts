@@ -25,19 +25,43 @@ import {
   deleteDoc,
   addDoc,
 } from 'firebase/firestore';
-import firebaseAppletConfig from '../../firebase-applet-config.json';
+// Load firebase-applet-config.json resiliently so Vite never errors if the file is absent
+const appletConfigModules = import.meta.glob('../../firebase-applet-config.json', {
+  eager: true,
+  import: 'default',
+}) as Record<string, Record<string, string>>;
+
+const firebaseAppletConfig: Record<string, string> =
+  Object.values(appletConfigModules)[0] || {};
 
 export const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || firebaseAppletConfig.apiKey,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || firebaseAppletConfig.authDomain,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || firebaseAppletConfig.projectId,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || firebaseAppletConfig.storageBucket,
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || firebaseAppletConfig.apiKey || 'demo-api-key',
+  authDomain:
+    import.meta.env.VITE_FIREBASE_AUTH_DOMAIN ||
+    firebaseAppletConfig.authDomain ||
+    'gen-lang-client-0682320671.firebaseapp.com',
+  projectId:
+    import.meta.env.VITE_FIREBASE_PROJECT_ID ||
+    firebaseAppletConfig.projectId ||
+    'gen-lang-client-0682320671',
+  storageBucket:
+    import.meta.env.VITE_FIREBASE_STORAGE_BUCKET ||
+    firebaseAppletConfig.storageBucket ||
+    'gen-lang-client-0682320671.firebasestorage.app',
   messagingSenderId:
-    import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || firebaseAppletConfig.messagingSenderId,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || firebaseAppletConfig.appId,
-  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || firebaseAppletConfig.measurementId,
+    import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID ||
+    firebaseAppletConfig.messagingSenderId ||
+    '1021285542263',
+  appId:
+    import.meta.env.VITE_FIREBASE_APP_ID ||
+    firebaseAppletConfig.appId ||
+    '1:1021285542263:web:d8b1303ce5257f88b9d972',
+  measurementId:
+    import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || firebaseAppletConfig.measurementId || '',
   firestoreDatabaseId:
-    import.meta.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID || firebaseAppletConfig.firestoreDatabaseId,
+    import.meta.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID ||
+    firebaseAppletConfig.firestoreDatabaseId ||
+    'ai-studio-getsaodrift-29f33687-750b-47f8-a0f2-e038466214e8',
 };
 
 // Initialize Firebase App & Authentication
