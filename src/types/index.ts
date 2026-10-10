@@ -61,11 +61,20 @@ export interface Rental {
   mode: RentalMode;
   startTime: number; // timestamp ms
   endTime: number;   // timestamp ms
-  status: 'ativa' | 'concluida' | 'cancelada';
+  status: 'ativa' | 'concluida' | 'cancelada' | 'anulada';
   operatorId: string;
   operatorName: string;
   createdAt: number;
   notes?: string;
+  isManualPastEntry?: boolean;
+  isNightClosure?: boolean;
+  closureDetails?: {
+    totalRuns?: number;
+    pixAmount?: number;
+    cardAmount?: number;
+    cashAmount?: number;
+    shiftName?: string;
+  };
 }
 
 export interface QueueItem {

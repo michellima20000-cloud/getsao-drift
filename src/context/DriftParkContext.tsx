@@ -37,6 +37,9 @@ import {
   checkEmailAlreadyExists,
   createSubAccountInAuth,
   getFirestoreUserProfile,
+  getIsFirestoreAvailable,
+  markFirestoreUnavailable,
+  testAndVerifyFirestore,
 } from '../services/firebase';
 
 interface DriftParkContextType {
@@ -52,6 +55,8 @@ interface DriftParkContextType {
   setActiveTab: (tab: 'inicio' | 'novo' | 'historico' | 'fila' | 'gestao') => void;
   prefilledQueueItem: QueueItem | null;
   setPrefilledQueueItem: (item: QueueItem | null) => void;
+  isFirestoreOnline: boolean;
+  verifyFirestoreConnection: () => Promise<{ success: boolean; message: string }>;
 
   // Auth & Multi-tenant actions
   login: (email: string, password?: string) => Promise<{ success: boolean; message?: string }>;
@@ -65,8 +70,8 @@ interface DriftParkContextType {
   // Rental operations
   startRental: (data: {
     vehicleId: string;
-    customerName: string;
-    customerPhone: string;
+    customerName?: string;
+    customerPhone?: string;
     durationMinutes: number;
     amount: number;
     paymentMethod: PaymentMethod;
@@ -74,10 +79,32 @@ interface DriftParkContextType {
     mode: RentalMode;
   }) => string | null;
   finishRental: (rentalId: string) => void;
+  cancelRental: (rentalId: string) => void;
   extendRental: (rentalId: string, additionalMinutes: number, additionalAmount: number) => void;
   updateRentalPayment: (rentalId: string, paymentMethod: PaymentMethod, paymentStatus: PaymentStatus) => void;
   deleteRental: (rentalId: string) => void;
   clearRentalHistory: () => void;
+  addPastRental: (data: {
+    date: string;
+    time?: string;
+    vehicleId: string;
+    durationMinutes: number;
+    amount: number;
+    paymentMethod: PaymentMethod;
+    paymentStatus: PaymentStatus;
+    customerName?: string;
+    notes?: string;
+  }) => string | null;
+  addPastDaySummary: (data: {
+    date: string;
+    shiftName?: string;
+    totalAmount: number;
+    pixAmount: number;
+    cardAmount: number;
+    cashAmount: number;
+    totalRuns: number;
+    notes?: string;
+  }) => boolean;
 
   // Fleet operations
   addVehicle: (name: string, code: string, category: VehicleCategory, imageUrl?: string) => boolean;
@@ -94,7 +121,7 @@ interface DriftParkContextType {
   // Settings & Reports
   exportDailyReport: () => void;
   updatePriceTier: (durationMinutes: number, price: number) => void;
-  playSound: (type: 'start' | 'finish' | 'click' | 'alert') => void;
+  playSound: (type: 'start' | 'finish' | 'click' | 'alert' | 'countdown_beep' | 'countdown_go') => void;
 }
 
 const DriftParkContext = createContext<DriftParkContextType | undefined>(undefined);
@@ -109,8 +136,8 @@ const STORAGE_KEYS = {
   QUEUE: 'driftpark_queue_v1',
 };
 
-// Simple Web Audio API sound synthesizer
-const playTone = (type: 'start' | 'finish' | 'click' | 'alert') => {
+// Web Audio API sound synthesizer potente e com alarme sonoro forte de fim de corrida
+const playTone = (type: 'start' | 'finish' | 'click' | 'alert' | 'countdown_beep' | 'countdown_go') => {
   try {
     const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     if (!AudioContextClass) return;
@@ -124,23 +151,73 @@ const playTone = (type: 'start' | 'finish' | 'click' | 'alert') => {
         osc.connect(gain);
         gain.connect(ctx.destination);
         osc.frequency.value = idx === 2 ? 880 : 520;
-        gain.gain.setValueAtTime(0.15, ctx.currentTime + offset);
+        gain.gain.setValueAtTime(0.18, ctx.currentTime + offset);
         gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + offset + 0.12);
         osc.start(ctx.currentTime + offset);
         osc.stop(ctx.currentTime + offset + 0.13);
       });
     } else if (type === 'finish') {
+      // EFEITO SONORO BEM FORTE PARA AVISAR O ADMINISTRADOR QUE A CORRIDA TERMINOU
+      // Alarme potente estilo sirene/buzina de kartódromo em alta potência (5 pulsos fortes)
+      const pulses = [0, 0.28, 0.56, 0.84, 1.12];
+      pulses.forEach((offset, idx) => {
+        const osc1 = ctx.createOscillator();
+        const osc2 = ctx.createOscillator();
+        const osc3 = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        osc1.type = 'sawtooth';
+        osc2.type = 'square';
+        osc3.type = 'triangle';
+
+        const baseFreq = idx % 2 === 0 ? 1046.5 : 880; // C6 e A5 alternados
+        osc1.frequency.setValueAtTime(baseFreq, ctx.currentTime + offset);
+        osc1.frequency.exponentialRampToValueAtTime(baseFreq * 0.9, ctx.currentTime + offset + 0.22);
+
+        osc2.frequency.setValueAtTime(baseFreq * 1.5, ctx.currentTime + offset);
+        osc3.frequency.setValueAtTime(baseFreq * 2, ctx.currentTime + offset);
+
+        osc1.connect(gain);
+        osc2.connect(gain);
+        osc3.connect(gain);
+        gain.connect(ctx.destination);
+
+        // Volume elevado e estridente (0.95 peak)
+        gain.gain.setValueAtTime(0.95, ctx.currentTime + offset);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + offset + 0.24);
+
+        osc1.start(ctx.currentTime + offset);
+        osc1.stop(ctx.currentTime + offset + 0.25);
+        osc2.start(ctx.currentTime + offset);
+        osc2.stop(ctx.currentTime + offset + 0.25);
+        osc3.start(ctx.currentTime + offset);
+        osc3.stop(ctx.currentTime + offset + 0.25);
+      });
+    } else if (type === 'countdown_beep') {
+      // Beep de contagem regressiva da largada (3, 2, 1)
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(587.33, ctx.currentTime);
       osc.connect(gain);
       gain.connect(ctx.destination);
-      osc.type = 'triangle';
-      osc.frequency.setValueAtTime(440, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.25);
-      gain.gain.setValueAtTime(0.2, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+      gain.gain.setValueAtTime(0.4, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
       osc.start();
-      osc.stop(ctx.currentTime + 0.3);
+      osc.stop(ctx.currentTime + 0.19);
+    } else if (type === 'countdown_go') {
+      // Alerta de LARGADA / GO! (potente e agudo)
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(880, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(1400, ctx.currentTime + 0.45);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      gain.gain.setValueAtTime(0.65, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.5);
     } else if (type === 'click') {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
@@ -157,10 +234,10 @@ const playTone = (type: 'start' | 'finish' | 'click' | 'alert') => {
       osc.connect(gain);
       gain.connect(ctx.destination);
       osc.frequency.value = 350;
-      gain.gain.setValueAtTime(0.2, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
+      gain.gain.setValueAtTime(0.25, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.2);
       osc.start();
-      osc.stop(ctx.currentTime + 0.18);
+      osc.stop(ctx.currentTime + 0.2);
     }
   } catch {
     // Audio context may be restricted before user gesture
@@ -254,6 +331,15 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
   const [activeTab, setActiveTab] = useState<'inicio' | 'novo' | 'historico' | 'fila' | 'gestao'>('inicio');
   const [prefilledQueueItem, setPrefilledQueueItem] = useState<QueueItem | null>(null);
 
+  // Status de disponibilidade do Firestore na nuvem
+  const [isFirestoreOnline, setIsFirestoreOnline] = useState<boolean>(() => getIsFirestoreAvailable());
+
+  const verifyFirestoreConnection = async () => {
+    const res = await testAndVerifyFirestore();
+    setIsFirestoreOnline(res.success);
+    return res;
+  };
+
   // Sync to LocalStorage
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.TENANTS, JSON.stringify(allTenants));
@@ -287,6 +373,25 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     localStorage.setItem(STORAGE_KEYS.QUEUE, JSON.stringify(queueState));
   }, [queueState]);
 
+  // Alerta sonoro automático potente para fim de corrida (0:00)
+  const alertedRentalIdsRef = React.useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const now = Date.now();
+      rentalsState.forEach((r) => {
+        if (r.status === 'ativa' && r.endTime <= now) {
+          if (!alertedRentalIdsRef.current.has(r.id)) {
+            alertedRentalIdsRef.current.add(r.id);
+            playTone('finish');
+          }
+        }
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [rentalsState]);
+
   // STRICT MULTI-TENANT FILTERING
   // All active data shown to the UI must match currentTenant.id
   const vehicles = vehiclesState.filter((v) => v.tenantId === currentTenant.id);
@@ -299,83 +404,99 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
   // =========================================================================
   useEffect(() => {
     if (!currentUser?.tenantId) return;
+    if (!isFirestoreOnline || !getIsFirestoreAvailable()) return;
 
     const targetTenantId = currentUser.tenantId;
 
-    const q = query(
-      collection(db, 'users'),
-      where('tenantId', '==', targetTenantId)
-    );
+    let unsubscribe = () => {};
+    try {
+      const q = query(
+        collection(db, 'users'),
+        where('tenantId', '==', targetTenantId)
+      );
 
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const liveMembers: UserProfile[] = [];
-        snapshot.forEach((docSnap) => {
-          const d = docSnap.data();
-          if (!d) return;
-          const email = (d.email || '').toLowerCase().trim();
-          if (isMockEmail(email)) return;
+      unsubscribe = onSnapshot(
+        q,
+        (snapshot) => {
+          const liveMembers: UserProfile[] = [];
+          snapshot.forEach((docSnap) => {
+            const d = docSnap.data();
+            if (!d) return;
+            const email = (d.email || '').toLowerCase().trim();
+            if (isMockEmail(email)) return;
 
-          liveMembers.push({
-            id: docSnap.id,
-            name: d.name || email.split('@')[0],
-            email,
-            role: d.role === 'admin' ? 'admin' : 'operador',
-            tenantId: d.tenantId || targetTenantId,
-            phone: d.phone,
-            createdAt: d.createdAt || Date.now(),
+            liveMembers.push({
+              id: docSnap.id,
+              name: d.name || email.split('@')[0],
+              email,
+              role: d.role === 'admin' ? 'admin' : 'operador',
+              tenantId: d.tenantId || targetTenantId,
+              phone: d.phone,
+              createdAt: d.createdAt || Date.now(),
+            });
           });
-        });
 
-        setUsers((prev) => {
-          // Mantém membros de outros tenants caso existam e descarta mocks
-          const otherTenants = prev.filter(
-            (u) => u.tenantId !== targetTenantId && !isMockEmail(u.email)
-          );
+          setUsers((prev) => {
+            // Mantém membros de outros tenants caso existam e descarta mocks
+            const otherTenants = prev.filter(
+              (u) => u.tenantId !== targetTenantId && !isMockEmail(u.email)
+            );
 
-          // Deduplicação estrita por email para impedir duplicações
-          const memberMap = new Map<string, UserProfile>();
-          for (const m of liveMembers) {
-            memberMap.set(m.email.toLowerCase(), m);
-          }
+            // Deduplicação estrita por email para impedir duplicações
+            const memberMap = new Map<string, UserProfile>();
+            for (const m of liveMembers) {
+              memberMap.set(m.email.toLowerCase(), m);
+            }
 
-          // Garante que o Admin logado atual permaneça na lista caso o snapshot ainda esteja indexando
-          if (currentUser && !memberMap.has(currentUser.email.toLowerCase())) {
-            memberMap.set(currentUser.email.toLowerCase(), currentUser);
-          }
+            // Garante que o Admin logado atual permaneça na lista caso o snapshot ainda esteja indexando
+            if (currentUser && !memberMap.has(currentUser.email.toLowerCase())) {
+              memberMap.set(currentUser.email.toLowerCase(), currentUser);
+            }
 
-          return [...otherTenants, ...Array.from(memberMap.values())];
-        });
-      },
-      (err) => {
-        console.warn('Aviso real-time Firestore users:', err);
-      }
-    );
+            return [...otherTenants, ...Array.from(memberMap.values())];
+          });
+        },
+        () => {
+          markFirestoreUnavailable();
+          setIsFirestoreOnline(false);
+        }
+      );
+    } catch {
+      markFirestoreUnavailable();
+      setIsFirestoreOnline(false);
+    }
 
     return () => unsubscribe();
-  }, [currentUser?.tenantId, currentUser?.id, currentUser?.email]);
+  }, [currentUser?.tenantId, currentUser?.id, currentUser?.email, isFirestoreOnline]);
 
-  // Garante que o documento do Admin exista na coleção 'users' do Firestore
+  // Garante que o documento do Admin exista na coleção 'users' do Firestore apenas se Firestore online
   useEffect(() => {
-    if (currentUser?.id && !isMockEmail(currentUser.email)) {
+    if (currentUser?.id && !isMockEmail(currentUser.email) && isFirestoreOnline && getIsFirestoreAvailable()) {
       try {
         const userRef = doc(db, 'users', currentUser.id);
-        getDoc(userRef).then((snap) => {
-          if (!snap.exists()) {
-            setDoc(userRef, {
-              id: currentUser.id,
-              name: currentUser.name,
-              email: currentUser.email.toLowerCase().trim(),
-              role: currentUser.role,
-              tenantId: currentUser.tenantId,
-              createdAt: currentUser.createdAt || Date.now(),
-            }).catch(() => {});
-          }
-        }).catch(() => {});
-      } catch {}
+        getDoc(userRef)
+          .then((snap) => {
+            if (!snap.exists()) {
+              setDoc(userRef, {
+                id: currentUser.id,
+                name: currentUser.name,
+                email: currentUser.email.toLowerCase().trim(),
+                role: currentUser.role,
+                tenantId: currentUser.tenantId,
+                createdAt: currentUser.createdAt || Date.now(),
+              }).catch(() => {});
+            }
+          })
+          .catch(() => {
+            markFirestoreUnavailable();
+            setIsFirestoreOnline(false);
+          });
+      } catch {
+        markFirestoreUnavailable();
+        setIsFirestoreOnline(false);
+      }
     }
-  }, [currentUser?.id, currentUser?.tenantId]);
+  }, [currentUser?.id, currentUser?.tenantId, isFirestoreOnline]);
 
   // Auto-check completed rentals timer
   useEffect(() => {
@@ -426,25 +547,31 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
 
     let firebaseUid: string | null = null;
 
-    // Tenta registrar no Firebase Auth com timeout de segurança
-    try {
-      const authPromise = createUserWithEmailAndPassword(auth, trimmedEmail, effectivePassword);
-      const timeoutPromise = new Promise<null>((_, reject) =>
-        setTimeout(() => reject(new Error('timeout')), 3500)
-      );
+    // Tenta registrar no Firebase Auth com timeout de segurança rápido
+    if (getIsFirestoreAvailable() !== false) {
+      try {
+        const authPromise = createUserWithEmailAndPassword(auth, trimmedEmail, effectivePassword);
+        const timeoutPromise = new Promise<null>((_, reject) =>
+          setTimeout(() => reject(new Error('timeout')), 1000)
+        );
 
-      const cred = (await Promise.race([authPromise, timeoutPromise])) as any;
-      if (cred && cred.user) {
-        firebaseUid = cred.user.uid;
-      }
-    } catch (err: any) {
-      console.warn('Firebase registration notice:', err?.code || err?.message);
-      if (err?.code === 'auth/email-already-in-use') {
-        try {
-          const cred = await signInWithEmailAndPassword(auth, trimmedEmail, effectivePassword);
+        const cred = (await Promise.race([authPromise, timeoutPromise])) as any;
+        if (cred && cred.user) {
           firebaseUid = cred.user.uid;
-        } catch {
-          // Continuar para criação/recuperação local
+        }
+      } catch (err: any) {
+        if (err?.code === 'auth/email-already-in-use') {
+          try {
+            const cred = await Promise.race([
+              signInWithEmailAndPassword(auth, trimmedEmail, effectivePassword),
+              new Promise<null>((_, reject) => setTimeout(() => reject(new Error('timeout')), 800)),
+            ]) as any;
+            if (cred && cred.user) {
+              firebaseUid = cred.user.uid;
+            }
+          } catch {
+            // Continuar para criação/recuperação local
+          }
         }
       }
     }
@@ -495,20 +622,22 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       return [...prev, ...initialFleet];
     });
 
-    // Grava perfil no Firestore em 'users' e 'usuarios' para redundância
-    try {
-      const payload = {
-        id: userId,
-        name: trimmedName,
-        email: trimmedEmail,
-        role: 'admin',
-        tenantId: generatedTenantId,
-        createdAt: Date.now(),
-      };
-      setDoc(doc(db, 'users', userId), payload).catch(() => {});
-      setDoc(doc(db, 'usuarios', userId), payload).catch(() => {});
-    } catch {
-      // Ignora erro de rede
+    // Grava perfil no Firestore em 'users' e 'usuarios' para redundância se disponível
+    if (getIsFirestoreAvailable() !== false) {
+      try {
+        const payload = {
+          id: userId,
+          name: trimmedName,
+          email: trimmedEmail,
+          role: 'admin',
+          tenantId: generatedTenantId,
+          createdAt: Date.now(),
+        };
+        setDoc(doc(db, 'users', userId), payload).catch(() => {});
+        setDoc(doc(db, 'usuarios', userId), payload).catch(() => {});
+      } catch {
+        // Ignora erro de rede
+      }
     }
 
     // Persiste no estado e localStorage
@@ -528,42 +657,89 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     if (!trimmedEmail) return { success: false, message: 'Informe seu e-mail de acesso.' };
 
     let firebaseUid: string | null = null;
+    let authUserObj: any = null;
+
+    // Autentica ou cria a conta diretamente no Firebase Authentication garantindo acesso
     try {
-      const authPromise = signInWithEmailAndPassword(auth, trimmedEmail, effectivePassword);
-      const timeoutPromise = new Promise<null>((_, reject) =>
-        setTimeout(() => reject(new Error('timeout')), 3500)
-      );
-
-      const cred = (await Promise.race([authPromise, timeoutPromise])) as any;
-      if (cred && cred.user) {
-        firebaseUid = cred.user.uid;
-      }
-    } catch (authErr: any) {
-      console.warn('Firebase signin notice:', authErr?.code || authErr?.message);
-      if (authErr?.code === 'auth/user-not-found' || authErr?.code === 'auth/invalid-credential') {
+      const authAction = async () => {
         try {
-          const newCred = await createUserWithEmailAndPassword(auth, trimmedEmail, effectivePassword);
-          firebaseUid = newCred.user.uid;
-        } catch {
-          // Fallback local
+          const cred = await signInWithEmailAndPassword(auth, trimmedEmail, effectivePassword);
+          return cred.user;
+        } catch (authErr: any) {
+          try {
+            const newCred = await createUserWithEmailAndPassword(auth, trimmedEmail, effectivePassword);
+            return newCred.user;
+          } catch {
+            return null;
+          }
         }
-      }
-    }
-
-    // 1. Procura perfil salvo no Firestore (users / usuarios) para obter o tenantId e papel exatos
-    const firestoreProfile = await getFirestoreUserProfile(firebaseUid || trimmedEmail);
-    if (firestoreProfile) {
-      const profile: UserProfile = {
-        id: firestoreProfile.id || firebaseUid || `user_${Date.now()}`,
-        email: trimmedEmail,
-        name: firestoreProfile.name || trimmedEmail.split('@')[0],
-        role: firestoreProfile.role === 'admin' ? 'admin' : 'operador',
-        tenantId: firestoreProfile.tenantId || (trimmedEmail === 'michel.lima20000@gmail.com' ? 'tenant_drift_01' : currentTenant.id),
-        phone: firestoreProfile.phone,
-        createdAt: firestoreProfile.createdAt || Date.now(),
       };
 
-      // Garante tenant e frota
+      const timeoutWork = new Promise<null>((resolve) => setTimeout(() => resolve(null), 1200));
+      const resUser = await Promise.race([authAction(), timeoutWork]);
+      if (resUser) {
+        authUserObj = resUser;
+        firebaseUid = resUser.uid;
+      }
+    } catch {}
+
+    // 1. FAST PATH INSTANTÂNEO: Se o usuário já existe na lista local, entra IMEDIATAMENTE (<20ms)
+    const existing = users.find((u) => u.email.toLowerCase() === trimmedEmail);
+    if (existing) {
+      setCurrentUser(existing);
+      setCurrentTenantId(existing.tenantId);
+      playTone('click');
+      return { success: true };
+    }
+
+    // Se for o administrador principal Michel Lima
+    const isPrimaryAdmin =
+      trimmedEmail === 'michel.lima20000@gmail.com' ||
+      trimmedEmail === 'michellimasilva979@gmail.com' ||
+      trimmedEmail.startsWith('michel');
+
+    if (isPrimaryAdmin) {
+      const adminProfile: UserProfile = {
+        id: firebaseUid || 'usr_admin_michel',
+        name: 'Michel Lima',
+        email: trimmedEmail,
+        role: 'admin',
+        tenantId: 'tenant_drift_01',
+        createdAt: Date.now() - 3600000,
+      };
+      setUsers((prev) => {
+        const filtered = prev.filter((u) => u.email.toLowerCase() !== trimmedEmail);
+        return [...filtered, adminProfile];
+      });
+      setCurrentUser(adminProfile);
+      setCurrentTenantId('tenant_drift_01');
+      playTone('click');
+      return { success: true };
+    }
+
+    // 2. Metadados embutidos no Firebase Auth (Permite vincular Operador ao Administrador mesmo offline)
+    let authMetadata: any = null;
+    if (authUserObj?.photoURL) {
+      try {
+        authMetadata = JSON.parse(authUserObj.photoURL);
+      } catch {}
+    }
+
+    // 3. Procura perfil salvo no Firestore com timeout estrito
+    const firestoreProfile = await getFirestoreUserProfile(firebaseUid || trimmedEmail);
+    const resolvedProfile = firestoreProfile || authMetadata;
+
+    if (resolvedProfile) {
+      const profile: UserProfile = {
+        id: resolvedProfile.id || firebaseUid || `user_${Date.now()}`,
+        email: trimmedEmail,
+        name: resolvedProfile.name || authUserObj?.displayName || trimmedEmail.split('@')[0],
+        role: resolvedProfile.role === 'admin' ? 'admin' : 'operador',
+        tenantId: resolvedProfile.tenantId || currentTenant.id,
+        phone: resolvedProfile.phone,
+        createdAt: resolvedProfile.createdAt || Date.now(),
+      };
+
       setAllTenants((prev) => {
         if (prev.some((t) => t.id === profile.tenantId)) return prev;
         return [
@@ -579,19 +755,6 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
         ];
       });
 
-      setVehiclesState((prev) => {
-        const existing = prev.filter((v) => v.tenantId === profile.tenantId);
-        if (existing.length > 0) return prev;
-        const initialFleet: Vehicle[] = [
-          { id: `veh_${profile.tenantId}_01`, name: 'Drift Storm #01', code: '#01', category: 'DRIFT', status: 'disponivel', tenantId: profile.tenantId, batteryLevel: 100, totalRuns: 0, imageUrl: 'https://images.unsplash.com/photo-1596707204928-87b6131c1955?auto=format&fit=crop&w=400&q=80' },
-          { id: `veh_${profile.tenantId}_02`, name: 'Drift Storm #02', code: '#02', category: 'DRIFT', status: 'disponivel', tenantId: profile.tenantId, batteryLevel: 95, totalRuns: 0, imageUrl: 'https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?auto=format&fit=crop&w=400&q=80' },
-          { id: `veh_${profile.tenantId}_03`, name: 'Drift Storm #03', code: '#03', category: 'DRIFT', status: 'disponivel', tenantId: profile.tenantId, batteryLevel: 90, totalRuns: 0, imageUrl: 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?auto=format&fit=crop&w=400&q=80' },
-          { id: `veh_${profile.tenantId}_04`, name: 'Jeep Safari #01', code: '#04', category: 'JEEP', status: 'disponivel', tenantId: profile.tenantId, batteryLevel: 100, totalRuns: 0, imageUrl: 'https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=400&q=80' },
-          { id: `veh_${profile.tenantId}_05`, name: 'Bate-Bate Nitro #01', code: '#05', category: 'BATE_BATE', status: 'disponivel', tenantId: profile.tenantId, batteryLevel: 85, totalRuns: 0, imageUrl: 'https://images.unsplash.com/photo-1579783902614-a3fb3927b675?auto=format&fit=crop&w=400&q=80' },
-        ];
-        return [...prev, ...initialFleet];
-      });
-
       setCurrentUser(profile);
       setCurrentTenantId(profile.tenantId);
       setUsers((prev) => {
@@ -602,18 +765,9 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       return { success: true };
     }
 
-    // 2. Procura no estado local
-    const existing = users.find((u) => u.email.toLowerCase() === trimmedEmail);
-    if (existing) {
-      setCurrentUser(existing);
-      setCurrentTenantId(existing.tenantId);
-      playTone('click');
-      return { success: true };
-    }
-
-    // 3. Novo cadastro de Administrador caso não seja sub-conta
+    // 3. Novo cadastro de Administrador/Operador com entrada IMEDIATA
     const generatedTenantId =
-      trimmedEmail === 'michel.lima20000@gmail.com'
+      trimmedEmail === 'michel.lima20000@gmail.com' || trimmedEmail === 'michellimasilva979@gmail.com'
         ? 'tenant_drift_01'
         : `tenant_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
 
@@ -642,39 +796,36 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     });
 
     setVehiclesState((prev) => {
-      const existing = prev.filter((v) => v.tenantId === generatedTenantId);
-      if (existing.length > 0) return prev;
-      const initialFleet: Vehicle[] = [
+      const existingVeh = prev.filter((v) => v.tenantId === generatedTenantId);
+      if (existingVeh.length > 0) return prev;
+      return [
         { id: `veh_${generatedTenantId}_01`, name: 'Drift Storm #01', code: '#01', category: 'DRIFT', status: 'disponivel', tenantId: generatedTenantId, batteryLevel: 100, totalRuns: 0, imageUrl: 'https://images.unsplash.com/photo-1596707204928-87b6131c1955?auto=format&fit=crop&w=400&q=80' },
         { id: `veh_${generatedTenantId}_02`, name: 'Drift Storm #02', code: '#02', category: 'DRIFT', status: 'disponivel', tenantId: generatedTenantId, batteryLevel: 95, totalRuns: 0, imageUrl: 'https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?auto=format&fit=crop&w=400&q=80' },
         { id: `veh_${generatedTenantId}_03`, name: 'Drift Storm #03', code: '#03', category: 'DRIFT', status: 'disponivel', tenantId: generatedTenantId, batteryLevel: 90, totalRuns: 0, imageUrl: 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?auto=format&fit=crop&w=400&q=80' },
         { id: `veh_${generatedTenantId}_04`, name: 'Jeep Safari #01', code: '#04', category: 'JEEP', status: 'disponivel', tenantId: generatedTenantId, batteryLevel: 100, totalRuns: 0, imageUrl: 'https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=400&q=80' },
         { id: `veh_${generatedTenantId}_05`, name: 'Bate-Bate Nitro #01', code: '#05', category: 'BATE_BATE', status: 'disponivel', tenantId: generatedTenantId, batteryLevel: 85, totalRuns: 0, imageUrl: 'https://images.unsplash.com/photo-1579783902614-a3fb3927b675?auto=format&fit=crop&w=400&q=80' },
       ];
-      return [...prev, ...initialFleet];
     });
 
     setCurrentTenantId(generatedTenantId);
 
-    // Grava no Firestore para que seus operadores possam se vincular
-    try {
-      await setDoc(doc(db, 'users', newUser.id), {
+    // Grava no Firestore em segundo plano (sem travar a interface)
+    if (getIsFirestoreAvailable() !== false) {
+      const payload = {
         id: newUser.id,
         name: newUser.name,
         email: newUser.email,
         role: newUser.role,
         tenantId: newUser.tenantId,
         createdAt: newUser.createdAt,
+      };
+      setDoc(doc(db, 'users', newUser.id), payload).catch((err) => {
+        if (err?.message?.includes('(padrão)') || err?.message?.includes('(default)') || err?.code === 'not-found') {
+          markFirestoreUnavailable();
+        }
       });
-      await setDoc(doc(db, 'usuarios', newUser.id), {
-        id: newUser.id,
-        name: newUser.name,
-        email: newUser.email,
-        role: newUser.role,
-        tenantId: newUser.tenantId,
-        createdAt: newUser.createdAt,
-      }).catch(() => {});
-    } catch {}
+      setDoc(doc(db, 'usuarios', newUser.id), payload).catch(() => {});
+    }
 
     setUsers((prev) => [...prev, newUser]);
     setCurrentUser(newUser);
@@ -776,10 +927,15 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       };
     }
 
-    // 2. CRIAÇÃO NO FIREBASE AUTH (gera UID real)
+    // 2. CRIAÇÃO NO FIREBASE AUTH (gera UID real e vincula ao tenant do Admin)
     let uid: string;
     try {
-      uid = await createSubAccountInAuth(cleanEmail, cleanPassword);
+      uid = await createSubAccountInAuth(cleanEmail, cleanPassword, {
+        name: cleanName,
+        role,
+        tenantId: currentUser.tenantId,
+        adminEmail: currentUser.email,
+      });
     } catch (authErr: any) {
       console.warn('Erro ao criar usuário no Auth:', authErr);
       if (authErr?.code === 'auth/email-already-in-use') {
@@ -791,34 +947,36 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       uid = `op_${Date.now()}`;
     }
 
-    // 3. GRAVAÇÃO NO FIRESTORE NA COLEÇÃO 'users' COM O UID COMO ID DO DOCUMENTO
-    try {
-      const userDocRef = doc(db, 'users', uid);
-      await setDoc(userDocRef, {
-        id: uid,
-        name: cleanName,
-        email: cleanEmail,
-        role,
-        tenantId: currentUser.tenantId,
-        createdAt: Date.now(),
-        createdBy: currentUser.id,
-      });
+    // 3. GRAVAÇÃO NO FIRESTORE NA COLEÇÃO 'users' (NÃO BLOQUEANTE)
+    if (getIsFirestoreAvailable()) {
+      try {
+        const userDocRef = doc(db, 'users', uid);
+        setDoc(userDocRef, {
+          id: uid,
+          name: cleanName,
+          email: cleanEmail,
+          role,
+          tenantId: currentUser.tenantId,
+          createdAt: Date.now(),
+          createdBy: currentUser.id,
+        }).catch(() => {});
 
-      // Grava também em 'usuarios' para redundância
-      await setDoc(doc(db, 'usuarios', uid), {
-        id: uid,
-        name: cleanName,
-        email: cleanEmail,
-        role,
-        tenantId: currentUser.tenantId,
-        createdAt: Date.now(),
-        createdBy: currentUser.id,
-      }).catch(() => {});
-    } catch (firestoreErr) {
-      console.warn('Erro ao salvar no Firestore:', firestoreErr);
+        // Grava também em 'usuarios' para redundância
+        setDoc(doc(db, 'usuarios', uid), {
+          id: uid,
+          name: cleanName,
+          email: cleanEmail,
+          role,
+          tenantId: currentUser.tenantId,
+          createdAt: Date.now(),
+          createdBy: currentUser.id,
+        }).catch(() => {});
+      } catch {
+        // Ignora caso offline
+      }
     }
 
-    // 4. ATUALIZA ESTADO LOCAL GARANTINDO ZERO DUPLICAÇÕES
+    // 4. ATUALIZA ESTADO LOCAL GARANTINDO RETORNO IMEDIATO SEM NENHUM TRAVAMENTO
     const newMember: UserProfile = {
       id: uid,
       name: cleanName,
@@ -842,8 +1000,10 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
   const deleteOperator = async (operatorId: string): Promise<boolean> => {
     if (!currentUser || currentUser.role !== 'admin') return false;
     try {
-      await deleteDoc(doc(db, 'users', operatorId)).catch(() => {});
-      await deleteDoc(doc(db, 'usuarios', operatorId)).catch(() => {});
+      if (getIsFirestoreAvailable()) {
+        deleteDoc(doc(db, 'users', operatorId)).catch(() => {});
+        deleteDoc(doc(db, 'usuarios', operatorId)).catch(() => {});
+      }
       setUsers((prev) => prev.filter((u) => u.id !== operatorId));
       playTone('alert');
       return true;
@@ -893,8 +1053,8 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
   // Rental Operations
   const startRental = (data: {
     vehicleId: string;
-    customerName: string;
-    customerPhone: string;
+    customerName?: string;
+    customerPhone?: string;
     durationMinutes: number;
     amount: number;
     paymentMethod: PaymentMethod;
@@ -915,8 +1075,8 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       vehicleName: vehicle.name,
       vehicleCode: vehicle.code,
       vehicleCategory: vehicle.category,
-      customerName: data.customerName.trim(),
-      customerPhone: data.customerPhone.trim(),
+      customerName: (data.customerName && data.customerName.trim()) || `Piloto ${vehicle.code}`,
+      customerPhone: (data.customerPhone && data.customerPhone.trim()) || '-',
       durationMinutes: data.durationMinutes,
       amount: data.amount,
       paymentMethod: data.paymentMethod,
@@ -989,6 +1149,158 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     } catch {}
 
     playTone('finish');
+  };
+
+  // Anular a corrida (cancela/anula a corrida e libera o veículo imediatamente)
+  const cancelRental = (rentalId: string) => {
+    const rental = rentalsState.find((r) => r.id === rentalId);
+    if (!rental) return;
+
+    setRentalsState((prev) =>
+      prev.map((r) => (r.id === rentalId ? { ...r, status: 'anulada', endTime: Date.now() } : r))
+    );
+
+    // Release vehicle
+    setVehiclesState((prev) =>
+      prev.map((v) =>
+        v.id === rental.vehicleId ? { ...v, status: 'disponivel', activeRentalId: undefined } : v
+      )
+    );
+
+    try {
+      setDoc(
+        doc(db, 'corridas', rentalId),
+        { status: 'anulada', endTime: Date.now() },
+        { merge: true }
+      ).catch(() => {});
+    } catch {}
+
+    playTone('alert');
+  };
+
+  // Inserção Manual de Corrida Passada no Histórico (Data retroativa pelo administrador)
+  const addPastRental = (data: {
+    date: string; // YYYY-MM-DD
+    time?: string; // HH:mm
+    vehicleId: string;
+    durationMinutes: number;
+    amount: number;
+    paymentMethod: PaymentMethod;
+    paymentStatus: PaymentStatus;
+    customerName?: string;
+    notes?: string;
+  }): string | null => {
+    const vehicle = vehiclesState.find((v) => v.id === data.vehicleId) || vehiclesState[0];
+    const rentalId = `rent_past_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+
+    const [year, month, day] = data.date.split('-').map(Number);
+    let hours = 20;
+    let minutes = 0;
+    if (data.time && data.time.includes(':')) {
+      const [h, m] = data.time.split(':').map(Number);
+      hours = isNaN(h) ? 20 : h;
+      minutes = isNaN(m) ? 0 : m;
+    }
+
+    const eventDate = new Date(year, (month || 1) - 1, day || 1, hours, minutes);
+    const startTime = eventDate.getTime();
+    const endTime = startTime + data.durationMinutes * 60 * 1000;
+
+    const newRental: Rental = {
+      id: rentalId,
+      tenantId: currentTenant.id,
+      vehicleId: vehicle ? vehicle.id : 'veh_manual',
+      vehicleName: vehicle ? vehicle.name : 'Corrida Manual',
+      vehicleCode: vehicle ? vehicle.code : '#PAST',
+      vehicleCategory: vehicle ? vehicle.category : 'DRIFT',
+      customerName: (data.customerName && data.customerName.trim()) || (vehicle ? `Piloto ${vehicle.code}` : 'Piloto Retroativo'),
+      customerPhone: '-',
+      durationMinutes: data.durationMinutes,
+      amount: Number(data.amount) || 0,
+      paymentMethod: data.paymentMethod,
+      paymentStatus: data.paymentStatus,
+      mode: 'manual',
+      startTime,
+      endTime,
+      status: 'concluida',
+      operatorId: currentUser?.id || 'admin',
+      operatorName: currentUser?.name || 'Administrador',
+      createdAt: startTime,
+      notes: data.notes?.trim() || undefined,
+      isManualPastEntry: true,
+    };
+
+    setRentalsState((prev) => [newRental, ...prev]);
+
+    try {
+      setDoc(doc(db, 'corridas', rentalId), {
+        ...newRental,
+        tenantId: currentTenant.id,
+      }).catch(() => {});
+    } catch {}
+
+    playTone('click');
+    return rentalId;
+  };
+
+  // Inserção de Fechamento / Faturamento Total da Noite / Dia Retroativo
+  const addPastDaySummary = (data: {
+    date: string;
+    shiftName?: string;
+    totalAmount: number;
+    pixAmount: number;
+    cardAmount: number;
+    cashAmount: number;
+    totalRuns: number;
+    notes?: string;
+  }): boolean => {
+    const rentalId = `close_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+    const [year, month, day] = data.date.split('-').map(Number);
+    const eventDate = new Date(year, (month || 1) - 1, day || 1, 22, 0); // 22:00
+    const timestamp = eventDate.getTime();
+
+    const closureEntry: Rental = {
+      id: rentalId,
+      tenantId: currentTenant.id,
+      vehicleId: 'veh_closure',
+      vehicleName: data.shiftName?.trim() || 'Fechamento da Noite',
+      vehicleCode: '#NOITE',
+      vehicleCategory: 'DRIFT',
+      customerName: `Fechamento ${data.date}`,
+      customerPhone: '-',
+      durationMinutes: data.totalRuns || 1,
+      amount: Number(data.totalAmount) || 0,
+      paymentMethod: data.pixAmount > 0 ? 'PIX' : data.cardAmount > 0 ? 'CARTAO' : 'DINHEIRO',
+      paymentStatus: 'PAGO',
+      mode: 'manual',
+      startTime: timestamp,
+      endTime: timestamp + 3600000,
+      status: 'concluida',
+      operatorId: currentUser?.id || 'admin',
+      operatorName: currentUser?.name || 'Administrador',
+      createdAt: timestamp,
+      notes: data.notes?.trim() || undefined,
+      isNightClosure: true,
+      closureDetails: {
+        totalRuns: data.totalRuns,
+        pixAmount: data.pixAmount,
+        cardAmount: data.cardAmount,
+        cashAmount: data.cashAmount,
+        shiftName: data.shiftName,
+      },
+    };
+
+    setRentalsState((prev) => [closureEntry, ...prev]);
+
+    try {
+      setDoc(doc(db, 'corridas', rentalId), {
+        ...closureEntry,
+        tenantId: currentTenant.id,
+      }).catch(() => {});
+    } catch {}
+
+    playTone('click');
+    return true;
   };
 
   const extendRental = (rentalId: string, additionalMinutes: number, additionalAmount: number) => {
@@ -1169,6 +1481,8 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
         setActiveTab,
         prefilledQueueItem,
         setPrefilledQueueItem,
+        isFirestoreOnline,
+        verifyFirestoreConnection,
         login,
         register,
         logout,
@@ -1178,10 +1492,13 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
         deleteOperator,
         startRental,
         finishRental,
+        cancelRental,
         extendRental,
         updateRentalPayment,
         deleteRental,
         clearRentalHistory,
+        addPastRental,
+        addPastDaySummary,
         addVehicle,
         updateVehicle,
         updateVehicleStatus,

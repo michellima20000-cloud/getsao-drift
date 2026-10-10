@@ -11,8 +11,6 @@ import {
   Car,
   Clock,
   DollarSign,
-  User,
-  Phone,
   Flame,
   Compass,
   Zap,
@@ -23,6 +21,7 @@ import {
   CreditCard,
   Banknote,
   Sparkles,
+  X,
 } from 'lucide-react';
 
 export const NewRentalScreen: React.FC = () => {
@@ -33,6 +32,7 @@ export const NewRentalScreen: React.FC = () => {
     setActiveTab,
     prefilledQueueItem,
     setPrefilledQueueItem,
+    playSound,
   } = useDriftPark();
 
   // Mode Selection: "Aluguel Padrão", "Agendado", "Manual"
@@ -41,10 +41,6 @@ export const NewRentalScreen: React.FC = () => {
   // Vehicle Category filter
   const [selectedCategory, setSelectedCategory] = useState<VehicleCategory | 'TODOS'>('TODOS');
   const [selectedVehicleId, setSelectedVehicleId] = useState<string>('');
-
-  // Customer inputs
-  const [customerName, setCustomerName] = useState<string>('');
-  const [customerPhone, setCustomerPhone] = useState<string>('');
 
   // Duration & Pricing
   const [durationMinutes, setDurationMinutes] = useState<number>(10);
@@ -57,11 +53,14 @@ export const NewRentalScreen: React.FC = () => {
   // Feedback message
   const [errorMsg, setErrorMsg] = useState<string>('');
 
+  // Countdown state (Contagem regressiva 3, 2, 1, LARGADA)
+  const [isCountingDown, setIsCountingDown] = useState(false);
+  const [countdownStep, setCountdownStep] = useState<number | 'LARGADA'>(3);
+  const timersRef = React.useRef<NodeJS.Timeout[]>([]);
+
   // Prefill if coming from Queue
   useEffect(() => {
     if (prefilledQueueItem) {
-      setCustomerName(prefilledQueueItem.customerName);
-      setCustomerPhone(prefilledQueueItem.customerPhone);
       setSelectedCategory(prefilledQueueItem.categoryDesired);
       setDurationMinutes(prefilledQueueItem.durationMinutes || 10);
     }
@@ -96,21 +95,16 @@ export const NewRentalScreen: React.FC = () => {
 
   const durationOptions = [5, 10, 15, 20, 30];
 
-  const handleStart = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedVehicleId) {
-      setErrorMsg('Selecione um carrinho disponível para iniciar a corrida.');
-      return;
-    }
-    if (!customerName.trim()) {
-      setErrorMsg('Informe o nome do cliente/piloto.');
-      return;
-    }
+  const executeRentalStart = () => {
+    timersRef.current.forEach(clearTimeout);
+    timersRef.current = [];
+    setIsCountingDown(false);
 
+    const vehicle = vehicles.find((v) => v.id === selectedVehicleId);
     const rentalId = startRental({
       vehicleId: selectedVehicleId,
-      customerName,
-      customerPhone: customerPhone || '(11) 99999-0000',
+      customerName: prefilledQueueItem?.customerName || (vehicle ? `Piloto ${vehicle.code}` : 'Piloto da Pista'),
+      customerPhone: prefilledQueueItem?.customerPhone || '-',
       durationMinutes,
       amount: calculatedPrice,
       paymentMethod,
@@ -119,14 +113,55 @@ export const NewRentalScreen: React.FC = () => {
     });
 
     if (rentalId) {
-      // Clear form
-      setCustomerName('');
-      setCustomerPhone('');
       setPrefilledQueueItem(null);
       setErrorMsg('');
-      setActiveTab('inicio'); // Go to live dashboard to see countdown
+      setActiveTab('inicio');
     }
   };
+
+  const handleStart = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!selectedVehicleId) {
+      setErrorMsg('Selecione um carrinho disponível para iniciar a corrida.');
+      return;
+    }
+    setErrorMsg('');
+
+    // Inicia a contagem regressiva oficial com luzes e som
+    setIsCountingDown(true);
+    setCountdownStep(3);
+    playSound('countdown_beep');
+
+    timersRef.current.forEach(clearTimeout);
+    timersRef.current = [];
+
+    const t1 = setTimeout(() => {
+      setCountdownStep(2);
+      playSound('countdown_beep');
+    }, 900);
+
+    const t2 = setTimeout(() => {
+      setCountdownStep(1);
+      playSound('countdown_beep');
+    }, 1800);
+
+    const t3 = setTimeout(() => {
+      setCountdownStep('LARGADA');
+      playSound('countdown_go');
+    }, 2700);
+
+    const t4 = setTimeout(() => {
+      executeRentalStart();
+    }, 3600);
+
+    timersRef.current = [t1, t2, t3, t4];
+  };
+
+  useEffect(() => {
+    return () => {
+      timersRef.current.forEach(clearTimeout);
+    };
+  }, []);
 
   return (
     <div className="space-y-4 pb-8">
@@ -244,10 +279,18 @@ export const NewRentalScreen: React.FC = () => {
                   }`}
                 >
                   <div className="flex items-center gap-2.5 mb-1.5">
-                    {/* Vehicle Category Icon */}
-                    <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-300 shrink-0 text-sm">
-                      {veh.category === 'DRIFT' ? '🏎️' : veh.category === 'JEEP' ? '🚙' : '⚡'}
-                    </div>
+                    {/* Vehicle Category Icon or Real Photo */}
+                    {veh.imageUrl ? (
+                      <img
+                        src={veh.imageUrl}
+                        alt={veh.name}
+                        className="w-8 h-8 rounded-lg object-cover border border-cyan-500/40 shrink-0"
+                      />
+                    ) : (
+                      <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-300 shrink-0 text-sm">
+                        {veh.category === 'DRIFT' ? '🏎️' : veh.category === 'JEEP' ? '🚙' : '⚡'}
+                      </div>
+                    )}
 
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between">
@@ -272,49 +315,11 @@ export const NewRentalScreen: React.FC = () => {
         )}
       </div>
 
-      {/* 3. Cliente (Nome e Telefone) */}
-      <div className="space-y-2">
-        <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-          <User size={14} className="text-cyan-400" />
-          2. Dados do Piloto / Cliente
-        </label>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          {/* Nome */}
-          <div className="relative">
-            <div className="flex items-center px-3.5 py-2.5 rounded-xl border border-slate-700 focus-within:border-cyan-400 bg-[#141E38]/80">
-              <User size={16} className="text-cyan-400 mr-2 shrink-0" />
-              <input
-                type="text"
-                value={customerName}
-                onChange={(e) => setCustomerName(e.target.value)}
-                placeholder="Nome do Piloto"
-                className="w-full bg-transparent text-sm text-white placeholder-slate-500 focus:outline-none"
-              />
-            </div>
-          </div>
-
-          {/* Telefone WhatsApp */}
-          <div className="relative">
-            <div className="flex items-center px-3.5 py-2.5 rounded-xl border border-slate-700 focus-within:border-cyan-400 bg-[#141E38]/80">
-              <Phone size={16} className="text-cyan-400 mr-2 shrink-0" />
-              <input
-                type="tel"
-                value={customerPhone}
-                onChange={(e) => setCustomerPhone(e.target.value)}
-                placeholder="WhatsApp (ex: 11 98765-4321)"
-                className="w-full bg-transparent text-sm text-white placeholder-slate-500 focus:outline-none"
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 4. Tempo / Duração */}
+      {/* 2. Tempo / Duração */}
       <div className="space-y-2">
         <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
           <Clock size={14} className="text-cyan-400" />
-          3. Tempo da Corrida
+          2. Tempo da Corrida
         </label>
 
         <div className="grid grid-cols-5 gap-1.5">
@@ -356,11 +361,11 @@ export const NewRentalScreen: React.FC = () => {
         )}
       </div>
 
-      {/* 5. Forma de Pagamento & Status (PAGO / NÃO PAGO) */}
+      {/* 3. Forma de Pagamento & Status (PAGO / NÃO PAGO) */}
       <div className="space-y-2">
         <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
           <DollarSign size={14} className="text-cyan-400" />
-          4. Pagamento
+          3. Pagamento
         </label>
 
         <div className="grid grid-cols-3 gap-2">
@@ -483,7 +488,7 @@ export const NewRentalScreen: React.FC = () => {
         </div>
       )}
 
-      {/* 7. Botão Destacado de "Iniciar Corrida" (Glowing cyan button) */}
+      {/* 4. Botão Destacado de "Iniciar Corrida" (Glowing cyan button) */}
       <button
         type="button"
         onClick={handleStart}
@@ -492,6 +497,95 @@ export const NewRentalScreen: React.FC = () => {
         <Play size={20} className="fill-current" />
         <span>INICIAR CORRIDA</span>
       </button>
+
+      {/* Contagem Regressiva Oficial de Largada */}
+      {isCountingDown && (
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#070D1E]/95 backdrop-blur-2xl p-6 text-center animate-fadeIn select-none">
+          {/* Luzes de Largada (F1 Starting Lights Tree) */}
+          <div className="flex items-center gap-3.5 p-3.5 rounded-2xl bg-[#0B132B] border border-cyan-500/40 shadow-[0_0_35px_rgba(0,180,216,0.3)] mb-6">
+            {/* Luz 1 */}
+            <div
+              className={`w-10 h-10 rounded-full border-2 transition-all duration-300 ${
+                countdownStep === 'LARGADA'
+                  ? 'bg-emerald-500 border-emerald-300 shadow-[0_0_25px_#10B981]'
+                  : countdownStep === 3 || countdownStep === 2 || countdownStep === 1
+                  ? 'bg-rose-600 border-rose-400 shadow-[0_0_25px_#E11D48]'
+                  : 'bg-slate-800 border-slate-700'
+              }`}
+            />
+            {/* Luz 2 */}
+            <div
+              className={`w-10 h-10 rounded-full border-2 transition-all duration-300 ${
+                countdownStep === 'LARGADA'
+                  ? 'bg-emerald-500 border-emerald-300 shadow-[0_0_25px_#10B981]'
+                  : countdownStep === 2 || countdownStep === 1
+                  ? 'bg-rose-600 border-rose-400 shadow-[0_0_25px_#E11D48]'
+                  : 'bg-slate-800 border-slate-700'
+              }`}
+            />
+            {/* Luz 3 */}
+            <div
+              className={`w-10 h-10 rounded-full border-2 transition-all duration-300 ${
+                countdownStep === 'LARGADA'
+                  ? 'bg-emerald-500 border-emerald-300 shadow-[0_0_25px_#10B981]'
+                  : countdownStep === 1
+                  ? 'bg-rose-600 border-rose-400 shadow-[0_0_25px_#E11D48]'
+                  : 'bg-slate-800 border-slate-700'
+              }`}
+            />
+          </div>
+
+          <div className="text-xs uppercase font-extrabold tracking-widest text-cyan-400 mb-2 font-display">
+            PREPARAR PARA A PISTA
+          </div>
+
+          {/* Número Gigante da Contagem Regressiva */}
+          <div className="my-3 min-h-[140px] flex items-center justify-center">
+            {countdownStep === 'LARGADA' ? (
+              <div className="text-5xl sm:text-7xl font-black font-display text-emerald-400 tracking-wider drop-shadow-[0_0_40px_rgba(16,185,129,0.9)] animate-pulse">
+                LARGADA! 🏁
+              </div>
+            ) : (
+              <div className="text-8xl sm:text-9xl font-black font-display text-[#00F0FF] tracking-tighter drop-shadow-[0_0_50px_rgba(0,240,255,0.9)] scale-110">
+                {countdownStep}
+              </div>
+            )}
+          </div>
+
+          {/* Dados do Veículo */}
+          <div className="mt-2 p-4 rounded-xl bg-[#141E38]/90 border border-cyan-500/30 max-w-xs w-full shadow-lg">
+            <div className="text-[11px] uppercase font-bold text-slate-400">Veículo na Pista</div>
+            <div className="text-base font-extrabold text-white mt-0.5">
+              {selectedVehicle?.code} · {selectedVehicle?.name}
+            </div>
+            <div className="text-xs text-cyan-300 mt-1 font-mono">
+              Tempo: {durationMinutes} min · R$ {calculatedPrice.toFixed(2)}
+            </div>
+          </div>
+
+          {/* Ações da contagem */}
+          <div className="mt-6 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                timersRef.current.forEach(clearTimeout);
+                timersRef.current = [];
+                setIsCountingDown(false);
+              }}
+              className="px-4 py-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-xs font-bold text-slate-400 hover:text-white border border-slate-700 transition-all"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={executeRentalStart}
+              className="px-5 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-xs font-black text-slate-950 shadow-[0_0_15px_rgba(0,180,216,0.4)] transition-all hover:scale-105"
+            >
+              Pular e Iniciar Já ⏩
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

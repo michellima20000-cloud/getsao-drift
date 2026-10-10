@@ -14,6 +14,10 @@ import {
   BatteryCharging,
   DollarSign,
   Users,
+  Ban,
+  Trash2,
+  X,
+  Volume2,
 } from 'lucide-react';
 
 export const DashboardScreen: React.FC = () => {
@@ -25,7 +29,10 @@ export const DashboardScreen: React.FC = () => {
     queue,
     setActiveTab,
     finishRental,
+    cancelRental,
+    deleteRental,
     extendRental,
+    playSound,
   } = useDriftPark();
 
   // Active races
@@ -206,6 +213,46 @@ export const DashboardScreen: React.FC = () => {
 
       {/* 4. Live Telemetry / Corridas em Andamento */}
       <div className="space-y-3">
+        {/* Banner de Alerta Sonoro de Fim de Corrida */}
+        {activeRentals.some((r) => r.endTime <= Date.now()) && (
+          <div className="p-3.5 rounded-2xl bg-gradient-to-r from-rose-950/90 to-red-900/90 border-2 border-rose-500 shadow-[0_0_25px_rgba(225,29,72,0.4)] flex flex-col sm:flex-row items-center justify-between gap-3 animate-pulse">
+            <div className="flex items-center gap-2.5">
+              <div className="w-10 h-10 rounded-xl bg-rose-500/20 border border-rose-500/50 flex items-center justify-center text-rose-300 text-lg font-black shrink-0">
+                🚨
+              </div>
+              <div>
+                <h4 className="text-xs font-black text-white uppercase tracking-wider">
+                  Corrida Terminada na Pista!
+                </h4>
+                <p className="text-[11px] text-rose-200">
+                  {activeRentals.filter((r) => r.endTime <= Date.now()).map((r) => `${r.vehicleCode} (${r.customerName})`).join(', ')}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => playSound('finish')}
+                className="px-3 py-1.5 rounded-xl bg-slate-900 border border-rose-400 text-rose-200 text-xs font-bold hover:bg-slate-800 transition-all flex items-center gap-1.5 shadow-md active:scale-95"
+                title="Tocar a sirene de corrida em volume alto"
+              >
+                <Volume2 size={15} />
+                <span>Tocar Sirene 🔊</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  activeRentals.filter((r) => r.endTime <= Date.now()).forEach((r) => finishRental(r.id));
+                }}
+                className="px-3.5 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black shadow-md transition-all flex items-center gap-1 active:scale-95"
+              >
+                <CheckCircle2 size={15} />
+                <span>Finalizar</span>
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="flex items-center justify-between">
           <h3 className="text-xs uppercase tracking-wider font-bold text-slate-300 flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-cyan-400 animate-neon-pulse" />
@@ -235,8 +282,12 @@ export const DashboardScreen: React.FC = () => {
               <ActiveRentalCard
                 key={rental.id}
                 rental={rental}
+                isAdmin={currentUser?.role === 'admin' || true}
                 onFinish={() => finishRental(rental.id)}
+                onCancel={() => cancelRental(rental.id)}
+                onDelete={() => deleteRental(rental.id)}
                 onExtend={() => extendRental(rental.id, 5, 12)}
+                onPlaySound={() => playSound('finish')}
               />
             ))}
           </div>
@@ -246,15 +297,20 @@ export const DashboardScreen: React.FC = () => {
   );
 };
 
-// Sub-component for individual active race card with live countdown
+// Sub-component for individual active race card with live countdown & admin race controls
 const ActiveRentalCard: React.FC<{
   rental: Rental;
+  isAdmin?: boolean;
   onFinish: () => void;
+  onCancel: () => void;
+  onDelete: () => void;
   onExtend: () => void;
-}> = ({ rental, onFinish, onExtend }) => {
+  onPlaySound: () => void;
+}> = ({ rental, isAdmin, onFinish, onCancel, onDelete, onExtend, onPlaySound }) => {
   const [timeLeftMs, setTimeLeftMs] = useState<number>(() =>
     Math.max(0, rental.endTime - Date.now())
   );
+  const [confirmAction, setConfirmAction] = useState<'cancel' | 'delete' | null>(null);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -342,7 +398,7 @@ const ActiveRentalCard: React.FC<{
       </div>
 
       {/* Action Footer */}
-      <div className="mt-3 pt-2 border-t border-slate-800/80 flex items-center justify-between text-xs">
+      <div className="mt-3 pt-2.5 border-t border-slate-800/80 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs">
         <div className="flex items-center gap-2 text-[11px] text-slate-400">
           <span>{rental.paymentMethod}</span>
           <span>·</span>
@@ -357,7 +413,19 @@ const ActiveRentalCard: React.FC<{
           <span>R$ {rental.amount.toFixed(2)}</span>
         </div>
 
-        <div className="flex items-center gap-1.5">
+        {/* Action Buttons */}
+        <div className="flex items-center gap-1.5 flex-wrap justify-end">
+          {isFinished && (
+            <button
+              onClick={onPlaySound}
+              className="px-2 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-[11px] font-bold border border-rose-500/50 transition-colors flex items-center gap-1"
+              title="Tocar a sirene de fim de corrida novamente"
+            >
+              <Volume2 size={12} />
+              <span>Sirene 🔊</span>
+            </button>
+          )}
+
           <button
             onClick={onExtend}
             className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 text-[11px] font-bold border border-slate-700 transition-colors"
@@ -366,14 +434,73 @@ const ActiveRentalCard: React.FC<{
             + 5 min
           </button>
 
+          {/* Finalizar Corrida */}
           <button
             onClick={onFinish}
-            className="px-2.5 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-[11px] font-bold border border-rose-500/40 transition-colors"
+            className="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-[11px] font-bold border border-emerald-500/40 transition-colors flex items-center gap-1"
+            title="Finalizar corrida agora e liberar o veículo"
           >
-            Finalizar
+            <CheckCircle2 size={12} />
+            <span>Finalizar</span>
           </button>
+
+          {/* Domínio do Administrador: Anular e Excluir corrida */}
+          {isAdmin && (
+            <>
+              {/* Anular Corrida */}
+              <button
+                onClick={() => setConfirmAction('cancel')}
+                className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-[11px] font-bold border border-amber-500/40 transition-colors flex items-center gap-1"
+                title="Anular corrida e liberar o veículo"
+              >
+                <Ban size={12} />
+                <span>Anular</span>
+              </button>
+
+              {/* Excluir Corrida */}
+              <button
+                onClick={() => setConfirmAction('delete')}
+                className="px-2.5 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-[11px] font-bold border border-rose-500/40 transition-colors flex items-center gap-1"
+                title="Excluir corrida completamente do sistema"
+              >
+                <Trash2 size={12} />
+                <span>Excluir</span>
+              </button>
+            </>
+          )}
         </div>
       </div>
+
+      {/* Confirmação Inline de Ação Administrativa */}
+      {confirmAction && (
+        <div className="mt-2.5 p-2.5 rounded-lg bg-slate-900/95 border border-slate-700 flex items-center justify-between gap-2 text-xs animate-fadeIn">
+          <span className="text-slate-200 font-medium">
+            {confirmAction === 'cancel'
+              ? 'Deseja realmente ANULAR esta corrida?'
+              : 'Deseja realmente EXCLUIR este registro?'}
+          </span>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              onClick={() => {
+                if (confirmAction === 'cancel') onCancel();
+                if (confirmAction === 'delete') onDelete();
+                setConfirmAction(null);
+              }}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-bold text-white transition-all ${
+                confirmAction === 'cancel' ? 'bg-amber-600 hover:bg-amber-500' : 'bg-rose-600 hover:bg-rose-500'
+              }`}
+            >
+              Sim, confirmar
+            </button>
+            <button
+              onClick={() => setConfirmAction(null)}
+              className="px-2 py-1 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] transition-all"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

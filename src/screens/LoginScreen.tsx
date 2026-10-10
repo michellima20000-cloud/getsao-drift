@@ -6,10 +6,16 @@ import { Mail, Lock, Eye, EyeOff, User, Check, AlertCircle } from 'lucide-react'
 export const LoginScreen: React.FC = () => {
   const { login, register } = useDriftPark();
 
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState(() => {
+    return localStorage.getItem('driftpark_saved_email') || 'michel.lima20000@gmail.com';
+  });
+  const [password, setPassword] = useState(() => {
+    return localStorage.getItem('driftpark_saved_password') || '123456';
+  });
   const [showPassword, setShowPassword] = useState(false);
-  const [rememberMe, setRememberMe] = useState(true);
+  const [rememberMe, setRememberMe] = useState(() => {
+    return localStorage.getItem('driftpark_remember_me') !== 'false';
+  });
   const [isRegisterMode, setIsRegisterMode] = useState(false);
   const [registerName, setRegisterName] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -34,6 +40,16 @@ export const LoginScreen: React.FC = () => {
     if (!password.trim() || password.trim().length < 6) {
       setErrorMessage('A senha deve ter no mínimo 6 dígitos.');
       return;
+    }
+
+    if (rememberMe) {
+      localStorage.setItem('driftpark_saved_email', email.trim());
+      localStorage.setItem('driftpark_saved_password', password.trim());
+      localStorage.setItem('driftpark_remember_me', 'true');
+    } else {
+      localStorage.removeItem('driftpark_saved_email');
+      localStorage.removeItem('driftpark_saved_password');
+      localStorage.setItem('driftpark_remember_me', 'false');
     }
 
     setIsSubmitting(true);

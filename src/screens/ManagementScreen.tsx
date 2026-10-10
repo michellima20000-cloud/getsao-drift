@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useDriftPark } from '../context/DriftParkContext';
 import { Vehicle, VehicleCategory, UserRole } from '../types';
 import {
@@ -13,6 +13,11 @@ import {
   Lock,
   X,
   Pencil,
+  Camera,
+  Upload,
+  Image as ImageIcon,
+  RotateCcw,
+  Check,
 } from 'lucide-react';
 
 export const ManagementScreen: React.FC = () => {
@@ -42,6 +47,13 @@ export const ManagementScreen: React.FC = () => {
   const [vehName, setVehName] = useState('');
   const [vehCode, setVehCode] = useState('');
   const [vehCategory, setVehCategory] = useState<VehicleCategory>('DRIFT');
+  const [vehImageUrl, setVehImageUrl] = useState<string>('');
+  const [isCameraActive, setIsCameraActive] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
   // New Sub Account Form
   const [subName, setSubName] = useState('');
@@ -78,20 +90,162 @@ export const ManagementScreen: React.FC = () => {
     new Map(tenantOperators.map((op) => [op.email.toLowerCase(), op])).values()
   );
 
+  // Stop camera stream safely
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    setIsCameraActive(false);
+    setCameraError(null);
+  };
+
+  // Cleanup camera on unmount or modal close
+  useEffect(() => {
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+      }
+    };
+  }, []);
+
   const handleOpenNewVehicle = () => {
+    stopCamera();
     setEditingVehicle(null);
     setVehName('');
     setVehCode(`#${vehicles.length + 1}`);
     setVehCategory('DRIFT');
+    setVehImageUrl('');
     setIsVehicleModalOpen(true);
   };
 
   const handleOpenEditVehicle = (veh: Vehicle) => {
+    stopCamera();
     setEditingVehicle(veh);
     setVehName(veh.name);
     setVehCode(veh.code);
     setVehCategory(veh.category);
+    setVehImageUrl(veh.imageUrl || '');
     setIsVehicleModalOpen(true);
+  };
+
+  const handleCloseVehicleModal = () => {
+    stopCamera();
+    setIsVehicleModalOpen(false);
+    setEditingVehicle(null);
+    setVehImageUrl('');
+  };
+
+  // Process and compress image file (computer or mobile camera roll)
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        // Redimensiona proporcionalmente para otimizar armazenamento (max 800px)
+        const canvas = document.createElement('canvas');
+        const maxDim = 800;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > maxDim) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          }
+        } else {
+          if (height > maxDim) {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.82);
+          setVehImageUrl(compressedDataUrl);
+          stopCamera();
+        }
+      };
+      if (event.target?.result) {
+        img.src = event.target.result as string;
+      }
+    };
+    reader.readAsDataURL(file);
+    // Reset file input so user can pick same file again if desired
+    e.target.value = '';
+  };
+
+  // Start Live Camera stream (laptop webcam or mobile camera)
+  const startCamera = async () => {
+    setCameraError(null);
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setCameraError('Câmera não suportada neste navegador. Use o botão "Enviar Foto".');
+        return;
+      }
+
+      // Tenta abrir câmera traseira no celular se disponível
+      const constraints: MediaStreamConstraints = {
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+        audio: false,
+      };
+
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      streamRef.current = stream;
+      setIsCameraActive(true);
+
+      // Attach stream to video tag
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play().catch(() => {});
+        }
+      }, 100);
+    } catch (err: any) {
+      console.warn('Erro ao acessar câmera:', err);
+      // Fallback para qualquer câmera caso ideal: environment falhe
+      try {
+        const fallbackStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        streamRef.current = fallbackStream;
+        setIsCameraActive(true);
+        setTimeout(() => {
+          if (videoRef.current) {
+            videoRef.current.srcObject = fallbackStream;
+            videoRef.current.play().catch(() => {});
+          }
+        }, 100);
+      } catch (fallbackErr: any) {
+        setCameraError('Permissão de câmera negada ou dispositivo indisponível. Você também pode enviar uma foto do celular ou computador.');
+      }
+    }
+  };
+
+  // Capture frame from active camera stream
+  const capturePhotoFromCamera = () => {
+    if (!videoRef.current) return;
+    const video = videoRef.current;
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth || 640;
+    canvas.height = video.videoHeight || 480;
+
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const photoDataUrl = canvas.toDataURL('image/jpeg', 0.85);
+      setVehImageUrl(photoDataUrl);
+      stopCamera();
+    }
   };
 
   const handleSaveVehicle = (e: React.FormEvent) => {
@@ -105,18 +259,22 @@ export const ManagementScreen: React.FC = () => {
         name: vehName.trim(),
         code: formattedCode,
         category: vehCategory,
+        imageUrl: vehImageUrl || undefined,
       });
     } else {
       addVehicle(
         vehName.trim(),
         formattedCode,
-        vehCategory
+        vehCategory,
+        vehImageUrl || undefined
       );
     }
 
     setVehName('');
     setVehCode('');
+    setVehImageUrl('');
     setEditingVehicle(null);
+    stopCamera();
     setIsVehicleModalOpen(false);
   };
 
@@ -289,39 +447,70 @@ export const ManagementScreen: React.FC = () => {
           )}
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {vehicles.map((veh) => {
             const isAvailable = veh.status === 'disponivel';
             const isInUse = veh.status === 'em_uso';
             const isMaintenance = veh.status === 'manutencao';
 
+            const categoryEmoji =
+              veh.category === 'DRIFT' ? '🏎️' : veh.category === 'JEEP' ? '🚙' : '⚡';
+
             return (
               <div
                 key={veh.id}
-                className="rounded-xl bg-[#141E38] border border-slate-700/80 p-3 hover:border-cyan-500/50 transition-all flex items-center justify-between gap-2 shadow-sm"
+                className="rounded-2xl bg-[#141E38] border border-slate-700/80 p-3.5 hover:border-cyan-500/50 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md"
               >
+                {/* Left Side: Avatar/Photo & Info */}
                 <div className="flex items-center gap-3 min-w-0">
-                  {/* Code Avatar */}
-                  <div className="w-11 h-11 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-300 font-bold font-display text-sm shrink-0">
-                    {veh.code}
+                  {/* Photo or Styled Avatar */}
+                  <div className="relative w-12 h-12 rounded-xl overflow-hidden bg-slate-900 border border-cyan-500/30 flex items-center justify-center shrink-0 shadow-inner group">
+                    {veh.imageUrl ? (
+                      <img
+                        src={veh.imageUrl}
+                        alt={veh.name}
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          // Se a imagem falhar ao carregar, esconde e mostra o ícone estilizado
+                          (e.target as HTMLElement).style.display = 'none';
+                        }}
+                      />
+                    ) : null}
+                    {/* Fallback caso não haja foto ou imagem quebre */}
+                    <div className={`absolute inset-0 flex flex-col items-center justify-center text-center p-1 bg-gradient-to-br from-[#1C2541] to-[#0B132B] ${veh.imageUrl ? '-z-10' : ''}`}>
+                      <span className="text-base leading-none">{categoryEmoji}</span>
+                      <span className="text-[9px] font-black text-cyan-300 font-mono mt-0.5">
+                        {veh.code}
+                      </span>
+                    </div>
                   </div>
 
-                  <div className="min-w-0">
-                    <h4 className="text-xs font-bold text-white truncate">{veh.name}</h4>
-                    <div className="flex items-center gap-1.5 text-[10px] text-slate-400 mt-0.5">
-                      <span className="text-cyan-300 font-semibold">{veh.category}</span>
-                      <span>·</span>
+                  {/* Vehicle Details */}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-mono font-black text-cyan-300 bg-cyan-950/90 px-1.5 py-0.5 rounded border border-cyan-500/40 shrink-0">
+                        {veh.code}
+                      </span>
+                      <h4 className="text-xs font-bold text-white truncate" title={veh.name}>
+                        {veh.name}
+                      </h4>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-slate-400 mt-1">
+                      <span className="text-cyan-400 font-semibold">{veh.category}</span>
+                      <span>•</span>
                       <span>{veh.totalRuns || 0} corridas</span>
-                      <span>·</span>
-                      <span className="text-emerald-400">{veh.batteryLevel || 100}% bat</span>
+                      <span>•</span>
+                      <span className="text-emerald-400 font-medium">{veh.batteryLevel || 100}% bat</span>
                     </div>
                   </div>
                 </div>
 
-                {/* Status Badge & Controls */}
-                <div className="flex items-center gap-1.5 shrink-0">
+                {/* Right Side: Status Badge & Action Controls (separados claramente sem sobreposição) */}
+                <div className="flex items-center justify-between sm:justify-end gap-2 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-800/80 shrink-0">
+                  {/* Status Badge */}
                   <span
-                    className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                    className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider whitespace-nowrap ${
                       isAvailable
                         ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
                         : isInUse
@@ -332,14 +521,15 @@ export const ManagementScreen: React.FC = () => {
                     {isAvailable ? 'Livre' : isInUse ? 'Em Uso' : 'Manutenção'}
                   </span>
 
+                  {/* Admin Actions */}
                   {isAdmin && (
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1.5 shrink-0">
                       <button
                         onClick={() => handleOpenEditVehicle(veh)}
-                        className="p-1.5 rounded-lg bg-slate-800 text-slate-300 hover:text-cyan-300 border border-slate-700 hover:border-cyan-500/40 transition-colors"
-                        title="Editar dados do veículo"
+                        className="p-1.5 rounded-lg bg-slate-800/90 text-slate-300 hover:text-cyan-300 border border-slate-700 hover:border-cyan-500/50 transition-colors shadow-sm active:scale-95"
+                        title="Editar veículo e foto"
                       >
-                        <Pencil size={12} />
+                        <Pencil size={13} />
                       </button>
 
                       <button
@@ -349,22 +539,22 @@ export const ManagementScreen: React.FC = () => {
                             isMaintenance ? 'disponivel' : 'manutencao'
                           )
                         }
-                        className={`p-1.5 rounded-lg border transition-colors ${
+                        className={`p-1.5 rounded-lg border transition-colors shadow-sm active:scale-95 ${
                           isMaintenance
                             ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                            : 'bg-slate-800 text-slate-400 hover:text-amber-300 border-slate-700'
+                            : 'bg-slate-800/90 text-slate-400 hover:text-amber-300 border-slate-700 hover:border-amber-500/40'
                         }`}
                         title={isMaintenance ? 'Retirar da manutenção' : 'Colocar em manutenção'}
                       >
-                        <Wrench size={12} />
+                        <Wrench size={13} />
                       </button>
 
                       <button
                         onClick={() => deleteVehicle(veh.id)}
-                        className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/30 transition-colors"
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 border border-slate-800 hover:border-rose-500/30 transition-colors shadow-sm active:scale-95"
                         title="Excluir veículo da frota"
                       >
-                        <Trash2 size={12} />
+                        <Trash2 size={13} />
                       </button>
                     </div>
                   )}
@@ -567,14 +757,140 @@ export const ManagementScreen: React.FC = () => {
                 </div>
               </div>
 
+              {/* 3. Foto do Veículo (Celular, Computador ou Tirar Foto) */}
+              <div className="space-y-2 pt-1 border-t border-slate-800">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] uppercase font-bold tracking-wider text-slate-400 flex items-center gap-1.5">
+                    <ImageIcon size={13} className="text-cyan-400" />
+                    <span>Foto do Veículo</span>
+                  </label>
+                  {vehImageUrl && (
+                    <span className="text-[10px] text-emerald-400 font-semibold flex items-center gap-1">
+                      <Check size={12} /> Foto anexada
+                    </span>
+                  )}
+                </div>
+
+                {/* Input oculto para arquivos locais do computador ou celular (incluindo galeria / câmera nativa) */}
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleFileChange}
+                  accept="image/*"
+                  className="hidden"
+                />
+
+                {/* Stream da Câmera Ao Vivo (quando ativo) */}
+                {isCameraActive ? (
+                  <div className="rounded-xl border border-cyan-500/50 bg-black overflow-hidden relative space-y-2 p-2">
+                    <div className="relative rounded-lg overflow-hidden bg-slate-950 aspect-video flex items-center justify-center">
+                      <video
+                        ref={videoRef}
+                        autoPlay
+                        playsInline
+                        muted
+                        className="w-full h-full object-cover"
+                      />
+                      <div className="absolute top-2 left-2 px-2 py-0.5 rounded bg-rose-600/90 text-white text-[10px] font-bold flex items-center gap-1 animate-pulse">
+                        <span className="w-2 h-2 rounded-full bg-white" /> Câmera Ativa
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={capturePhotoFromCamera}
+                        className="flex-1 py-2 rounded-xl bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-md active:scale-95 transition-all"
+                      >
+                        <Camera size={15} />
+                        <span>Capturar Foto</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={stopCamera}
+                        className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-colors"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {/* Preview da foto se existir */}
+                    {vehImageUrl ? (
+                      <div className="relative rounded-xl border border-cyan-500/40 bg-[#141E38] p-2 flex items-center gap-3">
+                        <img
+                          src={vehImageUrl}
+                          alt="Pré-visualização do veículo"
+                          className="w-16 h-16 rounded-lg object-cover border border-slate-700 shrink-0"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-bold text-white truncate">Foto Selecionada</p>
+                          <p className="text-[10px] text-slate-400">Pronta para cadastro na frota</p>
+                          <div className="flex items-center gap-2 mt-1.5">
+                            <button
+                              type="button"
+                              onClick={() => fileInputRef.current?.click()}
+                              className="text-[11px] text-cyan-300 hover:text-cyan-200 underline font-medium"
+                            >
+                              Trocar foto
+                            </button>
+                            <span className="text-slate-600">·</span>
+                            <button
+                              type="button"
+                              onClick={() => setVehImageUrl('')}
+                              className="text-[11px] text-rose-400 hover:text-rose-300 underline font-medium"
+                            >
+                              Remover
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      /* Opções de Upload: Computador/Celular ou Câmera */
+                      <div className="grid grid-cols-2 gap-2">
+                        {/* Botão: Enviar Foto (Computador / Celular) */}
+                        <button
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          className="p-3 rounded-xl border border-slate-700 hover:border-cyan-500/50 bg-[#141E38] hover:bg-[#1C2541] text-slate-300 hover:text-cyan-300 transition-all flex flex-col items-center justify-center text-center gap-1 group"
+                        >
+                          <div className="w-8 h-8 rounded-lg bg-cyan-500/10 group-hover:bg-cyan-500/20 text-cyan-400 flex items-center justify-center">
+                            <Upload size={16} />
+                          </div>
+                          <span className="text-xs font-bold text-white">Enviar Foto</span>
+                          <span className="text-[9px] text-slate-400">Celular ou PC</span>
+                        </button>
+
+                        {/* Botão: Tirar Foto Agora (Webcam ou Câmera do Celular) */}
+                        <button
+                          type="button"
+                          onClick={startCamera}
+                          className="p-3 rounded-xl border border-slate-700 hover:border-amber-500/50 bg-[#141E38] hover:bg-[#1C2541] text-slate-300 hover:text-amber-300 transition-all flex flex-col items-center justify-center text-center gap-1 group"
+                        >
+                          <div className="w-8 h-8 rounded-lg bg-amber-500/10 group-hover:bg-amber-500/20 text-amber-400 flex items-center justify-center">
+                            <Camera size={16} />
+                          </div>
+                          <span className="text-xs font-bold text-white">Tirar Foto</span>
+                          <span className="text-[9px] text-slate-400">Usar câmera</span>
+                        </button>
+                      </div>
+                    )}
+
+                    {cameraError && (
+                      <p className="text-[10px] text-rose-400 bg-rose-950/40 border border-rose-800/60 p-2 rounded-lg">
+                        {cameraError}
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+
               {/* Botões de Ação */}
               <div className="pt-2 flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => {
-                    setIsVehicleModalOpen(false);
-                    setEditingVehicle(null);
-                  }}
+                  onClick={handleCloseVehicleModal}
                   className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-colors"
                 >
                   Cancelar
