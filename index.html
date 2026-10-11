@@ -2,6 +2,88 @@
 <html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
+    <script>
+      (function () {
+        // 1. Suppress third-party browser extension errors (e.g., VPN/adblock fetch interceptors)
+        var isExtensionFetchError = function (msg, filename) {
+          var m = String(msg || '');
+          var f = String(filename || '');
+          return (
+            f.indexOf('chrome-extension://') !== -1 ||
+            f.indexOf('moz-extension://') !== -1 ||
+            m.indexOf('Cannot set property fetch') !== -1 ||
+            m.indexOf('propriedade fetch') !== -1 ||
+            m.indexOf('only a getter') !== -1 ||
+            m.indexOf('apenas um getter') !== -1
+          );
+        };
+
+        window.addEventListener(
+          'error',
+          function (e) {
+            if (
+              isExtensionFetchError(
+                e.message || (e.error && e.error.message),
+                e.filename || (e.error && e.error.stack)
+              )
+            ) {
+              e.stopImmediatePropagation();
+              e.preventDefault();
+              return true;
+            }
+          },
+          true
+        );
+
+        window.addEventListener(
+          'unhandledrejection',
+          function (e) {
+            var reason = e.reason ? String(e.reason.message || e.reason.stack || e.reason) : '';
+            if (isExtensionFetchError(reason, reason)) {
+              e.stopImmediatePropagation();
+              e.preventDefault();
+              return true;
+            }
+          },
+          true
+        );
+
+        var prevOnError = window.onerror;
+        window.onerror = function (msg, url, lineNo, columnNo, error) {
+          if (isExtensionFetchError(msg, url || (error && error.stack))) {
+            return true;
+          }
+          return prevOnError ? prevOnError.apply(this, arguments) : false;
+        };
+
+        // 2. Make window.fetch and Window.prototype.fetch assignable with a getter/setter pair
+        try {
+          var origFetch = window.fetch ? window.fetch.bind(window) : undefined;
+          var makeWritableFetch = function (target) {
+            if (!target) return;
+            var desc = Object.getOwnPropertyDescriptor(target, 'fetch');
+            if (!desc || desc.configurable !== false) {
+              Object.defineProperty(target, 'fetch', {
+                configurable: true,
+                enumerable: true,
+                get: function () {
+                  return origFetch;
+                },
+                set: function (fn) {
+                  if (typeof fn === 'function') {
+                    origFetch = fn;
+                  }
+                },
+              });
+            }
+          };
+          makeWritableFetch(window);
+          if (typeof Window !== 'undefined' && Window.prototype) {
+            makeWritableFetch(Window.prototype);
+          }
+        } catch (err) {}
+      })();
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <script>
       // Compatibilidade para extensões de navegador que tentam sobrescrever window.fetch
@@ -71,4 +153,3 @@
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-
