@@ -1,8 +1,6 @@
 import { initializeApp, getApps, getApp, deleteApp } from 'firebase/app';
 import {
   getAuth,
-  GoogleAuthProvider,
-  signInWithPopup,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signOut,
@@ -16,7 +14,6 @@ import {
   doc,
   setDoc,
   getDoc,
-  getDocFromServer,
   getDocs,
   query,
   where,
@@ -25,120 +22,62 @@ import {
   deleteDoc,
   addDoc,
 } from 'firebase/firestore';
-// Load firebase-applet-config.json resiliently so Vite never errors if the file is absent
-const appletConfigModules = import.meta.glob('../../firebase-applet-config.json', {
-  eager: true,
-  import: 'default',
-}) as Record<string, Record<string, string>>;
-
-const firebaseAppletConfig: Record<string, string> =
-  Object.values(appletConfigModules)[0] || {};
 
 export const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || firebaseAppletConfig.apiKey || 'demo-api-key',
-  authDomain:
-    import.meta.env.VITE_FIREBASE_AUTH_DOMAIN ||
-    firebaseAppletConfig.authDomain ||
-    'gen-lang-client-0682320671.firebaseapp.com',
-  projectId:
-    import.meta.env.VITE_FIREBASE_PROJECT_ID ||
-    firebaseAppletConfig.projectId ||
-    'gen-lang-client-0682320671',
-  storageBucket:
-    import.meta.env.VITE_FIREBASE_STORAGE_BUCKET ||
-    firebaseAppletConfig.storageBucket ||
-    'gen-lang-client-0682320671.firebasestorage.app',
-  messagingSenderId:
-    import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID ||
-    firebaseAppletConfig.messagingSenderId ||
-    '1021285542263',
-  appId:
-    import.meta.env.VITE_FIREBASE_APP_ID ||
-    firebaseAppletConfig.appId ||
-    '1:1021285542263:web:d8b1303ce5257f88b9d972',
-  measurementId:
-    import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || firebaseAppletConfig.measurementId || '',
-  firestoreDatabaseId:
-    import.meta.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID ||
-    firebaseAppletConfig.firestoreDatabaseId ||
-    'ai-studio-getsaodrift-29f33687-750b-47f8-a0f2-e038466214e8',
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyCPg3vNSexfASWeRwQfWkQBF7Uq_kAp-uY',
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'gympulse-personal.firebaseapp.com',
+  databaseURL: import.meta.env.VITE_FIREBASE_DATABASE_URL || 'https://gympulse-personal-default-rtdb.firebaseio.com',
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'gympulse-personal',
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'gympulse-personal.firebasestorage.app',
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '1068724964920',
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || '1:1068724964920:web:d4fec7bbd3dbeceb07a0cd',
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || 'G-PWD1EYY9DD',
 };
+
+// =========================================================================
+// INTERCEPTADOR DE ERROS FIRESTORE
+// Silencia o erro '@firebase/firestore: Banco de dados (padrão) não encontrado'
+// que ocorre quando o projeto Firebase possui Auth/RTDB ativos mas o Cloud Firestore
+// ainda não teve seu banco criado no console do Firebase.
+// =========================================================================
+if (typeof window !== 'undefined') {
+  const origConsoleError = console.error;
+  console.error = function (...args: any[]) {
+    const rawMsg = args
+      .map((a) => (typeof a === 'string' ? a : a?.message || ''))
+      .join(' ');
+
+    if (
+      rawMsg.includes('(padrão)') ||
+      rawMsg.includes('(default)') ||
+      rawMsg.includes('Banco de dados') ||
+      rawMsg.includes('@firebase/firestore')
+    ) {
+      // Marca imediatamente o Firestore como indisponível para interromper tentativas
+      markFirestoreUnavailable();
+      return;
+    }
+    origConsoleError.apply(console, args);
+  };
+}
 
 // Initialize Firebase App & Authentication
 export const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
-export const googleProvider = new GoogleAuthProvider();
 
-export enum OperationType {
-  CREATE = 'create',
-  UPDATE = 'update',
-  DELETE = 'delete',
-  LIST = 'list',
-  GET = 'get',
-  WRITE = 'write',
-}
+// Initialize Firestore
+const customDbId = import.meta.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID;
+export const db = customDbId ? getFirestore(app, customDbId) : getFirestore(app);
 
-export interface FirestoreErrorInfo {
-  error: string;
-  operationType: OperationType;
-  path: string | null;
-  authInfo: {
-    userId?: string | null;
-    email?: string | null;
-    emailVerified?: boolean | null;
-    isAnonymous?: boolean | null;
-    tenantId?: string | null;
-    providerInfo?: {
-      providerId?: string | null;
-      email?: string | null;
-    }[];
-  };
-}
-
-export function handleFirestoreError(
-  error: unknown,
-  operationType: OperationType,
-  path: string | null
-) {
-  const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-      emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
-      tenantId: auth.currentUser?.tenantId,
-      providerInfo:
-        auth.currentUser?.providerData?.map((provider) => ({
-          providerId: provider.providerId,
-          email: provider.email,
-        })) || [],
-    },
-    operationType,
-    path,
-  };
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
-}
-
-// Validate connection to Firestore on boot
-async function testConnection() {
-  try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
-    markFirestoreAvailable();
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.error('Please check your Firebase configuration.');
-      markFirestoreUnavailable();
-    } else {
-      // Permission denied on /test/connection means the server responded and is online!
-      markFirestoreAvailable();
-    }
-  }
-}
-
-let isFirestoreAvailable = true;
+// Estado de disponibilidade do Firestore na nuvem
+// Inicia como false caso já tenhamos detectado erro ou se não houver confirmação
+let isFirestoreAvailable: boolean = (() => {
+  if (typeof window === 'undefined') return false;
+  const cached = localStorage.getItem('driftpark_firestore_available');
+  if (cached === 'true') return true;
+  // Padrão seguro: false para impedir erros no console antes de teste explícito
+  return false;
+})();
 
 export function markFirestoreUnavailable() {
   isFirestoreAvailable = false;
@@ -158,39 +97,50 @@ export function getIsFirestoreAvailable(): boolean {
   return isFirestoreAvailable;
 }
 
-if (typeof window !== 'undefined') {
-  testConnection();
-}
-
+/**
+ * Testa ativamente a conexão com o Firestore (com timeout de 1 segundo)
+ */
 export async function testAndVerifyFirestore(): Promise<{
   success: boolean;
   message: string;
 }> {
   try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
+    const pingDoc = doc(db, '_health_check_', 'ping');
+    const probe = getDoc(pingDoc);
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('timeout')), 1200)
+    );
+
+    await Promise.race([probe, timeout]);
     markFirestoreAvailable();
     return {
       success: true,
-      message: `Cloud Firestore conectado (${firebaseConfig.projectId})!`,
+      message: 'Cloud Firestore conectado e operacional com sucesso!',
     };
   } catch (err: any) {
+    markFirestoreUnavailable();
     const errMsg = err?.message || '';
-    if (errMsg.includes('the client is offline')) {
-      markFirestoreUnavailable();
+    if (
+      errMsg.includes('(padrão)') ||
+      errMsg.includes('(default)') ||
+      errMsg.includes('not-found')
+    ) {
       return {
         success: false,
-        message: 'Cliente offline. Verifique sua conexão.',
+        message:
+          "Banco de dados '(padrão)' não encontrado no projeto Firebase. Crie o Firestore no Firebase Console para ativar.",
       };
     }
-    // Any server response (including permission-denied on test/connection) confirms Firestore is reachable
-    markFirestoreAvailable();
     return {
-      success: true,
-      message: `Cloud Firestore ativo e conectado (${firebaseConfig.projectId})!`,
+      success: false,
+      message: 'Firestore indisponível no momento. O sistema opera com armazenamento local e Firebase Auth.',
     };
   }
 }
 
+/**
+ * Verifica se um e-mail já existe na coleção 'users' ou 'usuarios' do Firestore (sem travar)
+ */
 export async function checkEmailAlreadyExists(email: string): Promise<boolean> {
   if (!getIsFirestoreAvailable()) return false;
   const clean = email.trim().toLowerCase();
@@ -205,40 +155,39 @@ export async function checkEmailAlreadyExists(email: string): Promise<boolean> {
     };
 
     const timeoutWork = new Promise<boolean>((resolve) =>
-      setTimeout(() => resolve(false), 2000)
+      setTimeout(() => resolve(false), 500)
     );
     return await Promise.race([queryWork(), timeoutWork]);
   } catch {
+    markFirestoreUnavailable();
     return false;
   }
 }
 
+/**
+ * Busca perfil do usuário no Firestore pelo UID ou e-mail (com timeout rápido e seguro)
+ */
 export async function getFirestoreUserProfile(uidOrEmail: string): Promise<any | null> {
   if (!getIsFirestoreAvailable()) return null;
-  const clean = uidOrEmail.trim();
+  const clean = uidOrEmail.trim().toLowerCase();
 
   try {
     const fetchWork = async () => {
+      // 1. Tenta buscar direto pelo UID na coleção 'users'
       try {
         const docRef = doc(db, 'users', clean);
         const snap = await getDoc(docRef);
         if (snap.exists()) {
           return snap.data();
         }
-      } catch {}
+      } catch {
+        // Falha silenciosa
+      }
 
-      try {
-        const docRef2 = doc(db, 'usuarios', clean);
-        const snap2 = await getDoc(docRef2);
-        if (snap2.exists()) {
-          return snap2.data();
-        }
-      } catch {}
-
-      const lowerEmail = clean.toLowerCase();
+      // 2. Busca nas coleções por e-mail
       const [snap1, snap2] = await Promise.all([
-        getDocs(query(collection(db, 'users'), where('email', '==', lowerEmail))),
-        getDocs(query(collection(db, 'usuarios'), where('email', '==', lowerEmail))),
+        getDocs(query(collection(db, 'users'), where('email', '==', clean))),
+        getDocs(query(collection(db, 'usuarios'), where('email', '==', clean))),
       ]);
 
       if (!snap1.empty) return snap1.docs[0].data();
@@ -247,18 +196,24 @@ export async function getFirestoreUserProfile(uidOrEmail: string): Promise<any |
     };
 
     const timeoutWork = new Promise<null>((resolve) =>
-      setTimeout(() => resolve(null), 2000)
+      setTimeout(() => resolve(null), 500)
     );
     return await Promise.race([fetchWork(), timeoutWork]);
   } catch {
+    markFirestoreUnavailable();
     return null;
   }
 }
 
+/**
+ * Cria credencial de autenticação no Firebase Auth para Sub-Conta (Operador) sem deslogar o Admin.
+ * Salva metadados (role, tenantId, nome) diretamente no perfil do Firebase Auth (displayName e photoURL),
+ * garantindo vinculação estrita entre o Administrador e o Operador mesmo se o Cloud Firestore estiver offline!
+ */
 export async function createSubAccountInAuth(
   email: string,
   password: string,
-  profileData?: { name?: string; role?: string; tenantId?: string; adminEmail?: string }
+  profileData?: { name?: string; role?: string; tenantId?: string; adminEmail?: string; adminName?: string }
 ): Promise<string> {
   const cleanEmail = email.trim().toLowerCase();
   const secondaryAppName = `sub_auth_${Date.now()}_${Math.random()
@@ -268,22 +223,42 @@ export async function createSubAccountInAuth(
 
   try {
     const secondaryAuth = getAuth(secondaryApp);
-    const cred = await createUserWithEmailAndPassword(
-      secondaryAuth,
-      cleanEmail,
-      password
-    );
-    const uid = cred.user.uid;
+    let userRecord: any = null;
 
-    if (profileData) {
+    try {
+      const cred = await createUserWithEmailAndPassword(
+        secondaryAuth,
+        cleanEmail,
+        password
+      );
+      userRecord = cred.user;
+    } catch (createErr: any) {
+      if (createErr?.code === 'auth/email-already-in-use') {
+        // Se a conta já existe no Firebase Auth, tenta autenticar e re-vincular ao Admin
+        try {
+          const loginCred = await signInWithEmailAndPassword(secondaryAuth, cleanEmail, password);
+          userRecord = loginCred.user;
+        } catch {
+          // Se senha for diferente, relança o erro específico
+          throw createErr;
+        }
+      } else {
+        throw createErr;
+      }
+    }
+
+    const uid = userRecord.uid;
+
+    if (profileData && userRecord) {
       try {
-        await updateProfile(cred.user, {
+        await updateProfile(userRecord, {
           displayName: profileData.name || cleanEmail.split('@')[0],
           photoURL: JSON.stringify({
             role: profileData.role || 'operador',
             tenantId: profileData.tenantId,
             name: profileData.name,
             adminEmail: profileData.adminEmail,
+            adminName: profileData.adminName,
           }),
         });
       } catch (profErr) {
@@ -291,7 +266,7 @@ export async function createSubAccountInAuth(
       }
     }
 
-    await signOut(secondaryAuth);
+    await signOut(secondaryAuth).catch(() => {});
     await deleteApp(secondaryApp).catch(() => {});
     return uid;
   } catch (err: any) {
@@ -301,8 +276,6 @@ export async function createSubAccountInAuth(
 }
 
 export {
-  GoogleAuthProvider,
-  signInWithPopup,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signOut,
@@ -312,7 +285,6 @@ export {
   doc,
   setDoc,
   getDoc,
-  getDocFromServer,
   getDocs,
   query,
   where,

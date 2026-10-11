@@ -278,35 +278,23 @@ export const NewRentalScreen: React.FC = () => {
                       : 'bg-[#141E38]/80 border-slate-700/70 hover:border-slate-500'
                   }`}
                 >
-                  <div className="flex items-center gap-3 mb-1.5">
-                    {/* Vehicle Category Icon or Real Photo em tamanho nítido */}
-                    <div className="relative w-14 h-14 sm:w-16 sm:h-16 rounded-xl overflow-hidden bg-slate-900 border-2 border-cyan-500/40 shrink-0 flex items-center justify-center shadow">
-                      {veh.imageUrl ? (
-                        <img
-                          src={veh.imageUrl}
-                          alt={veh.name}
-                          className="w-full h-full object-cover"
-                          onError={(e) => {
-                            (e.target as HTMLElement).style.display = 'none';
-                          }}
-                        />
-                      ) : null}
-                      <div className={`absolute inset-0 flex flex-col items-center justify-center text-center p-0.5 bg-gradient-to-br from-[#1C2541] to-[#0B132B] ${veh.imageUrl ? '-z-10' : ''}`}>
-                        <span className="text-base leading-none">
-                          {veh.category === 'DRIFT' ? '🏎️' : veh.category === 'JEEP' ? '🚙' : '⚡'}
-                        </span>
-                        <span className="text-[9px] font-black text-cyan-300 font-mono mt-0.5">
-                          {veh.code}
-                        </span>
+                  <div className="flex items-center gap-2.5 mb-1.5">
+                    {/* Vehicle Category Icon or Real Photo */}
+                    {veh.imageUrl ? (
+                      <img
+                        src={veh.imageUrl}
+                        alt={veh.name}
+                        className="w-8 h-8 rounded-lg object-cover border border-cyan-500/40 shrink-0"
+                      />
+                    ) : (
+                      <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-300 shrink-0 text-sm">
+                        {veh.category === 'DRIFT' ? '🏎️' : veh.category === 'JEEP' ? '🚙' : '⚡'}
                       </div>
-                      <div className="absolute top-1 left-1 bg-black/85 px-1 py-0.2 rounded text-[8px] font-mono font-black text-cyan-300 border border-cyan-500/30">
-                        {veh.code}
-                      </div>
-                    </div>
+                    )}
 
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between">
-                        <span className="text-sm font-black text-cyan-400 font-display">
+                        <span className="text-xs font-black text-cyan-400 font-display">
                           {veh.code}
                         </span>
                         <span className="text-[9px] text-emerald-400 font-mono">
