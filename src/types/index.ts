@@ -18,6 +18,10 @@ export interface UserProfile {
   tenantId: string;
   phone?: string;
   createdAt: number;
+  adminEmail?: string;
+  adminName?: string;
+  createdBy?: string;
+  savedPassword?: string;
 }
 
 export interface Tenant {
@@ -52,6 +56,7 @@ export interface Rental {
   vehicleName: string;
   vehicleCode: string;
   vehicleCategory: VehicleCategory;
+  vehicleImageUrl?: string;
   customerName: string;
   customerPhone: string;
   durationMinutes: number;

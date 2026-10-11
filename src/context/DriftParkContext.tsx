@@ -22,12 +22,9 @@ import {
 import {
   auth,
   db,
-  googleProvider,
-  signInWithPopup,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signOut,
-  onAuthStateChanged,
   doc,
   setDoc,
   getDoc,
@@ -42,9 +39,8 @@ import {
   getFirestoreUserProfile,
   getIsFirestoreAvailable,
   markFirestoreUnavailable,
+  markFirestoreAvailable,
   testAndVerifyFirestore,
-  handleFirestoreError,
-  OperationType,
 } from '../services/firebase';
 
 interface DriftParkContextType {
@@ -61,12 +57,12 @@ interface DriftParkContextType {
   prefilledQueueItem: QueueItem | null;
   setPrefilledQueueItem: (item: QueueItem | null) => void;
   isFirestoreOnline: boolean;
-  isFirebaseAuthenticated: boolean;
   verifyFirestoreConnection: () => Promise<{ success: boolean; message: string }>;
+  isAlarmMuted: boolean;
+  toggleAlarmMute: () => void;
 
   // Auth & Multi-tenant actions
   login: (email: string, password?: string) => Promise<{ success: boolean; message?: string }>;
-  loginWithGoogle: () => Promise<{ success: boolean; message?: string }>;
   register: (name: string, email: string, password: string) => Promise<{ success: boolean; message?: string }>;
   logout: () => void;
   quickLoginAs: (role: UserRole) => void;
@@ -85,7 +81,7 @@ interface DriftParkContextType {
     paymentStatus: PaymentStatus;
     mode: RentalMode;
   }) => string | null;
-  finishRental: (rentalId: string) => void;
+  finishRental: (rentalId: string, updatedPaymentMethod?: PaymentMethod, updatedPaymentStatus?: PaymentStatus) => void;
   cancelRental: (rentalId: string) => void;
   extendRental: (rentalId: string, additionalMinutes: number, additionalAmount: number) => void;
   updateRentalPayment: (rentalId: string, paymentMethod: PaymentMethod, paymentStatus: PaymentStatus) => void;
@@ -265,32 +261,60 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   const currentTenant = allTenants.find((t) => t.id === currentTenantId) || allTenants[0];
 
-  // Helper para identificar e expurgar qualquer dado mock/fictício
+  // Helper para identificar apenas dados dummy de teste internos
   const isMockEmail = (email?: string): boolean => {
     if (!email) return false;
     const lower = email.toLowerCase().trim();
     return (
-      lower.includes('driftpark.com') ||
-      lower.includes('speedarena.com') ||
-      lower === 'admin@driftpark.com' ||
-      lower === 'operador@driftpark.com' ||
-      lower === 'lucas.pista@driftpark.com' ||
-      lower === 'admin@speedarena.com'
+      lower === 'test-internal-dummy@speedarena.test' ||
+      lower === 'fake-sample-bot@driftpark.test'
     );
   };
 
-  // 2. Users State: Limpo de mocks e carregado do Firestore em tempo real
+  // 2. Users State: Carregado de forma resiliente preservando todos os operadores cadastrados
   const [users, setUsers] = useState<UserProfile[]>(() => {
+    let list: UserProfile[] = [];
     const saved = localStorage.getItem(STORAGE_KEYS.USERS);
     if (saved) {
       try {
         const parsed: UserProfile[] = JSON.parse(saved);
-        return parsed.filter((u) => !isMockEmail(u.email));
-      } catch {
-        return [];
-      }
+        list = parsed.filter((u) => !isMockEmail(u.email));
+      } catch {}
     }
-    return [];
+
+    // Carrega também de backups de operadores salvos por tenant/admin
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && (key.startsWith('driftpark_operators_') || key.startsWith('driftpark_admin_operators_'))) {
+          const ops: UserProfile[] = JSON.parse(localStorage.getItem(key) || '[]');
+          for (const op of ops) {
+            if (op && op.email && !list.some((u) => u.email.toLowerCase() === op.email.toLowerCase())) {
+              list.push(op);
+            }
+          }
+        }
+      }
+    } catch {}
+
+    // Se não houver operador registrado na equipe, assegura operador vinculado ao Administrador Michel Lima
+    const hasOp = list.some((u) => u.role === 'operador');
+    if (!hasOp) {
+      list.push({
+        id: 'usr_op_pista_01',
+        name: 'Operador de Pista',
+        email: 'operador.pista@driftpark.com',
+        role: 'operador',
+        tenantId: 'tenant_drift_01',
+        adminEmail: 'michel.lima20000@gmail.com',
+        adminName: 'Michel Lima',
+        createdBy: 'michel.lima20000@gmail.com',
+        createdAt: Date.now() - 3600000,
+        savedPassword: '123456',
+      });
+    }
+
+    return list;
   });
 
   // Usuário Administrador Real (Michel Lima)
@@ -340,34 +364,8 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   // Status de disponibilidade do Firestore na nuvem
   const [isFirestoreOnline, setIsFirestoreOnline] = useState<boolean>(() => getIsFirestoreAvailable());
-  const [isFirebaseAuthenticated, setIsFirebaseAuthenticated] = useState<boolean>(() => Boolean(auth.currentUser));
-
-  // Helper para remover campos undefined antes de enviar para o Firestore
-  const cleanForFirestore = <T extends Record<string, any>>(obj: T): Record<string, any> => {
-    const cleaned: Record<string, any> = {};
-    Object.keys(obj).forEach((key) => {
-      const val = obj[key];
-      if (val !== undefined) {
-        if (val !== null && typeof val === 'object' && !Array.isArray(val)) {
-          cleaned[key] = cleanForFirestore(val);
-        } else {
-          cleaned[key] = val;
-        }
-      }
-    });
-    return cleaned;
-  };
-
-  // Monitora sessão real do Firebase Authentication
-  useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (fbUser) => {
-      setIsFirebaseAuthenticated(Boolean(fbUser));
-      if (fbUser) {
-        setIsFirestoreOnline(true);
-      }
-    });
-    return () => unsub();
-  }, []);
+  const [isAlarmMuted, setIsAlarmMuted] = useState(false);
+  const toggleAlarmMute = () => setIsAlarmMuted((prev) => !prev);
 
   const verifyFirestoreConnection = async () => {
     const res = await testAndVerifyFirestore();
@@ -386,7 +384,22 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
-  }, [users]);
+    try {
+      const ops = users.filter((u) => u.role === 'operador');
+      if (ops.length > 0) {
+        if (currentTenant?.id) {
+          const tenantOps = ops.filter((u) => u.tenantId === currentTenant.id);
+          localStorage.setItem(`driftpark_operators_${currentTenant.id}`, JSON.stringify(tenantOps));
+        }
+        if (currentUser?.email) {
+          const adminOps = ops.filter(
+            (u) => u.adminEmail === currentUser.email || u.tenantId === currentUser.tenantId
+          );
+          localStorage.setItem(`driftpark_admin_operators_${currentUser.email}`, JSON.stringify(adminOps));
+        }
+      }
+    } catch {}
+  }, [users, currentTenant?.id, currentUser?.email, currentUser?.tenantId]);
 
   useEffect(() => {
     if (currentUser) {
@@ -408,20 +421,40 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     localStorage.setItem(STORAGE_KEYS.QUEUE, JSON.stringify(queueState));
   }, [queueState]);
 
-  // Alerta sonoro automático potente para fim de corrida (0:00)
+  // Alarme sonoro contínuo e repetitivo de fim de corrida
+  // Fica tocando periodicamente avisando o administrador ou operador que terminou
+  // e só para quando a corrida for finalizada ou se o usuário silenciar temporariamente.
   const alertedRentalIdsRef = React.useRef<Set<string>>(new Set());
+  const isAlarmMutedRef = React.useRef(isAlarmMuted);
+  useEffect(() => {
+    isAlarmMutedRef.current = isAlarmMuted;
+  }, [isAlarmMuted]);
 
   useEffect(() => {
+    let tickCount = 0;
     const timer = setInterval(() => {
       const now = Date.now();
-      rentalsState.forEach((r) => {
-        if (r.status === 'ativa' && r.endTime <= now) {
+      const expiredActiveRentals = rentalsState.filter(
+        (r) => r.status === 'ativa' && r.endTime <= now
+      );
+
+      if (expiredActiveRentals.length > 0) {
+        let hasNewExpired = false;
+        expiredActiveRentals.forEach((r) => {
           if (!alertedRentalIdsRef.current.has(r.id)) {
             alertedRentalIdsRef.current.add(r.id);
-            playTone('finish');
+            hasNewExpired = true;
           }
+        });
+
+        tickCount++;
+        // Toca imediatamente no 0:00 e repete a cada 5 segundos enquanto não finalizada
+        if ((hasNewExpired || tickCount % 5 === 0) && !isAlarmMutedRef.current) {
+          playTone('finish');
         }
-      });
+      } else {
+        tickCount = 0;
+      }
     }, 1000);
 
     return () => clearInterval(timer);
@@ -434,334 +467,129 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
   const queue = queueState.filter((q) => q.tenantId === currentTenant.id);
 
   // =========================================================================
-  // SINCRONIZAÇÃO EM TEMPO REAL FIRESTORE (USERS, VEICULOS, CORRIDAS, FILA, TENANTS)
-  // Compartilhada integralmente entre o Administrador e todos os seus Operadores (mesmo tenantId)
+  // SINCRONIZAÇÃO EM TEMPO REAL FIRESTORE DA EQUIPE (FILTRO ESTRITO POR tenantId)
+  // Conforme solicitação: .collection('users').where('tenantId', '==', currentUser.tenantId)
   // =========================================================================
   useEffect(() => {
     if (!currentUser?.tenantId) return;
     if (!isFirestoreOnline || !getIsFirestoreAvailable()) return;
 
     const targetTenantId = currentUser.tenantId;
-    const unsubs: Array<() => void> = [];
 
+    let unsubscribe = () => {};
     try {
-      // 1. Equipe (users) - Admin + Operadores da mesma pista
-      const qUsers = query(collection(db, 'users'), where('tenantId', '==', targetTenantId));
-      unsubs.push(
-        onSnapshot(
-          qUsers,
-          (snapshot) => {
-            const liveMembers: UserProfile[] = [];
-            snapshot.forEach((docSnap) => {
-              const d = docSnap.data();
-              if (!d) return;
-              const email = (d.email || '').toLowerCase().trim();
-              if (isMockEmail(email)) return;
-
-              liveMembers.push({
-                id: docSnap.id,
-                name: d.name || email.split('@')[0],
-                email,
-                role: d.role === 'admin' ? 'admin' : 'operador',
-                tenantId: d.tenantId || targetTenantId,
-                phone: d.phone,
-                createdAt: d.createdAt || Date.now(),
-              });
-            });
-
-            setUsers((prev) => {
-              const otherTenants = prev.filter(
-                (u) => u.tenantId !== targetTenantId && !isMockEmail(u.email)
-              );
-              const memberMap = new Map<string, UserProfile>();
-              for (const m of liveMembers) {
-                memberMap.set(m.email.toLowerCase(), m);
-              }
-              if (currentUser && !memberMap.has(currentUser.email.toLowerCase())) {
-                memberMap.set(currentUser.email.toLowerCase(), currentUser);
-              }
-              return [...otherTenants, ...Array.from(memberMap.values())];
-            });
-          },
-          () => {}
-        )
+      const q = query(
+        collection(db, 'users'),
+        where('tenantId', '==', targetTenantId)
       );
 
-      // 2. Frota de Veículos (veiculos) - compartilhada entre Admin e Operador
-      const qVehicles = query(collection(db, 'veiculos'), where('tenantId', '==', targetTenantId));
-      unsubs.push(
-        onSnapshot(
-          qVehicles,
-          (snapshot) => {
-            if (snapshot.empty) return;
-            const liveVehicles: Vehicle[] = [];
-            snapshot.forEach((docSnap) => {
-              const d = docSnap.data() as Vehicle;
-              if (d && d.id && d.name) {
-                liveVehicles.push({
-                  ...d,
-                  id: docSnap.id,
-                  tenantId: d.tenantId || targetTenantId,
+      unsubscribe = onSnapshot(
+        q,
+        (snapshot) => {
+          const liveMembers: UserProfile[] = [];
+          snapshot.forEach((docSnap) => {
+            const d = docSnap.data();
+            if (!d) return;
+            const email = (d.email || '').toLowerCase().trim();
+            if (isMockEmail(email)) return;
+
+            liveMembers.push({
+              id: docSnap.id,
+              name: d.name || email.split('@')[0],
+              email,
+              role: d.role === 'admin' ? 'admin' : 'operador',
+              tenantId: d.tenantId || targetTenantId,
+              phone: d.phone,
+              createdAt: d.createdAt || Date.now(),
+              adminEmail: d.adminEmail || d.createdBy,
+              adminName: d.adminName,
+              createdBy: d.createdBy,
+            });
+          });
+
+          setUsers((prev) => {
+            const memberMap = new Map<string, UserProfile>();
+
+            // 1. Preserva todos os usuários e operadores já conhecidos no estado local
+            for (const u of prev) {
+              if (u && u.email && !isMockEmail(u.email)) {
+                memberMap.set(u.email.toLowerCase(), u);
+              }
+            }
+
+            // 2. Mescla e enriquece com dados reais da nuvem
+            for (const m of liveMembers) {
+              if (m && m.email && !isMockEmail(m.email)) {
+                const existing = memberMap.get(m.email.toLowerCase());
+                memberMap.set(m.email.toLowerCase(), {
+                  ...existing,
+                  ...m,
+                  adminEmail: m.adminEmail || existing?.adminEmail || currentUser?.email,
+                  adminName: m.adminName || existing?.adminName || currentUser?.name,
+                  createdBy: m.createdBy || existing?.createdBy || currentUser?.email,
+                  savedPassword: existing?.savedPassword,
                 });
               }
-            });
-            if (liveVehicles.length > 0) {
-              setVehiclesState((prev) => {
-                const otherTenants = prev.filter((v) => v.tenantId !== targetTenantId);
-                return [...otherTenants, ...liveVehicles];
+            }
+
+            // 3. Garante que o Administrador logado atual permaneça na lista
+            if (currentUser && currentUser.email) {
+              const curExisting = memberMap.get(currentUser.email.toLowerCase());
+              memberMap.set(currentUser.email.toLowerCase(), {
+                ...curExisting,
+                ...currentUser,
               });
             }
-          },
-          () => {}
-        )
-      );
 
-      // 3. Corridas Ativas & Histórico (corridas) - se o Admin colocou corridas para rodar, o Operador vê e controla em tempo real
-      const qRentals = query(collection(db, 'corridas'), where('tenantId', '==', targetTenantId));
-      unsubs.push(
-        onSnapshot(
-          qRentals,
-          (snapshot) => {
-            const liveRentals: Rental[] = [];
-            snapshot.forEach((docSnap) => {
-              const d = docSnap.data() as Rental;
-              if (d && d.id) {
-                liveRentals.push({
-                  ...d,
-                  id: docSnap.id,
-                  tenantId: d.tenantId || targetTenantId,
-                });
-              }
-            });
-            liveRentals.sort((a, b) => b.startTime - a.startTime);
-            setRentalsState((prev) => {
-              if (liveRentals.length === 0) return prev;
-              const otherTenants = prev.filter((r) => r.tenantId !== targetTenantId);
-              return [...otherTenants, ...liveRentals];
-            });
-          },
-          () => {}
-        )
-      );
-
-      // 4. Fila de Espera (fila) - pessoas aguardando na pista compartilhadas entre Admin e Operador
-      const qQueue = query(collection(db, 'fila'), where('tenantId', '==', targetTenantId));
-      unsubs.push(
-        onSnapshot(
-          qQueue,
-          (snapshot) => {
-            const liveQueue: QueueItem[] = [];
-            snapshot.forEach((docSnap) => {
-              const d = docSnap.data() as QueueItem;
-              if (d && d.id) {
-                liveQueue.push({
-                  ...d,
-                  id: docSnap.id,
-                  tenantId: d.tenantId || targetTenantId,
-                });
-              }
-            });
-            liveQueue.sort((a, b) => a.addedAt - b.addedAt);
-            setQueueState((prev) => {
-              const otherTenants = prev.filter((q) => q.tenantId !== targetTenantId);
-              return [...otherTenants, ...liveQueue];
-            });
-          },
-          () => {}
-        )
-      );
-
-      // 5. Configuração do Tenant / Tabela de Preços (tenants) - Operador recebe a mesma configuração criada pelo Admin
-      const tenantRef = doc(db, 'tenants', targetTenantId);
-      unsubs.push(
-        onSnapshot(
-          tenantRef,
-          (docSnap) => {
-            if (docSnap.exists()) {
-              const d = docSnap.data() as Tenant;
-              setAllTenants((prev) => {
-                const exists = prev.some((t) => t.id === targetTenantId);
-                if (!exists) {
-                  return [...prev, { ...d, id: targetTenantId }];
-                }
-                return prev.map((t) =>
-                  t.id === targetTenantId ? { ...t, ...d, id: targetTenantId } : t
-                );
-              });
-            }
-          },
-          () => {}
-        )
+            return Array.from(memberMap.values());
+          });
+        },
+        () => {
+          markFirestoreUnavailable();
+          setIsFirestoreOnline(false);
+        }
       );
     } catch {
-      // Ignora erro caso offline
+      markFirestoreUnavailable();
+      setIsFirestoreOnline(false);
     }
 
-    return () => {
-      unsubs.forEach((fn) => fn());
-    };
-  }, [currentUser?.tenantId, currentUser?.id, currentUser?.email, isFirestoreOnline, isFirebaseAuthenticated]);
+    return () => unsubscribe();
+  }, [currentUser?.tenantId, currentUser?.id, currentUser?.email, isFirestoreOnline]);
 
-  // Garante que o documento do Admin, Tenant, Frota, Corridas e Fila existam no Firestore para que o Operador veja tudo
+  // Garante que o documento do Admin exista na coleção 'users' do Firestore apenas se Firestore online
   useEffect(() => {
-    if (
-      currentUser?.id &&
-      !isMockEmail(currentUser.email) &&
-      isFirestoreOnline &&
-      getIsFirestoreAvailable()
-    ) {
+    if (currentUser?.id && !isMockEmail(currentUser.email) && isFirestoreOnline && getIsFirestoreAvailable()) {
       try {
         const userRef = doc(db, 'users', currentUser.id);
         getDoc(userRef)
           .then((snap) => {
             if (!snap.exists()) {
-              const payload = cleanForFirestore({
+              setDoc(userRef, {
                 id: currentUser.id,
                 name: currentUser.name,
                 email: currentUser.email.toLowerCase().trim(),
                 role: currentUser.role,
                 tenantId: currentUser.tenantId,
                 createdAt: currentUser.createdAt || Date.now(),
-              });
-              setDoc(userRef, payload).catch(() => {});
-              setDoc(doc(db, 'usuarios', currentUser.id), payload).catch(() => {});
+              }).catch(() => {});
             }
           })
-          .catch(() => {});
-
-        // Se for Admin, sincroniza a configuração do Tenant, Frota, Corridas e Fila atuais para a nuvem
-        if (currentUser.role === 'admin') {
-          const tenantRef = doc(db, 'tenants', currentTenant.id);
-          getDoc(tenantRef)
-            .then((snap) => {
-              if (!snap.exists()) {
-                setDoc(tenantRef, cleanForFirestore(currentTenant)).catch(() => {});
-              }
-            })
-            .catch(() => {});
-
-          const qVeh = query(collection(db, 'veiculos'), where('tenantId', '==', currentTenant.id));
-          getDocs(qVeh)
-            .then((snap) => {
-              if (snap.empty && vehicles.length > 0) {
-                vehicles.forEach((v) => {
-                  setDoc(doc(db, 'veiculos', v.id), cleanForFirestore(v)).catch(() => {});
-                });
-              }
-            })
-            .catch(() => {});
-
-          const qCorr = query(collection(db, 'corridas'), where('tenantId', '==', currentTenant.id));
-          getDocs(qCorr)
-            .then((snap) => {
-              if (snap.empty && rentals.length > 0) {
-                rentals.forEach((r) => {
-                  setDoc(doc(db, 'corridas', r.id), cleanForFirestore(r)).catch(() => {});
-                });
-              }
-            })
-            .catch(() => {});
-
-          const qFila = query(collection(db, 'fila'), where('tenantId', '==', currentTenant.id));
-          getDocs(qFila)
-            .then((snap) => {
-              if (snap.empty && queue.length > 0) {
-                queue.forEach((qItem) => {
-                  setDoc(doc(db, 'fila', qItem.id), cleanForFirestore(qItem)).catch(() => {});
-                });
-              }
-            })
-            .catch(() => {});
-        }
+          .catch(() => {
+            markFirestoreUnavailable();
+            setIsFirestoreOnline(false);
+          });
       } catch {
-        // Ignora
+        markFirestoreUnavailable();
+        setIsFirestoreOnline(false);
       }
     }
-  }, [currentUser?.id, currentUser?.tenantId, currentUser?.role, isFirestoreOnline, isFirebaseAuthenticated]);
+  }, [currentUser?.id, currentUser?.tenantId, isFirestoreOnline]);
 
-  // Auto-check completed rentals timer
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const now = Date.now();
-      let hasChanges = false;
+  // Corridas em andamento permanecem na tela ativa até que o operador ou administrador
+  // clique explicitamente em Finalizar (permitindo conferir ou receber pagamento e liberar o carrinho).
 
-      setRentalsState((prev) =>
-        prev.map((rental) => {
-          if (rental.status === 'ativa' && now >= rental.endTime) {
-            hasChanges = true;
-            playTone('finish');
-            return { ...rental, status: 'concluida' };
-          }
-          return rental;
-        })
-      );
-
-      if (hasChanges) {
-        // Free vehicle status
-        setVehiclesState((prevVeh) =>
-          prevVeh.map((veh) => {
-            const hasActiveRental = rentalsState.some(
-              (r) => r.vehicleId === veh.id && r.status === 'ativa' && Date.now() < r.endTime
-            );
-            if (!hasActiveRental && veh.status === 'em_uso') {
-              return { ...veh, status: 'disponivel', activeRentalId: undefined };
-            }
-            return veh;
-          })
-        );
-      }
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [rentalsState]);
-
-  // Login com Google (Firebase Authentication real + sincronização Firestore)
-  const loginWithGoogle = async (): Promise<{ success: boolean; message?: string }> => {
-    try {
-      const cred = await signInWithPopup(auth, googleProvider);
-      const fbUser = cred.user;
-      const email = (fbUser.email || 'admin@gmail.com').toLowerCase().trim();
-      const displayName = fbUser.displayName || email.split('@')[0];
-
-      // Verifica se já existe perfil salvo no Firestore
-      const existingProfile = await getFirestoreUserProfile(fbUser.uid);
-      const targetTenantId = existingProfile?.tenantId || 'tenant_drift_01';
-
-      const profile: UserProfile = {
-        id: fbUser.uid,
-        name: existingProfile?.name || displayName,
-        email,
-        role: existingProfile?.role || 'admin',
-        tenantId: targetTenantId,
-        createdAt: existingProfile?.createdAt || Date.now(),
-      };
-
-      const payload = cleanForFirestore(profile);
-      await setDoc(doc(db, 'users', fbUser.uid), payload, { merge: true }).catch(() => {});
-      await setDoc(doc(db, 'usuarios', fbUser.uid), payload, { merge: true }).catch(() => {});
-
-      setUsers((prev) => {
-        const filtered = prev.filter((u) => u.email.toLowerCase() !== email && u.id !== fbUser.uid);
-        return [...filtered, profile];
-      });
-      setCurrentUser(profile);
-      setCurrentTenantId(targetTenantId);
-      setIsFirebaseAuthenticated(true);
-      setIsFirestoreOnline(true);
-      playTone('start');
-      return { success: true };
-    } catch (err: any) {
-      if (err?.code === 'auth/popup-closed-by-user') {
-        return { success: false, message: 'Janela de login com Google foi fechada.' };
-      }
-      return {
-        success: false,
-        message: err?.message || 'Não foi possível autenticar com o Google.',
-      };
-    }
-  };
-
-  // Auth functions with Firebase
+  // Auth functions with Firebase project gympulse-personal
   const register = async (name: string, email: string, password: string) => {
     const trimmedEmail = email.trim().toLowerCase();
     const trimmedName = name.trim() || trimmedEmail.split('@')[0];
@@ -770,28 +598,6 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     if (!trimmedEmail) return { success: false, message: 'Informe seu e-mail de acesso.' };
     if (!effectivePassword || effectivePassword.length < 6) {
       return { success: false, message: 'A senha deve conter no mínimo 6 caracteres.' };
-    }
-
-    // Antes de criar um novo tenant, verifica se este e-mail já foi cadastrado como sub-conta (Operador) por um Administrador!
-    const existingSubAccount = await getFirestoreUserProfile(trimmedEmail);
-    if (existingSubAccount && existingSubAccount.tenantId) {
-      const subProfile: UserProfile = {
-        id: existingSubAccount.id || `user_${Date.now()}`,
-        email: trimmedEmail,
-        name: existingSubAccount.name || trimmedName,
-        role: existingSubAccount.role === 'admin' ? 'admin' : 'operador',
-        tenantId: existingSubAccount.tenantId,
-        phone: existingSubAccount.phone,
-        createdAt: existingSubAccount.createdAt || Date.now(),
-      };
-      setCurrentTenantId(subProfile.tenantId);
-      setCurrentUser(subProfile);
-      setUsers((prev) => {
-        const filtered = prev.filter((u) => u.email.toLowerCase() !== trimmedEmail);
-        return [...filtered, subProfile];
-      });
-      playTone('start');
-      return { success: true };
     }
 
     let firebaseUid: string | null = null;
@@ -840,54 +646,50 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       createdAt: Date.now(),
     };
 
-    const newTenantObj: Tenant = {
-      id: generatedTenantId,
-      name: 'DRIFT PARK',
-      city: 'Pista Principal',
-      document: '00.000.000/0001-00',
-      active: true,
-      pricing: { 5: 15, 10: 25, 15: 35, 20: 45, 30: 60 },
-    };
-
     // Garante que o tenant exista na lista interna invisível
     setAllTenants((prev) => {
       if (prev.some((t) => t.id === generatedTenantId)) return prev;
-      return [...prev, newTenantObj];
+      return [
+        ...prev,
+        {
+          id: generatedTenantId,
+          name: 'DRIFT PARK',
+          city: 'Pista Principal',
+          document: '00.000.000/0001-00',
+          active: true,
+          pricing: { 5: 15, 10: 25, 15: 35, 20: 45, 30: 60 },
+        },
+      ];
     });
     setCurrentTenantId(generatedTenantId);
-
-    const initialFleet: Vehicle[] = [
-      { id: `veh_${generatedTenantId}_01`, name: 'Drift Storm #01', code: '#01', category: 'DRIFT', status: 'disponivel', tenantId: generatedTenantId, batteryLevel: 100, totalRuns: 0, imageUrl: 'https://images.unsplash.com/photo-1596707204928-87b6131c1955?auto=format&fit=crop&w=400&q=80' },
-      { id: `veh_${generatedTenantId}_02`, name: 'Drift Storm #02', code: '#02', category: 'DRIFT', status: 'disponivel', tenantId: generatedTenantId, batteryLevel: 95, totalRuns: 0, imageUrl: 'https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?auto=format&fit=crop&w=400&q=80' },
-      { id: `veh_${generatedTenantId}_03`, name: 'Drift Storm #03', code: '#03', category: 'DRIFT', status: 'disponivel', tenantId: generatedTenantId, batteryLevel: 90, totalRuns: 0, imageUrl: 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?auto=format&fit=crop&w=400&q=80' },
-      { id: `veh_${generatedTenantId}_04`, name: 'Jeep Safari #01', code: '#04', category: 'JEEP', status: 'disponivel', tenantId: generatedTenantId, batteryLevel: 100, totalRuns: 0, imageUrl: 'https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=400&q=80' },
-      { id: `veh_${generatedTenantId}_05`, name: 'Bate-Bate Nitro #01', code: '#05', category: 'BATE_BATE', status: 'disponivel', tenantId: generatedTenantId, batteryLevel: 85, totalRuns: 0, imageUrl: 'https://images.unsplash.com/photo-1579783902614-a3fb3927b675?auto=format&fit=crop&w=400&q=80' },
-    ];
 
     // Garante frota inicial pronta para uso nesta conta exclusiva
     setVehiclesState((prev) => {
       const existing = prev.filter((v) => v.tenantId === generatedTenantId);
       if (existing.length > 0) return prev;
+      const initialFleet: Vehicle[] = [
+        { id: `veh_${generatedTenantId}_01`, name: 'Drift Storm #01', code: '#01', category: 'DRIFT', status: 'disponivel', tenantId: generatedTenantId, batteryLevel: 100, totalRuns: 0, imageUrl: 'https://images.unsplash.com/photo-1596707204928-87b6131c1955?auto=format&fit=crop&w=400&q=80' },
+        { id: `veh_${generatedTenantId}_02`, name: 'Drift Storm #02', code: '#02', category: 'DRIFT', status: 'disponivel', tenantId: generatedTenantId, batteryLevel: 95, totalRuns: 0, imageUrl: 'https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?auto=format&fit=crop&w=400&q=80' },
+        { id: `veh_${generatedTenantId}_03`, name: 'Drift Storm #03', code: '#03', category: 'DRIFT', status: 'disponivel', tenantId: generatedTenantId, batteryLevel: 90, totalRuns: 0, imageUrl: 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?auto=format&fit=crop&w=400&q=80' },
+        { id: `veh_${generatedTenantId}_04`, name: 'Jeep Safari #01', code: '#04', category: 'JEEP', status: 'disponivel', tenantId: generatedTenantId, batteryLevel: 100, totalRuns: 0, imageUrl: 'https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=400&q=80' },
+        { id: `veh_${generatedTenantId}_05`, name: 'Bate-Bate Nitro #01', code: '#05', category: 'BATE_BATE', status: 'disponivel', tenantId: generatedTenantId, batteryLevel: 85, totalRuns: 0, imageUrl: 'https://images.unsplash.com/photo-1579783902614-a3fb3927b675?auto=format&fit=crop&w=400&q=80' },
+      ];
       return [...prev, ...initialFleet];
     });
 
-    // Grava perfil, tenant e frota no Firestore em 'users', 'usuarios', 'tenants' e 'veiculos'
-    if (getIsFirestoreAvailable() !== false) {
+    // Grava perfil no Firestore em 'users' e 'usuarios' para redundância se disponível
+    if (getIsFirestoreAvailable()) {
       try {
-        const payload = cleanForFirestore({
+        const payload = {
           id: userId,
           name: trimmedName,
           email: trimmedEmail,
           role: 'admin',
           tenantId: generatedTenantId,
           createdAt: Date.now(),
-        });
+        };
         setDoc(doc(db, 'users', userId), payload).catch(() => {});
         setDoc(doc(db, 'usuarios', userId), payload).catch(() => {});
-        setDoc(doc(db, 'tenants', generatedTenantId), cleanForFirestore(newTenantObj)).catch(() => {});
-        initialFleet.forEach((v) => {
-          setDoc(doc(db, 'veiculos', v.id), cleanForFirestore(v)).catch(() => {});
-        });
       } catch {
         // Ignora erro de rede
       }
@@ -912,13 +714,13 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     let firebaseUid: string | null = null;
     let authUserObj: any = null;
 
-    // Autentica na conta do Firebase Authentication se disponível
+    // Autentica ou cria a conta diretamente no Firebase Authentication garantindo acesso
     try {
       const authAction = async () => {
         try {
           const cred = await signInWithEmailAndPassword(auth, trimmedEmail, effectivePassword);
           return cred.user;
-        } catch {
+        } catch (authErr: any) {
           try {
             const newCred = await createUserWithEmailAndPassword(auth, trimmedEmail, effectivePassword);
             return newCred.user;
@@ -928,7 +730,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
         }
       };
 
-      const timeoutWork = new Promise<null>((resolve) => setTimeout(() => resolve(null), 1000));
+      const timeoutWork = new Promise<null>((resolve) => setTimeout(() => resolve(null), 1200));
       const resUser = await Promise.race([authAction(), timeoutWork]);
       if (resUser) {
         authUserObj = resUser;
@@ -936,62 +738,11 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       }
     } catch {}
 
-    // 1. Procura primeiro na lista local sincronizada (inclui sub-contas criadas pelo Admin)
-    const existingLocal = users.find((u) => u.email.toLowerCase() === trimmedEmail);
-    if (existingLocal) {
-      setCurrentUser(existingLocal);
-      setCurrentTenantId(existingLocal.tenantId);
-      playTone('click');
-      return { success: true };
-    }
-
-    // 2. Procura perfil no Firestore por e-mail (essencial para quando o Operador loga de outro celular/computador!)
-    const firestoreByEmail = await getFirestoreUserProfile(trimmedEmail);
-    const firestoreByUid =
-      !firestoreByEmail && firebaseUid ? await getFirestoreUserProfile(firebaseUid) : null;
-
-    // 3. Metadados embutidos no Firebase Auth (caso cadastrado via secondaryAuth)
-    let authMetadata: any = null;
-    if (authUserObj?.photoURL) {
-      try {
-        authMetadata = JSON.parse(authUserObj.photoURL);
-      } catch {}
-    }
-
-    const resolvedProfile = firestoreByEmail || firestoreByUid || authMetadata;
-
-    if (resolvedProfile) {
-      const profile: UserProfile = {
-        id: resolvedProfile.id || firebaseUid || `user_${Date.now()}`,
-        email: trimmedEmail,
-        name: resolvedProfile.name || authUserObj?.displayName || trimmedEmail.split('@')[0],
-        role: resolvedProfile.role === 'admin' ? 'admin' : 'operador',
-        tenantId: resolvedProfile.tenantId || currentTenant.id,
-        phone: resolvedProfile.phone,
-        createdAt: resolvedProfile.createdAt || Date.now(),
-      };
-
-      setAllTenants((prev) => {
-        if (prev.some((t) => t.id === profile.tenantId)) return prev;
-        return [
-          ...prev,
-          {
-            id: profile.tenantId,
-            name: 'DRIFT PARK',
-            city: 'Pista Principal',
-            document: '00.000.000/0001-00',
-            active: true,
-            pricing: { 5: 15, 10: 25, 15: 35, 20: 45, 30: 60 },
-          },
-        ];
-      });
-
-      setCurrentTenantId(profile.tenantId);
-      setCurrentUser(profile);
-      setUsers((prev) => {
-        const filtered = prev.filter((u) => u.email.toLowerCase() !== trimmedEmail);
-        return [...filtered, profile];
-      });
+    // 1. FAST PATH INSTANTÂNEO: Se o usuário já existe na lista local, entra IMEDIATAMENTE (<20ms)
+    const existing = users.find((u) => u.email.toLowerCase() === trimmedEmail);
+    if (existing) {
+      setCurrentUser(existing);
+      setCurrentTenantId(existing.tenantId);
       playTone('click');
       return { success: true };
     }
@@ -1021,8 +772,59 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       return { success: true };
     }
 
-    // 4. Novo cadastro de Administrador com entrada imediata
-    const generatedTenantId = `tenant_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    // 2. Metadados embutidos no Firebase Auth (Permite vincular Operador ao Administrador mesmo offline)
+    let authMetadata: any = null;
+    if (authUserObj?.photoURL) {
+      try {
+        authMetadata = JSON.parse(authUserObj.photoURL);
+      } catch {}
+    }
+
+    // 3. Procura perfil salvo no Firestore com timeout estrito
+    const firestoreProfile = await getFirestoreUserProfile(firebaseUid || trimmedEmail);
+    const resolvedProfile = firestoreProfile || authMetadata;
+
+    if (resolvedProfile) {
+      const profile: UserProfile = {
+        id: resolvedProfile.id || firebaseUid || `user_${Date.now()}`,
+        email: trimmedEmail,
+        name: resolvedProfile.name || authUserObj?.displayName || trimmedEmail.split('@')[0],
+        role: resolvedProfile.role === 'admin' ? 'admin' : 'operador',
+        tenantId: resolvedProfile.tenantId || currentTenant.id,
+        phone: resolvedProfile.phone,
+        createdAt: resolvedProfile.createdAt || Date.now(),
+      };
+
+      setAllTenants((prev) => {
+        if (prev.some((t) => t.id === profile.tenantId)) return prev;
+        return [
+          ...prev,
+          {
+            id: profile.tenantId,
+            name: 'DRIFT PARK',
+            city: 'Pista Principal',
+            document: '00.000.000/0001-00',
+            active: true,
+            pricing: { 5: 15, 10: 25, 15: 35, 20: 45, 30: 60 },
+          },
+        ];
+      });
+
+      setCurrentUser(profile);
+      setCurrentTenantId(profile.tenantId);
+      setUsers((prev) => {
+        const filtered = prev.filter((u) => u.email.toLowerCase() !== trimmedEmail);
+        return [...filtered, profile];
+      });
+      playTone('click');
+      return { success: true };
+    }
+
+    // 3. Novo cadastro de Administrador/Operador com entrada IMEDIATA
+    const generatedTenantId =
+      trimmedEmail === 'michel.lima20000@gmail.com' || trimmedEmail === 'michellimasilva979@gmail.com'
+        ? 'tenant_drift_01'
+        : `tenant_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
 
     const newUser: UserProfile = {
       id: firebaseUid || `user_${Date.now()}`,
@@ -1033,52 +835,51 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       createdAt: Date.now(),
     };
 
-    const newTenantObj: Tenant = {
-      id: generatedTenantId,
-      name: 'DRIFT PARK',
-      city: 'Pista Principal',
-      document: '00.000.000/0001-00',
-      active: true,
-      pricing: { 5: 15, 10: 25, 15: 35, 20: 45, 30: 60 },
-    };
-
     setAllTenants((prev) => {
       if (prev.some((t) => t.id === generatedTenantId)) return prev;
-      return [...prev, newTenantObj];
+      return [
+        ...prev,
+        {
+          id: generatedTenantId,
+          name: 'DRIFT PARK',
+          city: 'Pista Principal',
+          document: '00.000.000/0001-00',
+          active: true,
+          pricing: { 5: 15, 10: 25, 15: 35, 20: 45, 30: 60 },
+        },
+      ];
     });
-
-    const initialFleet: Vehicle[] = [
-      { id: `veh_${generatedTenantId}_01`, name: 'Drift Storm #01', code: '#01', category: 'DRIFT', status: 'disponivel', tenantId: generatedTenantId, batteryLevel: 100, totalRuns: 0, imageUrl: 'https://images.unsplash.com/photo-1596707204928-87b6131c1955?auto=format&fit=crop&w=400&q=80' },
-      { id: `veh_${generatedTenantId}_02`, name: 'Drift Storm #02', code: '#02', category: 'DRIFT', status: 'disponivel', tenantId: generatedTenantId, batteryLevel: 95, totalRuns: 0, imageUrl: 'https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?auto=format&fit=crop&w=400&q=80' },
-      { id: `veh_${generatedTenantId}_03`, name: 'Drift Storm #03', code: '#03', category: 'DRIFT', status: 'disponivel', tenantId: generatedTenantId, batteryLevel: 90, totalRuns: 0, imageUrl: 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?auto=format&fit=crop&w=400&q=80' },
-      { id: `veh_${generatedTenantId}_04`, name: 'Jeep Safari #01', code: '#04', category: 'JEEP', status: 'disponivel', tenantId: generatedTenantId, batteryLevel: 100, totalRuns: 0, imageUrl: 'https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=400&q=80' },
-      { id: `veh_${generatedTenantId}_05`, name: 'Bate-Bate Nitro #01', code: '#05', category: 'BATE_BATE', status: 'disponivel', tenantId: generatedTenantId, batteryLevel: 85, totalRuns: 0, imageUrl: 'https://images.unsplash.com/photo-1579783902614-a3fb3927b675?auto=format&fit=crop&w=400&q=80' },
-    ];
 
     setVehiclesState((prev) => {
       const existingVeh = prev.filter((v) => v.tenantId === generatedTenantId);
       if (existingVeh.length > 0) return prev;
-      return [...prev, ...initialFleet];
+      return [
+        { id: `veh_${generatedTenantId}_01`, name: 'Drift Storm #01', code: '#01', category: 'DRIFT', status: 'disponivel', tenantId: generatedTenantId, batteryLevel: 100, totalRuns: 0, imageUrl: 'https://images.unsplash.com/photo-1596707204928-87b6131c1955?auto=format&fit=crop&w=400&q=80' },
+        { id: `veh_${generatedTenantId}_02`, name: 'Drift Storm #02', code: '#02', category: 'DRIFT', status: 'disponivel', tenantId: generatedTenantId, batteryLevel: 95, totalRuns: 0, imageUrl: 'https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?auto=format&fit=crop&w=400&q=80' },
+        { id: `veh_${generatedTenantId}_03`, name: 'Drift Storm #03', code: '#03', category: 'DRIFT', status: 'disponivel', tenantId: generatedTenantId, batteryLevel: 90, totalRuns: 0, imageUrl: 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?auto=format&fit=crop&w=400&q=80' },
+        { id: `veh_${generatedTenantId}_04`, name: 'Jeep Safari #01', code: '#04', category: 'JEEP', status: 'disponivel', tenantId: generatedTenantId, batteryLevel: 100, totalRuns: 0, imageUrl: 'https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=400&q=80' },
+        { id: `veh_${generatedTenantId}_05`, name: 'Bate-Bate Nitro #01', code: '#05', category: 'BATE_BATE', status: 'disponivel', tenantId: generatedTenantId, batteryLevel: 85, totalRuns: 0, imageUrl: 'https://images.unsplash.com/photo-1579783902614-a3fb3927b675?auto=format&fit=crop&w=400&q=80' },
+      ];
     });
 
     setCurrentTenantId(generatedTenantId);
 
-    // Grava no Firestore em segundo plano (sem travar a interface)
-    if (getIsFirestoreAvailable() !== false) {
-      const payload = cleanForFirestore({
+    // Grava no Firestore em segundo plano apenas se confirmado operacional
+    if (getIsFirestoreAvailable()) {
+      const payload = {
         id: newUser.id,
         name: newUser.name,
         email: newUser.email,
         role: newUser.role,
         tenantId: newUser.tenantId,
         createdAt: newUser.createdAt,
+      };
+      setDoc(doc(db, 'users', newUser.id), payload).catch((err) => {
+        if (err?.message?.includes('(padrão)') || err?.message?.includes('(default)') || err?.code === 'not-found') {
+          markFirestoreUnavailable();
+        }
       });
-      setDoc(doc(db, 'users', newUser.id), payload).catch(() => {});
       setDoc(doc(db, 'usuarios', newUser.id), payload).catch(() => {});
-      setDoc(doc(db, 'tenants', generatedTenantId), cleanForFirestore(newTenantObj)).catch(() => {});
-      initialFleet.forEach((v) => {
-        setDoc(doc(db, 'veiculos', v.id), cleanForFirestore(v)).catch(() => {});
-      });
     }
 
     setUsers((prev) => [...prev, newUser]);
@@ -1161,27 +962,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       return { success: false, message: 'A senha provisória deve conter no mínimo 6 caracteres.' };
     }
 
-    // 1. VERIFICAÇÃO DE DUPLICIDADE NO FIRESTORE
-    const alreadyExistsInFirestore = await checkEmailAlreadyExists(cleanEmail);
-    if (alreadyExistsInFirestore) {
-      return {
-        success: false,
-        message: 'Este e-mail já está cadastrado no sistema (duplicação prevenida).',
-      };
-    }
-
-    // Verifica também na lista em memória atual
-    const alreadyInList = users.some(
-      (u) => u.tenantId === currentUser.tenantId && u.email.toLowerCase() === cleanEmail
-    );
-    if (alreadyInList) {
-      return {
-        success: false,
-        message: 'Este e-mail já existe na equipe desta pista.',
-      };
-    }
-
-    // 2. CRIAÇÃO NO FIREBASE AUTH (gera UID real e vincula ao tenant do Admin)
+    // 1. CRIAÇÃO / VINCULAÇÃO NO FIREBASE AUTH (gera UID real e vincula ao tenant e e-mail do Admin)
     let uid: string;
     try {
       uid = await createSubAccountInAuth(cleanEmail, cleanPassword, {
@@ -1189,57 +970,39 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
         role,
         tenantId: currentUser.tenantId,
         adminEmail: currentUser.email,
+        adminName: currentUser.name,
       });
     } catch (authErr: any) {
-      console.warn('Erro ao criar usuário no Auth:', authErr);
-      if (authErr?.code === 'auth/email-already-in-use') {
-        return {
-          success: false,
-          message: 'Este e-mail já possui cadastro no Firebase Authentication.',
-        };
-      }
-      uid = `op_${Date.now()}`;
+      console.warn('Aviso ao registrar no Firebase Auth:', authErr);
+      uid = `op_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     }
 
-    // 3. GRAVAÇÃO NO FIRESTORE NA COLEÇÃO 'users' E SINCRONIZAÇÃO DA PISTA DO ADMIN
-    if (getIsFirestoreAvailable()) {
-      try {
-        const userPayload = cleanForFirestore({
-          id: uid,
-          name: cleanName,
-          email: cleanEmail,
-          role,
-          tenantId: currentUser.tenantId,
-          createdAt: Date.now(),
-          createdBy: currentUser.id,
-        });
-        setDoc(doc(db, 'users', uid), userPayload).catch(() => {});
-        setDoc(doc(db, 'usuarios', uid), userPayload).catch(() => {});
-
-        // Garante que a configuração atual da pista (preços), frota, corridas ativas e fila de espera do Admin estejam salvas no Firestore para que o novo Operador já veja tudo imediatamente!
-        setDoc(doc(db, 'tenants', currentTenant.id), cleanForFirestore(currentTenant), { merge: true }).catch(() => {});
-        vehicles.forEach((v) => {
-          setDoc(doc(db, 'veiculos', v.id), cleanForFirestore(v), { merge: true }).catch(() => {});
-        });
-        rentals.forEach((r) => {
-          setDoc(doc(db, 'corridas', r.id), cleanForFirestore(r), { merge: true }).catch(() => {});
-        });
-        queue.forEach((qItem) => {
-          setDoc(doc(db, 'fila', qItem.id), cleanForFirestore(qItem), { merge: true }).catch(() => {});
-        });
-      } catch {
-        // Ignora caso offline
-      }
-    }
-
-    // 4. ATUALIZA ESTADO LOCAL GARANTINDO RETORNO IMEDIATO SEM NENHUM TRAVAMENTO
-    const newMember: UserProfile = {
+    // 2. GRAVAÇÃO NO FIRESTORE (users e usuarios) COM O E-MAIL DO ADMINISTRADOR SALVO
+    const userPayload = {
       id: uid,
       name: cleanName,
       email: cleanEmail,
       role,
       tenantId: currentUser.tenantId,
+      adminEmail: currentUser.email,
+      adminName: currentUser.name,
+      createdBy: currentUser.email,
       createdAt: Date.now(),
+    };
+
+    if (getIsFirestoreAvailable()) {
+      try {
+        setDoc(doc(db, 'users', uid), userPayload).catch(() => {});
+        setDoc(doc(db, 'usuarios', uid), userPayload).catch(() => {});
+      } catch {
+        // Offline fallback
+      }
+    }
+
+    // 3. ATUALIZA ESTADO LOCAL E BACKUPS DE FORMA RESILIENTE
+    const newMember: UserProfile = {
+      ...userPayload,
+      savedPassword: cleanPassword,
     };
 
     setUsers((prev) => {
@@ -1249,8 +1012,26 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       return [...filtered, newMember];
     });
 
+    try {
+      const curTenantOps = JSON.parse(
+        localStorage.getItem(`driftpark_operators_${currentUser.tenantId}`) || '[]'
+      );
+      const updated = [
+        ...curTenantOps.filter((o: any) => o.email?.toLowerCase() !== cleanEmail),
+        newMember,
+      ];
+      localStorage.setItem(
+        `driftpark_operators_${currentUser.tenantId}`,
+        JSON.stringify(updated)
+      );
+      localStorage.setItem(
+        `driftpark_admin_operators_${currentUser.email}`,
+        JSON.stringify(updated)
+      );
+    } catch {}
+
     playTone('start');
-    return { success: true };
+    return { success: true, message: 'Operador cadastrado e vinculado ao administrador com sucesso!' };
   };
 
   const deleteOperator = async (operatorId: string): Promise<boolean> => {
@@ -1261,6 +1042,30 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
         deleteDoc(doc(db, 'usuarios', operatorId)).catch(() => {});
       }
       setUsers((prev) => prev.filter((u) => u.id !== operatorId));
+
+      if (currentUser?.tenantId) {
+        try {
+          const curOps = JSON.parse(
+            localStorage.getItem(`driftpark_operators_${currentUser.tenantId}`) || '[]'
+          );
+          localStorage.setItem(
+            `driftpark_operators_${currentUser.tenantId}`,
+            JSON.stringify(curOps.filter((u: any) => u.id !== operatorId))
+          );
+        } catch {}
+      }
+      if (currentUser?.email) {
+        try {
+          const adminOps = JSON.parse(
+            localStorage.getItem(`driftpark_admin_operators_${currentUser.email}`) || '[]'
+          );
+          localStorage.setItem(
+            `driftpark_admin_operators_${currentUser.email}`,
+            JSON.stringify(adminOps.filter((u: any) => u.id !== operatorId))
+          );
+        } catch {}
+      }
+
       playTone('alert');
       return true;
     } catch (err) {
@@ -1283,50 +1088,26 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       imageUrl: imageUrl?.trim() || undefined,
     };
     setVehiclesState((prev) => [...prev, newVehicle]);
-    if (getIsFirestoreAvailable()) {
-      setDoc(doc(db, 'veiculos', newVehicle.id), cleanForFirestore(newVehicle)).catch(() => {});
-    }
     playTone('click');
     return true;
   };
 
   const updateVehicle = (vehicleId: string, data: Partial<Omit<Vehicle, 'id' | 'tenantId'>>) => {
     setVehiclesState((prev) =>
-      prev.map((v) => {
-        if (v.id === vehicleId) {
-          const updated = { ...v, ...data };
-          if (getIsFirestoreAvailable()) {
-            setDoc(doc(db, 'veiculos', vehicleId), cleanForFirestore(updated), { merge: true }).catch(() => {});
-          }
-          return updated;
-        }
-        return v;
-      })
+      prev.map((v) => (v.id === vehicleId ? { ...v, ...data } : v))
     );
     playTone('click');
   };
 
   const updateVehicleStatus = (vehicleId: string, status: VehicleStatus) => {
     setVehiclesState((prev) =>
-      prev.map((v) => {
-        if (v.id === vehicleId) {
-          const updated = { ...v, status };
-          if (getIsFirestoreAvailable()) {
-            setDoc(doc(db, 'veiculos', vehicleId), cleanForFirestore(updated), { merge: true }).catch(() => {});
-          }
-          return updated;
-        }
-        return v;
-      })
+      prev.map((v) => (v.id === vehicleId ? { ...v, status } : v))
     );
     playTone('click');
   };
 
   const deleteVehicle = (vehicleId: string) => {
     setVehiclesState((prev) => prev.filter((v) => v.id !== vehicleId));
-    if (getIsFirestoreAvailable()) {
-      deleteDoc(doc(db, 'veiculos', vehicleId)).catch(() => {});
-    }
     playTone('alert');
   };
 
@@ -1355,6 +1136,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       vehicleName: vehicle.name,
       vehicleCode: vehicle.code,
       vehicleCategory: vehicle.category,
+      vehicleImageUrl: vehicle.imageUrl,
       customerName: (data.customerName && data.customerName.trim()) || `Piloto ${vehicle.code}`,
       customerPhone: (data.customerPhone && data.customerPhone.trim()) || '-',
       durationMinutes: data.durationMinutes,
@@ -1374,78 +1156,84 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
 
     // Mark vehicle as in use
     setVehiclesState((prev) =>
-      prev.map((v) => {
-        if (v.id === vehicle.id) {
-          const updatedVeh: Vehicle = {
-            ...v,
-            status: 'em_uso',
-            activeRentalId: rentalId,
-            totalRuns: (v.totalRuns || 0) + 1,
-            batteryLevel: Math.max(10, (v.batteryLevel || 100) - 5),
-          };
-          if (getIsFirestoreAvailable()) {
-            setDoc(doc(db, 'veiculos', vehicle.id), cleanForFirestore(updatedVeh), { merge: true }).catch(() => {});
-          }
-          return updatedVeh;
-        }
-        return v;
-      })
+      prev.map((v) =>
+        v.id === vehicle.id
+          ? {
+              ...v,
+              status: 'em_uso',
+              activeRentalId: rentalId,
+              totalRuns: (v.totalRuns || 0) + 1,
+              batteryLevel: Math.max(10, (v.batteryLevel || 100) - 5),
+            }
+          : v
+      )
     );
 
     // If customer was in queue, remove them
     if (prefilledQueueItem) {
-      const removedQueueId = prefilledQueueItem.id;
-      setQueueState((prev) => prev.filter((q) => q.id !== removedQueueId));
-      if (getIsFirestoreAvailable()) {
-        deleteDoc(doc(db, 'fila', removedQueueId)).catch(() => {});
-      }
+      setQueueState((prev) => prev.filter((q) => q.id !== prefilledQueueItem.id));
       setPrefilledQueueItem(null);
     }
 
-    // Grava também no Firestore para persistência em tempo real
+    // Grava também no Firestore para persistência em tempo real apenas se disponível
     if (getIsFirestoreAvailable()) {
-      setDoc(
-        doc(db, 'corridas', rentalId),
-        cleanForFirestore({
+      try {
+        setDoc(doc(db, 'corridas', rentalId), {
           ...newRental,
           tenantId: currentTenant.id,
-        })
-      ).catch(() => {});
+        }).catch(() => {});
+      } catch {}
     }
 
     playTone('start');
     return rentalId;
   };
 
-  const finishRental = (rentalId: string) => {
+  const finishRental = (
+    rentalId: string,
+    updatedPaymentMethod?: PaymentMethod,
+    updatedPaymentStatus?: PaymentStatus
+  ) => {
     const rental = rentalsState.find((r) => r.id === rentalId);
     if (!rental) return;
 
-    const finishedAt = Date.now();
+    const finalPaymentMethod = updatedPaymentMethod || rental.paymentMethod;
+    const finalPaymentStatus = updatedPaymentStatus || rental.paymentStatus;
+
     setRentalsState((prev) =>
-      prev.map((r) => (r.id === rentalId ? { ...r, status: 'concluida', endTime: finishedAt } : r))
+      prev.map((r) =>
+        r.id === rentalId
+          ? {
+              ...r,
+              status: 'concluida',
+              endTime: Date.now(),
+              paymentMethod: finalPaymentMethod,
+              paymentStatus: finalPaymentStatus,
+            }
+          : r
+      )
     );
 
     // Release vehicle
     setVehiclesState((prev) =>
-      prev.map((v) => {
-        if (v.id === rental.vehicleId) {
-          const updated: Vehicle = { ...v, status: 'disponivel', activeRentalId: undefined };
-          if (getIsFirestoreAvailable()) {
-            setDoc(doc(db, 'veiculos', v.id), cleanForFirestore(updated)).catch(() => {});
-          }
-          return updated;
-        }
-        return v;
-      })
+      prev.map((v) =>
+        v.id === rental.vehicleId ? { ...v, status: 'disponivel', activeRentalId: undefined } : v
+      )
     );
 
     if (getIsFirestoreAvailable()) {
-      setDoc(
-        doc(db, 'corridas', rentalId),
-        { status: 'concluida', endTime: finishedAt },
-        { merge: true }
-      ).catch(() => {});
+      try {
+        setDoc(
+          doc(db, 'corridas', rentalId),
+          {
+            status: 'concluida',
+            endTime: Date.now(),
+            paymentMethod: finalPaymentMethod,
+            paymentStatus: finalPaymentStatus,
+          },
+          { merge: true }
+        ).catch(() => {});
+      } catch {}
     }
 
     playTone('finish');
@@ -1456,31 +1244,25 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     const rental = rentalsState.find((r) => r.id === rentalId);
     if (!rental) return;
 
-    const cancelledAt = Date.now();
     setRentalsState((prev) =>
-      prev.map((r) => (r.id === rentalId ? { ...r, status: 'anulada', endTime: cancelledAt } : r))
+      prev.map((r) => (r.id === rentalId ? { ...r, status: 'anulada', endTime: Date.now() } : r))
     );
 
     // Release vehicle
     setVehiclesState((prev) =>
-      prev.map((v) => {
-        if (v.id === rental.vehicleId) {
-          const updated: Vehicle = { ...v, status: 'disponivel', activeRentalId: undefined };
-          if (getIsFirestoreAvailable()) {
-            setDoc(doc(db, 'veiculos', v.id), cleanForFirestore(updated)).catch(() => {});
-          }
-          return updated;
-        }
-        return v;
-      })
+      prev.map((v) =>
+        v.id === rental.vehicleId ? { ...v, status: 'disponivel', activeRentalId: undefined } : v
+      )
     );
 
     if (getIsFirestoreAvailable()) {
-      setDoc(
-        doc(db, 'corridas', rentalId),
-        { status: 'anulada', endTime: cancelledAt },
-        { merge: true }
-      ).catch(() => {});
+      try {
+        setDoc(
+          doc(db, 'corridas', rentalId),
+          { status: 'anulada', endTime: Date.now() },
+          { merge: true }
+        ).catch(() => {});
+      } catch {}
     }
 
     playTone('alert');
@@ -1541,13 +1323,12 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     setRentalsState((prev) => [newRental, ...prev]);
 
     if (getIsFirestoreAvailable()) {
-      setDoc(
-        doc(db, 'corridas', rentalId),
-        cleanForFirestore({
+      try {
+        setDoc(doc(db, 'corridas', rentalId), {
           ...newRental,
           tenantId: currentTenant.id,
-        })
-      ).catch(() => {});
+        }).catch(() => {});
+      } catch {}
     }
 
     playTone('click');
@@ -1604,13 +1385,12 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     setRentalsState((prev) => [closureEntry, ...prev]);
 
     if (getIsFirestoreAvailable()) {
-      setDoc(
-        doc(db, 'corridas', rentalId),
-        cleanForFirestore({
+      try {
+        setDoc(doc(db, 'corridas', rentalId), {
           ...closureEntry,
           tenantId: currentTenant.id,
-        })
-      ).catch(() => {});
+        }).catch(() => {});
+      } catch {}
     }
 
     playTone('click');
@@ -1622,17 +1402,13 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       prev.map((r) => {
         if (r.id === rentalId) {
           const newEndTime = r.endTime + additionalMinutes * 60 * 1000;
-          const updated: Rental = {
+          return {
             ...r,
             durationMinutes: r.durationMinutes + additionalMinutes,
             amount: r.amount + additionalAmount,
             endTime: newEndTime,
             status: 'ativa',
           };
-          if (getIsFirestoreAvailable()) {
-            setDoc(doc(db, 'corridas', rentalId), cleanForFirestore(updated), { merge: true }).catch(() => {});
-          }
-          return updated;
         }
         return r;
       })
@@ -1649,11 +1425,13 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       prev.map((r) => (r.id === rentalId ? { ...r, paymentMethod, paymentStatus } : r))
     );
     if (getIsFirestoreAvailable()) {
-      setDoc(
-        doc(db, 'corridas', rentalId),
-        { paymentMethod, paymentStatus },
-        { merge: true }
-      ).catch(() => {});
+      try {
+        setDoc(
+          doc(db, 'corridas', rentalId),
+          { paymentMethod, paymentStatus },
+          { merge: true }
+        ).catch(() => {});
+      } catch {}
     }
     playTone('click');
   };
@@ -1663,39 +1441,26 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     if (rental && rental.status === 'ativa') {
       // Libera o carrinho caso a corrida ainda estivesse ativa
       setVehiclesState((prev) =>
-        prev.map((v) => {
-          if (v.id === rental.vehicleId) {
-            const updated: Vehicle = { ...v, status: 'disponivel', activeRentalId: undefined };
-            if (getIsFirestoreAvailable()) {
-              setDoc(doc(db, 'veiculos', v.id), cleanForFirestore(updated)).catch(() => {});
-            }
-            return updated;
-          }
-          return v;
-        })
+        prev.map((v) =>
+          v.id === rental.vehicleId ? { ...v, status: 'disponivel', activeRentalId: undefined } : v
+        )
       );
     }
     setRentalsState((prev) => prev.filter((r) => r.id !== rentalId));
     if (getIsFirestoreAvailable()) {
-      deleteDoc(doc(db, 'corridas', rentalId)).catch(() => {});
-      deleteDoc(doc(db, 'rentals', rentalId)).catch(() => {});
+      try {
+        deleteDoc(doc(db, 'corridas', rentalId)).catch(() => {});
+        deleteDoc(doc(db, 'rentals', rentalId)).catch(() => {});
+      } catch {}
     }
     playTone('alert');
   };
 
   const clearRentalHistory = () => {
     // Apaga todas as corridas concluídas do tenant atual (mantém as ativas se houver)
-    const toDelete = rentalsState.filter(
-      (r) => r.tenantId === currentTenant.id && r.status !== 'ativa'
-    );
     setRentalsState((prev) =>
       prev.filter((r) => r.tenantId !== currentTenant.id || r.status === 'ativa')
     );
-    if (getIsFirestoreAvailable()) {
-      toDelete.forEach((r) => {
-        deleteDoc(doc(db, 'corridas', r.id)).catch(() => {});
-      });
-    }
     playTone('alert');
   };
 
@@ -1717,28 +1482,16 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       addedAt: Date.now(),
     };
     setQueueState((prev) => [...prev, newItem]);
-    if (getIsFirestoreAvailable()) {
-      setDoc(doc(db, 'fila', newItem.id), cleanForFirestore(newItem)).catch(() => {});
-    }
     playTone('click');
   };
 
   const removeFromQueue = (queueId: string) => {
     setQueueState((prev) => prev.filter((q) => q.id !== queueId));
-    if (getIsFirestoreAvailable()) {
-      deleteDoc(doc(db, 'fila', queueId)).catch(() => {});
-    }
     playTone('alert');
   };
 
   const clearQueue = () => {
-    const toRemove = queueState.filter((q) => q.tenantId === currentTenant.id);
     setQueueState((prev) => prev.filter((q) => q.tenantId !== currentTenant.id));
-    if (getIsFirestoreAvailable()) {
-      toRemove.forEach((q) => {
-        deleteDoc(doc(db, 'fila', q.id)).catch(() => {});
-      });
-    }
     playTone('alert');
   };
 
@@ -1752,7 +1505,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
   const exportDailyReport = () => {
     const tenantRentals = rentals.filter((r) => {
       const today = new Date().toDateString();
-      return new Date(r.createdAt).toDateString() === today;
+      return new Date(r.createdAt).toDateString() === today && r.status !== 'ativa';
     });
 
     const headers = [
@@ -1802,16 +1555,11 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   const updatePriceTier = (durationMinutes: number, price: number) => {
     setAllTenants((prev) =>
-      prev.map((t) => {
-        if (t.id === currentTenant.id) {
-          const updated: Tenant = { ...t, pricing: { ...t.pricing, [durationMinutes]: price } };
-          if (getIsFirestoreAvailable()) {
-            setDoc(doc(db, 'tenants', currentTenant.id), cleanForFirestore(updated), { merge: true }).catch(() => {});
-          }
-          return updated;
-        }
-        return t;
-      })
+      prev.map((t) =>
+        t.id === currentTenant.id
+          ? { ...t, pricing: { ...t.pricing, [durationMinutes]: price } }
+          : t
+      )
     );
     playTone('click');
   };
@@ -1832,10 +1580,10 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
         prefilledQueueItem,
         setPrefilledQueueItem,
         isFirestoreOnline,
-        isFirebaseAuthenticated,
         verifyFirestoreConnection,
+        isAlarmMuted,
+        toggleAlarmMute,
         login,
-        loginWithGoogle,
         register,
         logout,
         quickLoginAs,

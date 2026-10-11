@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useDriftPark } from '../context/DriftParkContext';
-import { Rental, VehicleCategory } from '../types';
+import { Rental, Vehicle, VehicleCategory, PaymentMethod, PaymentStatus } from '../types';
 import {
   Car,
   Compass,
@@ -18,6 +18,11 @@ import {
   Trash2,
   X,
   Volume2,
+  VolumeX,
+  CreditCard,
+  Banknote,
+  ZoomIn,
+  Maximize2,
 } from 'lucide-react';
 
 export const DashboardScreen: React.FC = () => {
@@ -33,10 +38,25 @@ export const DashboardScreen: React.FC = () => {
     deleteRental,
     extendRental,
     playSound,
+    isAlarmMuted,
+    toggleAlarmMute,
   } = useDriftPark();
 
   // Active races
   const activeRentals = rentals.filter((r) => r.status === 'ativa');
+
+  // Modal para conferência de pagamento e finalização manual
+  const [rentalToFinalize, setRentalToFinalize] = useState<Rental | null>(null);
+  const [finalizePaymentMethod, setFinalizePaymentMethod] = useState<PaymentMethod>('PIX');
+  const [finalizePaymentStatus, setFinalizePaymentStatus] = useState<PaymentStatus>('PAGO');
+
+  // Modal de Foto Ampliada / Zoom em Alta Resolução
+  const [zoomedPhoto, setZoomedPhoto] = useState<{
+    url: string;
+    title: string;
+    code?: string;
+    category?: string;
+  } | null>(null);
 
   // Free vehicles count
   const freeVehicles = vehicles.filter((v) => v.status === 'disponivel');
@@ -69,7 +89,11 @@ export const DashboardScreen: React.FC = () => {
   const todayRevenue = rentals
     .filter((r) => {
       const today = new Date().toDateString();
-      return new Date(r.createdAt).toDateString() === today && r.paymentStatus === 'PAGO';
+      return (
+        new Date(r.createdAt).toDateString() === today &&
+        r.status === 'concluida' &&
+        r.paymentStatus === 'PAGO'
+      );
     })
     .reduce((acc, curr) => acc + curr.amount, 0);
 
@@ -213,46 +237,6 @@ export const DashboardScreen: React.FC = () => {
 
       {/* 4. Live Telemetry / Corridas em Andamento */}
       <div className="space-y-3">
-        {/* Banner de Alerta Sonoro de Fim de Corrida */}
-        {activeRentals.some((r) => r.endTime <= Date.now()) && (
-          <div className="p-3.5 rounded-2xl bg-gradient-to-r from-rose-950/90 to-red-900/90 border-2 border-rose-500 shadow-[0_0_25px_rgba(225,29,72,0.4)] flex flex-col sm:flex-row items-center justify-between gap-3 animate-pulse">
-            <div className="flex items-center gap-2.5">
-              <div className="w-10 h-10 rounded-xl bg-rose-500/20 border border-rose-500/50 flex items-center justify-center text-rose-300 text-lg font-black shrink-0">
-                🚨
-              </div>
-              <div>
-                <h4 className="text-xs font-black text-white uppercase tracking-wider">
-                  Corrida Terminada na Pista!
-                </h4>
-                <p className="text-[11px] text-rose-200">
-                  {activeRentals.filter((r) => r.endTime <= Date.now()).map((r) => `${r.vehicleCode} (${r.customerName})`).join(', ')}
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={() => playSound('finish')}
-                className="px-3 py-1.5 rounded-xl bg-slate-900 border border-rose-400 text-rose-200 text-xs font-bold hover:bg-slate-800 transition-all flex items-center gap-1.5 shadow-md active:scale-95"
-                title="Tocar a sirene de corrida em volume alto"
-              >
-                <Volume2 size={15} />
-                <span>Tocar Sirene 🔊</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  activeRentals.filter((r) => r.endTime <= Date.now()).forEach((r) => finishRental(r.id));
-                }}
-                className="px-3.5 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black shadow-md transition-all flex items-center gap-1 active:scale-95"
-              >
-                <CheckCircle2 size={15} />
-                <span>Finalizar</span>
-              </button>
-            </div>
-          </div>
-        )}
-
         <div className="flex items-center justify-between">
           <h3 className="text-xs uppercase tracking-wider font-bold text-slate-300 flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-cyan-400 animate-neon-pulse" />
@@ -282,8 +266,16 @@ export const DashboardScreen: React.FC = () => {
               <ActiveRentalCard
                 key={rental.id}
                 rental={rental}
+                vehicle={vehicles.find((v) => v.id === rental.vehicleId)}
                 isAdmin={currentUser?.role === 'admin' || true}
-                onFinish={() => finishRental(rental.id)}
+                isAlarmMuted={isAlarmMuted}
+                onToggleMute={toggleAlarmMute}
+                onOpenFinalize={() => {
+                  setRentalToFinalize(rental);
+                  setFinalizePaymentMethod(rental.paymentMethod);
+                  setFinalizePaymentStatus(rental.paymentStatus);
+                }}
+                onZoomPhoto={(data) => setZoomedPhoto(data)}
                 onCancel={() => cancelRental(rental.id)}
                 onDelete={() => deleteRental(rental.id)}
                 onExtend={() => extendRental(rental.id, 5, 12)}
@@ -293,33 +285,280 @@ export const DashboardScreen: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Modal de Finalização de Corrida com Foto do Carrinho em Alta Resolução e Conferência de Pagamento */}
+      {rentalToFinalize && (() => {
+        const matchingVehicle = vehicles.find((v) => v.id === rentalToFinalize.vehicleId);
+        const modalCarImg = matchingVehicle?.imageUrl || rentalToFinalize.vehicleImageUrl;
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-in fade-in">
+            <div className="w-full max-w-md rounded-2xl bg-[#0F172A] border border-cyan-500/40 p-5 shadow-2xl space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 font-bold">
+                    🏁
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white">Finalizar Corrida na Pista</h3>
+                    <p className="text-[10px] text-slate-400">Liberar carrinho e salvar no histórico</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setRentalToFinalize(null)}
+                  className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Card Destaque com Foto Ampliada e Clara do Carrinho */}
+              <div className="p-3.5 rounded-2xl bg-gradient-to-br from-[#141E38] to-[#0D1527] border-2 border-cyan-500/40 flex items-center gap-3.5 shadow-lg">
+                {/* Foto Grande do Carrinho com Clique para Ampliar */}
+                <div
+                  onClick={() => {
+                    if (modalCarImg) {
+                      setZoomedPhoto({
+                        url: modalCarImg,
+                        title: rentalToFinalize.vehicleName,
+                        code: rentalToFinalize.vehicleCode,
+                        category: rentalToFinalize.vehicleCategory,
+                      });
+                    }
+                  }}
+                  className={`relative w-24 h-24 sm:w-28 sm:h-28 rounded-2xl overflow-hidden bg-slate-900 border-2 border-cyan-400/60 shrink-0 flex items-center justify-center shadow-md group ${
+                    modalCarImg ? 'cursor-pointer hover:border-cyan-300' : ''
+                  }`}
+                  title={modalCarImg ? 'Clique para ampliar foto' : undefined}
+                >
+                  {modalCarImg ? (
+                    <>
+                      <img
+                        src={modalCarImg}
+                        alt={rentalToFinalize.vehicleName}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                      />
+                      <div className="absolute bottom-1 right-1 bg-black/80 hover:bg-cyan-500 hover:text-slate-950 text-cyan-300 text-[9px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1 shadow">
+                        <ZoomIn size={10} />
+                        <span>Ver</span>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center text-center p-1">
+                      <span className="text-2xl">🏎️</span>
+                      <span className="text-[10px] font-bold text-cyan-300 font-mono mt-0.5">
+                        {rentalToFinalize.vehicleCode}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Badge do Código no topo */}
+                  <div className="absolute top-1 left-1 bg-black/85 px-1.5 py-0.5 rounded text-[9px] font-mono font-black text-cyan-300 border border-cyan-500/40">
+                    {rentalToFinalize.vehicleCode}
+                  </div>
+                </div>
+
+                <div className="min-w-0 flex-1 space-y-1">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-[10px] font-mono font-black text-cyan-300 bg-cyan-950 px-2 py-0.5 rounded border border-cyan-500/40">
+                      {rentalToFinalize.vehicleCode}
+                    </span>
+                    <span className="text-[10px] font-bold text-slate-300 bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700">
+                      {rentalToFinalize.vehicleCategory}
+                    </span>
+                  </div>
+                  <h4 className="text-sm font-extrabold text-white truncate">{rentalToFinalize.vehicleName}</h4>
+                  <div className="text-xs text-slate-300">
+                    Piloto: <strong className="text-white font-bold">{rentalToFinalize.customerName}</strong>
+                  </div>
+                  <div className="text-xs text-cyan-300 font-bold">
+                    Tempo: {rentalToFinalize.durationMinutes} min · Total: R$ {rentalToFinalize.amount.toFixed(2)}
+                  </div>
+                </div>
+              </div>
+
+              {/* Seção de Conferência / Recebimento de Pagamento */}
+              <div className="space-y-3">
+                <div>
+                  <label className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block mb-1.5">
+                    1. Forma de Pagamento
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(['PIX', 'CARTAO', 'DINHEIRO'] as const).map((method) => (
+                      <button
+                        key={method}
+                        type="button"
+                        onClick={() => setFinalizePaymentMethod(method)}
+                        className={`py-2 px-2 rounded-xl border text-xs font-bold transition-all flex flex-col items-center justify-center gap-1 ${
+                          finalizePaymentMethod === method
+                            ? 'bg-cyan-500 text-slate-950 border-cyan-400 shadow-md font-extrabold'
+                            : 'bg-slate-900 border-slate-700 text-slate-300 hover:border-slate-500'
+                        }`}
+                      >
+                        <span>{method}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block mb-1.5">
+                    2. Status do Pagamento (A pessoa já pagou ou vai pagar depois?)
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setFinalizePaymentStatus('PAGO')}
+                      className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                        finalizePaymentStatus === 'PAGO'
+                          ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-md font-extrabold'
+                          : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-500'
+                      }`}
+                    >
+                      <CheckCircle2 size={15} />
+                      <span>✓ PAGO AGORA</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setFinalizePaymentStatus('NAO_PAGO')}
+                      className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                        finalizePaymentStatus === 'NAO_PAGO'
+                          ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-md font-extrabold'
+                          : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-500'
+                      }`}
+                    >
+                      <AlertCircle size={15} />
+                      <span>⚠ PAGAR DEPOIS</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Ações */}
+              <div className="pt-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setRentalToFinalize(null)}
+                  className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    finishRental(rentalToFinalize.id, finalizePaymentMethod, finalizePaymentStatus);
+                    setRentalToFinalize(null);
+                  }}
+                  className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 text-xs font-black shadow-[0_0_15px_rgba(16,185,129,0.4)] transition-all active:scale-95 flex items-center justify-center gap-1.5"
+                >
+                  <CheckCircle2 size={16} />
+                  <span>Finalizar e Salvar</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* MODAL LIGHTBOX: FOTO AMPLIADA EM ALTA RESOLUÇÃO */}
+      {zoomedPhoto && (
+        <div
+          onClick={() => setZoomedPhoto(null)}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-lg animate-in fade-in"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-lg rounded-2xl bg-[#0F172A] border-2 border-cyan-400/60 p-4 shadow-2xl space-y-3 relative"
+          >
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                {zoomedPhoto.code && (
+                  <span className="text-xs font-mono font-black text-cyan-300 bg-cyan-950 px-2 py-0.5 rounded border border-cyan-500/40">
+                    {zoomedPhoto.code}
+                  </span>
+                )}
+                <h3 className="text-sm font-extrabold text-white truncate">{zoomedPhoto.title}</h3>
+                {zoomedPhoto.category && (
+                  <span className="text-[10px] text-slate-400 font-bold bg-slate-800 px-1.5 py-0.5 rounded">
+                    {zoomedPhoto.category}
+                  </span>
+                )}
+              </div>
+              <button
+                onClick={() => setZoomedPhoto(null)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Imagem em Tamanho Real / Nítida */}
+            <div className="relative rounded-xl overflow-hidden bg-black/80 flex items-center justify-center max-h-[70vh] border border-slate-800">
+              <img
+                src={zoomedPhoto.url}
+                alt={zoomedPhoto.title}
+                className="max-h-[65vh] w-auto max-w-full object-contain rounded-lg shadow-2xl"
+              />
+            </div>
+
+            <div className="flex items-center justify-between pt-1 text-xs text-slate-400">
+              <span>Foto do veículo na frota</span>
+              <button
+                type="button"
+                onClick={() => setZoomedPhoto(null)}
+                className="px-3 py-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs shadow-md transition-all"
+              >
+                Fechar Foto
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
-// Sub-component for individual active race card with live countdown & admin race controls
+// Sub-component for individual active race card with live countdown, car photo & race controls
 const ActiveRentalCard: React.FC<{
   rental: Rental;
+  vehicle?: Vehicle;
   isAdmin?: boolean;
-  onFinish: () => void;
+  isAlarmMuted?: boolean;
+  onToggleMute?: () => void;
+  onOpenFinalize: () => void;
+  onZoomPhoto: (data: { url: string; title: string; code?: string; category?: string }) => void;
   onCancel: () => void;
   onDelete: () => void;
   onExtend: () => void;
   onPlaySound: () => void;
-}> = ({ rental, isAdmin, onFinish, onCancel, onDelete, onExtend, onPlaySound }) => {
-  const [timeLeftMs, setTimeLeftMs] = useState<number>(() =>
-    Math.max(0, rental.endTime - Date.now())
-  );
+}> = ({
+  rental,
+  vehicle,
+  isAdmin,
+  isAlarmMuted,
+  onToggleMute,
+  onOpenFinalize,
+  onZoomPhoto,
+  onCancel,
+  onDelete,
+  onExtend,
+  onPlaySound,
+}) => {
+  const [now, setNow] = useState<number>(() => Date.now());
   const [confirmAction, setConfirmAction] = useState<'cancel' | 'delete' | null>(null);
 
   useEffect(() => {
     const timer = setInterval(() => {
-      const remaining = Math.max(0, rental.endTime - Date.now());
-      setTimeLeftMs(remaining);
+      setNow(Date.now());
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [rental.endTime]);
+  }, []);
+
+  const timeLeftMs = Math.max(0, rental.endTime - now);
+  const isFinished = now >= rental.endTime;
+  const overtimeMs = Math.max(0, now - rental.endTime);
 
   const totalDurationMs = rental.durationMinutes * 60 * 1000;
   const elapsedMs = totalDurationMs - timeLeftMs;
@@ -329,57 +568,163 @@ const ActiveRentalCard: React.FC<{
   const seconds = Math.floor((timeLeftMs % (1000 * 60)) / 1000);
   const formattedTime = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 
-  const isUrgent = timeLeftMs < 60 * 1000 && timeLeftMs > 0;
-  const isFinished = timeLeftMs === 0;
+  const overtimeMin = Math.floor(overtimeMs / (1000 * 60));
+  const overtimeSec = Math.floor((overtimeMs % (1000 * 60)) / 1000);
+  const formattedOvertime = `+${String(overtimeMin).padStart(2, '0')}:${String(overtimeSec).padStart(2, '0')}`;
+
+  const isUrgent = timeLeftMs < 60 * 1000 && !isFinished;
+
+  const carImageUrl = vehicle?.imageUrl || rental.vehicleImageUrl;
+  const categoryEmoji =
+    rental.vehicleCategory === 'DRIFT' ? '🏎️' : rental.vehicleCategory === 'JEEP' ? '🚙' : '⚡';
 
   return (
     <div
-      className={`relative overflow-hidden rounded-xl border p-3.5 transition-all ${
+      className={`relative overflow-hidden rounded-2xl border p-3.5 sm:p-4 transition-all ${
         isFinished
-          ? 'bg-rose-950/30 border-rose-500/50'
+          ? 'bg-rose-950/40 border-2 border-rose-500 shadow-[0_0_25px_rgba(225,29,72,0.4)]'
           : isUrgent
           ? 'bg-amber-950/30 border-amber-500/60 shadow-[0_0_12px_rgba(245,158,11,0.2)]'
           : 'bg-[#141E38] border-cyan-500/40 shadow-sm'
       }`}
     >
-      <div className="flex items-start justify-between gap-2">
-        {/* Left Info */}
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-300 font-bold font-display text-sm shrink-0">
-            {rental.vehicleCode}
+      {/* Alerta Destacado quando a Corrida Termina na Pista */}
+      {isFinished && (
+        <div className="mb-3 px-3 py-2 rounded-xl bg-gradient-to-r from-rose-950 via-rose-900 to-rose-950 border border-rose-500/70 flex items-center justify-between text-rose-200 text-xs font-bold animate-pulse shadow-md">
+          <div className="flex items-center gap-2">
+            <span className="text-base">🏁</span>
+            <span className="font-extrabold text-white">CORRIDA ENCERRADA · VEÍCULO FINALIZANDO NA PISTA</span>
           </div>
+          <span className="text-[10px] uppercase font-bold tracking-wider bg-rose-900/80 px-2 py-0.5 rounded border border-rose-500/50 text-rose-200">
+            Identifique pela foto
+          </span>
+        </div>
+      )}
 
-          <div>
-            <div className="flex items-center gap-2">
-              <h4 className="text-sm font-bold text-white tracking-tight">
-                {rental.vehicleName}
-              </h4>
-              <span className="text-[10px] px-1.5 py-0.2 rounded bg-cyan-950 text-cyan-300 font-semibold border border-cyan-500/30">
-                {rental.vehicleCategory}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3.5">
+        {/* Info com Foto do Carrinho em Destaque Grande e Nítido */}
+        <div className="flex items-center gap-3.5 min-w-0 flex-1">
+          {/* Frame Grande da Foto do Carrinho */}
+          <div
+            onClick={() => {
+              if (carImageUrl) {
+                onZoomPhoto({
+                  url: carImageUrl,
+                  title: rental.vehicleName,
+                  code: rental.vehicleCode,
+                  category: rental.vehicleCategory,
+                });
+              }
+            }}
+            className={`relative w-24 h-24 sm:w-28 sm:h-28 rounded-2xl overflow-hidden shrink-0 flex items-center justify-center transition-all group shadow-md ${
+              carImageUrl ? 'cursor-pointer' : ''
+            } ${
+              isFinished
+                ? 'border-2 border-rose-500 shadow-[0_0_20px_rgba(244,63,94,0.6)] ring-2 ring-rose-500/30'
+                : 'border-2 border-cyan-500/40 bg-slate-900 hover:border-cyan-400'
+            }`}
+            title={carImageUrl ? 'Clique para ver foto em tamanho grande' : undefined}
+          >
+            {carImageUrl ? (
+              <img
+                src={carImageUrl}
+                alt={rental.vehicleName}
+                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                onError={(e) => {
+                  (e.target as HTMLElement).style.display = 'none';
+                }}
+              />
+            ) : null}
+
+            {/* Fallback caso não haja foto */}
+            <div
+              className={`absolute inset-0 flex flex-col items-center justify-center text-center p-1 bg-gradient-to-br from-[#1C2541] to-[#0B132B] ${
+                carImageUrl ? '-z-10' : ''
+              }`}
+            >
+              <span className="text-2xl leading-none">{categoryEmoji}</span>
+              <span className="text-xs font-black text-cyan-300 font-mono mt-1">
+                {rental.vehicleCode}
               </span>
             </div>
-            <div className="text-xs text-slate-300 font-medium">
-              Piloto: <strong className="text-slate-100">{rental.customerName}</strong>
+
+            {/* Badge do Código do Carrinho no canto superior (sem tampar a foto) */}
+            <div className="absolute top-1.5 left-1.5 bg-black/85 backdrop-blur-sm px-1.5 py-0.5 rounded-md border border-cyan-500/40 shadow">
+              <span className="text-[10px] font-black text-cyan-300 font-mono leading-none">
+                {rental.vehicleCode}
+              </span>
             </div>
+
+            {/* Botão de Lupa/Ampliar foto no canto inferior direito */}
+            {carImageUrl && (
+              <div className="absolute bottom-1.5 right-1.5 bg-black/80 hover:bg-cyan-500 hover:text-slate-950 text-cyan-300 backdrop-blur-sm px-1.5 py-0.5 rounded-md border border-cyan-500/40 text-[9px] font-bold flex items-center gap-1 shadow opacity-90 group-hover:opacity-100 transition-all">
+                <ZoomIn size={10} />
+                <span>Ver</span>
+              </div>
+            )}
+          </div>
+
+          <div className="min-w-0 flex-1 space-y-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[10px] font-mono font-black text-cyan-300 bg-cyan-950 px-2 py-0.5 rounded-lg border border-cyan-500/30 shrink-0">
+                {rental.vehicleCode}
+              </span>
+              <span className="text-[10px] font-bold text-slate-300 bg-slate-800/80 px-2 py-0.5 rounded-lg border border-slate-700">
+                {rental.vehicleCategory}
+              </span>
+              <h4 className="text-sm sm:text-base font-extrabold text-white tracking-tight truncate">
+                {rental.vehicleName}
+              </h4>
+            </div>
+
+            <div className="text-xs text-slate-300 font-medium">
+              Piloto: <strong className="text-white font-bold">{rental.customerName}</strong>
+            </div>
+
+            <div className="text-[11px] text-slate-400">
+              Tempo: <strong className="text-cyan-300">{rental.durationMinutes} min</strong> · Valor: <strong className="text-emerald-400">R$ {rental.amount.toFixed(2)}</strong>
+            </div>
+
+            {isFinished ? (
+              <div className="pt-0.5">
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-500/20 border border-rose-500/50 text-rose-300 text-xs font-black animate-pulse">
+                  <span>🚨 TEMPO ESGOTADO</span>
+                  <span>·</span>
+                  <span>Liberar na pista</span>
+                </span>
+              </div>
+            ) : isUrgent ? (
+              <div className="pt-0.5">
+                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-400">
+                  <span>⚠️ Menos de 1 minuto restante</span>
+                </span>
+              </div>
+            ) : null}
           </div>
         </div>
 
-        {/* Right: Live Countdown Badge */}
-        <div className="text-right">
-          <div
-            className={`text-lg font-black font-mono-numbers tracking-wider ${
-              isFinished
-                ? 'text-rose-400'
-                : isUrgent
-                ? 'text-amber-400 animate-pulse'
-                : 'text-[#00F0FF] glow-cyan-text'
-            }`}
-          >
-            {isFinished ? 'TEMPO ESGOTADO' : formattedTime}
+        {/* Lado Direito: Cronômetro / Tempo */}
+        <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center shrink-0 border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-800">
+          <div className="text-left sm:text-right">
+            <div
+              className={`font-mono-numbers font-black tracking-wider text-xl sm:text-2xl ${
+                isFinished
+                  ? 'text-rose-400 animate-pulse'
+                  : isUrgent
+                  ? 'text-amber-400 animate-pulse'
+                  : 'text-[#00F0FF] glow-cyan-text'
+              }`}
+            >
+              {isFinished ? '00:00' : formattedTime}
+            </div>
+            <span className="text-[10px] text-slate-400 block -mt-0.5">
+              {isFinished ? (
+                <span className="text-rose-300 font-bold font-mono">Passou {formattedOvertime}</span>
+              ) : (
+                'Tempo restante'
+              )}
+            </span>
           </div>
-          <span className="text-[10px] text-slate-400 block -mt-1">
-            {rental.durationMinutes} min contratados
-          </span>
         </div>
       </div>
 
@@ -416,14 +761,31 @@ const ActiveRentalCard: React.FC<{
         {/* Action Buttons */}
         <div className="flex items-center gap-1.5 flex-wrap justify-end">
           {isFinished && (
-            <button
-              onClick={onPlaySound}
-              className="px-2 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-[11px] font-bold border border-rose-500/50 transition-colors flex items-center gap-1"
-              title="Tocar a sirene de fim de corrida novamente"
-            >
-              <Volume2 size={12} />
-              <span>Sirene 🔊</span>
-            </button>
+            <>
+              {onToggleMute && (
+                <button
+                  onClick={onToggleMute}
+                  className={`px-2 py-1 rounded-lg border text-[11px] font-bold transition-all flex items-center gap-1 ${
+                    isAlarmMuted
+                      ? 'bg-amber-950/80 border-amber-500/60 text-amber-300'
+                      : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300'
+                  }`}
+                  title={isAlarmMuted ? 'Sirene silenciada. Clique para reativar o som.' : 'Silenciar o alarme sonoro'}
+                >
+                  {isAlarmMuted ? <VolumeX size={12} /> : <Volume2 size={12} />}
+                  <span>{isAlarmMuted ? 'Mudo' : 'Silenciar'}</span>
+                </button>
+              )}
+
+              <button
+                onClick={onPlaySound}
+                className="px-2 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-[11px] font-bold border border-rose-500/50 transition-colors flex items-center gap-1"
+                title="Tocar a sirene de fim de corrida novamente"
+              >
+                <Volume2 size={12} />
+                <span>Sirene 🔊</span>
+              </button>
+            </>
           )}
 
           <button
@@ -434,14 +796,18 @@ const ActiveRentalCard: React.FC<{
             + 5 min
           </button>
 
-          {/* Finalizar Corrida */}
+          {/* Finalizar Corrida (Abre modal de pagamento/conferência) */}
           <button
-            onClick={onFinish}
-            className="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-[11px] font-bold border border-emerald-500/40 transition-colors flex items-center gap-1"
-            title="Finalizar corrida agora e liberar o veículo"
+            onClick={onOpenFinalize}
+            className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 active:scale-95 shadow-md ${
+              isFinished
+                ? 'bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 shadow-[0_0_15px_rgba(16,185,129,0.5)]'
+                : 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40'
+            }`}
+            title="Finalizar corrida, conferir pagamento e liberar o carrinho"
           >
-            <CheckCircle2 size={12} />
-            <span>Finalizar</span>
+            <CheckCircle2 size={14} />
+            <span>Finalizar Corrida</span>
           </button>
 
           {/* Domínio do Administrador: Anular e Excluir corrida */}
