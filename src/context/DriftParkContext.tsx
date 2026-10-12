@@ -105,6 +105,8 @@ interface DriftParkContextType {
   }) => string | null;
   finishRental: (rentalId: string, updatedPaymentMethod?: PaymentMethod, updatedPaymentStatus?: PaymentStatus) => void;
   cancelRental: (rentalId: string) => void;
+  pauseRental: (rentalId: string) => void;
+  resumeRental: (rentalId: string) => void;
   extendRental: (rentalId: string, additionalMinutes: number, additionalAmount: number) => void;
   updateRentalPayment: (rentalId: string, paymentMethod: PaymentMethod, paymentStatus: PaymentStatus) => void;
   deleteRental: (rentalId: string) => void;
@@ -842,6 +844,9 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
               startTime: d.startTime,
               endTime: d.endTime,
               status: d.status,
+              remainingTimeMs: d.remainingTimeMs,
+              pausedAt: d.pausedAt,
+              pauseReason: d.pauseReason,
               operatorId: d.operatorId,
               operatorName: d.operatorName,
               createdAt: d.createdAt || d.startTime,
@@ -1854,6 +1859,8 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
         {
           status: 'concluida',
           endTime: now,
+          remainingTimeMs: null,
+          pausedAt: null,
           paymentMethod: finalPaymentMethod,
           paymentStatus: finalPaymentStatus,
         },
@@ -1880,6 +1887,8 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       ...rental,
       status: 'anulada',
       endTime: now,
+      remainingTimeMs: undefined,
+      pausedAt: undefined,
     };
 
     setRentalsState((prev) =>
@@ -1907,7 +1916,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     try {
       setDoc(
         doc(db, 'corridas', rentalId),
-        { status: 'anulada', endTime: now },
+        { status: 'anulada', endTime: now, remainingTimeMs: null, pausedAt: null },
         { merge: true }
       ).catch(() => {});
       if (rental.vehicleId) {
@@ -1920,6 +1929,84 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     } catch {}
 
     playTone('alert');
+  };
+
+  const pauseRental = (rentalId: string) => {
+    const rental = rentalsState.find((r) => r.id === rentalId);
+    if (!rental || rental.status !== 'ativa') return;
+
+    const now = Date.now();
+    const remainingTimeMs = Math.max(0, rental.endTime - now);
+
+    const pausedRental: Rental = {
+      ...rental,
+      status: 'pausada',
+      remainingTimeMs,
+      pausedAt: now,
+    };
+
+    setRentalsState((prev) =>
+      prev.map((r) => (r.id === rentalId ? pausedRental : r))
+    );
+
+    saveRentalCloud(activeTenantKey, pausedRental);
+
+    try {
+      setDoc(
+        doc(db, 'corridas', rentalId),
+        {
+          status: 'pausada',
+          remainingTimeMs,
+          pausedAt: now,
+        },
+        { merge: true }
+      ).catch(() => {});
+    } catch {}
+
+    playTone('alert');
+  };
+
+  const resumeRental = (rentalId: string) => {
+    const rental = rentalsState.find((r) => r.id === rentalId);
+    if (!rental || rental.status !== 'pausada') return;
+
+    const now = Date.now();
+    const remainingMs =
+      rental.remainingTimeMs !== undefined
+        ? rental.remainingTimeMs
+        : Math.max(0, rental.endTime - (rental.pausedAt || now));
+    const newEndTime = now + remainingMs;
+
+    const resumedRental: Rental = {
+      ...rental,
+      status: 'ativa',
+      endTime: newEndTime,
+      remainingTimeMs: undefined,
+      pausedAt: undefined,
+      pauseReason: undefined,
+    };
+
+    setRentalsState((prev) =>
+      prev.map((r) => (r.id === rentalId ? resumedRental : r))
+    );
+
+    saveRentalCloud(activeTenantKey, resumedRental);
+
+    try {
+      setDoc(
+        doc(db, 'corridas', rentalId),
+        {
+          status: 'ativa',
+          endTime: newEndTime,
+          remainingTimeMs: null,
+          pausedAt: null,
+          pauseReason: null,
+        },
+        { merge: true }
+      ).catch(() => {});
+    } catch {}
+
+    playTone('start');
   };
 
   // Inserção Manual de Corrida Passada no Histórico (Data retroativa pelo administrador)
@@ -2048,13 +2135,18 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     setRentalsState((prev) =>
       prev.map((r) => {
         if (r.id === rentalId) {
-          const newEndTime = r.endTime + additionalMinutes * 60 * 1000;
+          const isPaused = r.status === 'pausada';
+          const additionalMs = additionalMinutes * 60 * 1000;
+          const newEndTime = r.endTime + additionalMs;
+          const newRemaining =
+            (r.remainingTimeMs ?? Math.max(0, r.endTime - Date.now())) + additionalMs;
+
           updatedR = {
             ...r,
             durationMinutes: r.durationMinutes + additionalMinutes,
             amount: r.amount + additionalAmount,
             endTime: newEndTime,
-            status: 'ativa',
+            remainingTimeMs: isPaused ? newRemaining : undefined,
           };
           return updatedR;
         }
@@ -2065,16 +2157,15 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     if (updatedR) {
       saveRentalCloud(activeTenantKey, updatedR);
       try {
-        setDoc(
-          doc(db, 'corridas', rentalId),
-          {
-            durationMinutes: (updatedR as Rental).durationMinutes,
-            amount: (updatedR as Rental).amount,
-            endTime: (updatedR as Rental).endTime,
-            status: 'ativa',
-          },
-          { merge: true }
-        ).catch(() => {});
+        const payload: Record<string, any> = {
+          durationMinutes: (updatedR as Rental).durationMinutes,
+          amount: (updatedR as Rental).amount,
+          endTime: (updatedR as Rental).endTime,
+        };
+        if ((updatedR as Rental).remainingTimeMs !== undefined) {
+          payload.remainingTimeMs = (updatedR as Rental).remainingTimeMs;
+        }
+        setDoc(doc(db, 'corridas', rentalId), payload, { merge: true }).catch(() => {});
       } catch {}
     }
     playTone('start');
@@ -2111,8 +2202,8 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   const deleteRental = (rentalId: string) => {
     const rental = rentalsState.find((r) => r.id === rentalId);
-    if (rental && rental.status === 'ativa' && rental.vehicleId) {
-      // Libera o carrinho caso a corrida ainda estivesse ativa
+    if (rental && (rental.status === 'ativa' || rental.status === 'pausada') && rental.vehicleId) {
+      // Libera o carrinho caso a corrida ainda estivesse ativa ou pausada
       let freedVeh: Vehicle | null = null;
       setVehiclesState((prev) =>
         prev.map((v) => {
@@ -2146,11 +2237,19 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   const clearRentalHistory = () => {
     const toDelete = rentalsState.filter(
-      (r) => (r.tenantId === activeTenantKey || r.tenantId === currentTenant.id) && r.status !== 'ativa'
+      (r) =>
+        (r.tenantId === activeTenantKey || r.tenantId === currentTenant.id) &&
+        r.status !== 'ativa' &&
+        r.status !== 'pausada'
     );
-    // Apaga todas as corridas concluídas do tenant atual (mantém as ativas se houver)
+    // Apaga todas as corridas concluídas/anuladas do tenant atual (mantém as ativas e pausadas)
     setRentalsState((prev) =>
-      prev.filter((r) => (r.tenantId !== activeTenantKey && r.tenantId !== currentTenant.id) || r.status === 'ativa')
+      prev.filter(
+        (r) =>
+          (r.tenantId !== activeTenantKey && r.tenantId !== currentTenant.id) ||
+          r.status === 'ativa' ||
+          r.status === 'pausada'
+      )
     );
 
     clearRentalHistoryCloud(activeTenantKey);
@@ -2319,6 +2418,8 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
         startRental,
         finishRental,
         cancelRental,
+        pauseRental,
+        resumeRental,
         extendRental,
         updateRentalPayment,
         deleteRental,

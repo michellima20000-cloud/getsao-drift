@@ -7,6 +7,7 @@ import {
   Zap,
   Timer,
   Play,
+  Pause,
   CheckCircle2,
   AlertCircle,
   Plus,
@@ -36,14 +37,16 @@ export const DashboardScreen: React.FC = () => {
     finishRental,
     cancelRental,
     deleteRental,
+    pauseRental,
+    resumeRental,
     extendRental,
     playSound,
     isAlarmMuted,
     toggleAlarmMute,
   } = useDriftPark();
 
-  // Active races
-  const activeRentals = rentals.filter((r) => r.status === 'ativa');
+  // Active & Paused races on track
+  const activeRentals = rentals.filter((r) => r.status === 'ativa' || r.status === 'pausada');
 
   // Modal para conferência de pagamento e finalização manual
   const [rentalToFinalize, setRentalToFinalize] = useState<Rental | null>(null);
@@ -240,7 +243,7 @@ export const DashboardScreen: React.FC = () => {
         <div className="flex items-center justify-between">
           <h3 className="text-xs uppercase tracking-wider font-bold text-slate-300 flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-cyan-400 animate-neon-pulse" />
-            Telemetria em Tempo Real ({activeRentals.length} na pista)
+            Telemetria em Tempo Real ({activeRentals.length} na pista{activeRentals.some((r) => r.status === 'pausada') ? ` · ${activeRentals.filter((r) => r.status === 'pausada').length} pausada` : ''})
           </h3>
           <span className="text-[10px] text-cyan-400/80 font-mono">LIVE GPS</span>
         </div>
@@ -278,6 +281,8 @@ export const DashboardScreen: React.FC = () => {
                 onZoomPhoto={(data) => setZoomedPhoto(data)}
                 onCancel={() => cancelRental(rental.id)}
                 onDelete={() => deleteRental(rental.id)}
+                onPause={() => pauseRental(rental.id)}
+                onResume={() => resumeRental(rental.id)}
                 onExtend={() => extendRental(rental.id, 5, 12)}
                 onPlaySound={() => playSound('finish')}
               />
@@ -530,6 +535,8 @@ const ActiveRentalCard: React.FC<{
   onZoomPhoto: (data: { url: string; title: string; code?: string; category?: string }) => void;
   onCancel: () => void;
   onDelete: () => void;
+  onPause: () => void;
+  onResume: () => void;
   onExtend: () => void;
   onPlaySound: () => void;
 }> = ({
@@ -542,6 +549,8 @@ const ActiveRentalCard: React.FC<{
   onZoomPhoto,
   onCancel,
   onDelete,
+  onPause,
+  onResume,
   onExtend,
   onPlaySound,
 }) => {
@@ -556,9 +565,12 @@ const ActiveRentalCard: React.FC<{
     return () => clearInterval(timer);
   }, []);
 
-  const timeLeftMs = Math.max(0, rental.endTime - now);
-  const isFinished = now >= rental.endTime;
-  const overtimeMs = Math.max(0, now - rental.endTime);
+  const isPaused = rental.status === 'pausada';
+  const timeLeftMs = isPaused
+    ? (rental.remainingTimeMs ?? Math.max(0, rental.endTime - (rental.pausedAt || now)))
+    : Math.max(0, rental.endTime - now);
+  const isFinished = !isPaused && now >= rental.endTime;
+  const overtimeMs = !isPaused ? Math.max(0, now - rental.endTime) : 0;
 
   const totalDurationMs = rental.durationMinutes * 60 * 1000;
   const elapsedMs = totalDurationMs - timeLeftMs;
@@ -572,7 +584,7 @@ const ActiveRentalCard: React.FC<{
   const overtimeSec = Math.floor((overtimeMs % (1000 * 60)) / 1000);
   const formattedOvertime = `+${String(overtimeMin).padStart(2, '0')}:${String(overtimeSec).padStart(2, '0')}`;
 
-  const isUrgent = timeLeftMs < 60 * 1000 && !isFinished;
+  const isUrgent = timeLeftMs < 60 * 1000 && !isFinished && !isPaused;
 
   const carImageUrl = vehicle?.imageUrl || rental.vehicleImageUrl;
   const categoryEmoji =
@@ -583,11 +595,26 @@ const ActiveRentalCard: React.FC<{
       className={`relative overflow-hidden rounded-2xl border p-3.5 sm:p-4 transition-all ${
         isFinished
           ? 'bg-rose-950/40 border-2 border-rose-500 shadow-[0_0_25px_rgba(225,29,72,0.4)]'
+          : isPaused
+          ? 'bg-amber-950/30 border-2 border-amber-500/60 shadow-[0_0_20px_rgba(245,158,11,0.25)]'
           : isUrgent
           ? 'bg-amber-950/30 border-amber-500/60 shadow-[0_0_12px_rgba(245,158,11,0.2)]'
           : 'bg-[#141E38] border-cyan-500/40 shadow-sm'
       }`}
     >
+      {/* Alerta Destacado quando a Corrida Está Pausada */}
+      {isPaused && (
+        <div className="mb-3 px-3 py-2 rounded-xl bg-gradient-to-r from-amber-950/90 via-amber-900/70 to-amber-950/90 border border-amber-500/70 flex items-center justify-between text-amber-200 text-xs font-bold animate-pulse shadow-md">
+          <div className="flex items-center gap-2">
+            <Pause size={15} className="text-amber-400" />
+            <span className="font-extrabold text-white">CORRIDA PAUSADA · CRONÔMETRO CONGELADO</span>
+          </div>
+          <span className="text-[10px] uppercase font-bold tracking-wider bg-amber-900/80 px-2 py-0.5 rounded border border-amber-500/50 text-amber-200">
+            Pausa Simples
+          </span>
+        </div>
+      )}
+
       {/* Alerta Destacado quando a Corrida Termina na Pista */}
       {isFinished && (
         <div className="mb-3 px-3 py-2 rounded-xl bg-gradient-to-r from-rose-950 via-rose-900 to-rose-950 border border-rose-500/70 flex items-center justify-between text-rose-200 text-xs font-bold animate-pulse shadow-md">
@@ -693,6 +720,13 @@ const ActiveRentalCard: React.FC<{
                   <span>Liberar na pista</span>
                 </span>
               </div>
+            ) : isPaused ? (
+              <div className="pt-0.5">
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/20 border border-amber-500/50 text-amber-300 text-xs font-bold">
+                  <Pause size={12} />
+                  <span>Corrida Pausada</span>
+                </span>
+              </div>
             ) : isUrgent ? (
               <div className="pt-0.5">
                 <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-400">
@@ -710,6 +744,8 @@ const ActiveRentalCard: React.FC<{
               className={`font-mono-numbers font-black tracking-wider text-xl sm:text-2xl ${
                 isFinished
                   ? 'text-rose-400 animate-pulse'
+                  : isPaused
+                  ? 'text-amber-400'
                   : isUrgent
                   ? 'text-amber-400 animate-pulse'
                   : 'text-[#00F0FF] glow-cyan-text'
@@ -720,6 +756,8 @@ const ActiveRentalCard: React.FC<{
             <span className="text-[10px] text-slate-400 block -mt-0.5">
               {isFinished ? (
                 <span className="text-rose-300 font-bold font-mono">Passou {formattedOvertime}</span>
+              ) : isPaused ? (
+                <span className="text-amber-400 font-semibold font-mono">Pausado (congelado)</span>
               ) : (
                 'Tempo restante'
               )}
@@ -787,6 +825,27 @@ const ActiveRentalCard: React.FC<{
               </button>
             </>
           )}
+
+          {/* Botão simples de Pausa/Retorno: só clicar e pausar/retomar */}
+          {isPaused ? (
+            <button
+              onClick={onResume}
+              className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 text-xs font-black transition-all flex items-center gap-1.5 shadow-md active:scale-95"
+              title="Retomar a corrida na pista"
+            >
+              <Play size={13} className="fill-current" />
+              <span>Retomar Corrida</span>
+            </button>
+          ) : !isFinished ? (
+            <button
+              onClick={onPause}
+              className="px-2.5 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-bold border border-amber-500/40 transition-all flex items-center gap-1.5 active:scale-95"
+              title="Pausar o tempo da corrida"
+            >
+              <Pause size={13} />
+              <span>Pausar</span>
+            </button>
+          ) : null}
 
           <button
             onClick={onExtend}
