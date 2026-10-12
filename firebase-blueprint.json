@@ -1,0 +1,120 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Perfil de usuário (Administrador ou Operador de pista) vinculado a um tenant/pista.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "UID único do usuário no Firebase Auth." },
+        "name": { "type": "string", "description": "Nome completo do usuário." },
+        "email": { "type": "string", "description": "E-mail de login do usuário." },
+        "role": { "type": "string", "enum": ["admin", "operador"], "description": "Papel de permissão no sistema." },
+        "tenantId": { "type": "string", "description": "Identificador do tenant/administrador proprietário." },
+        "adminEmail": { "type": "string", "description": "E-mail do administrador ao qual este operador está vinculado." },
+        "adminName": { "type": "string", "description": "Nome do administrador responsável." },
+        "createdBy": { "type": "string", "description": "E-mail ou UID de quem realizou o cadastro." },
+        "createdAt": { "type": "number", "description": "Timestamp Unix de criação da conta." }
+      },
+      "required": ["id", "name", "email", "role", "tenantId"]
+    },
+    "Vehicle": {
+      "title": "Vehicle",
+      "description": "Veículo da frota de drift, jeep ou bate-bate pertencente a uma pista.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Identificador único do veículo." },
+        "tenantId": { "type": "string", "description": "UID ou chave primária do tenant proprietário." },
+        "name": { "type": "string", "description": "Nome comercial do veículo." },
+        "code": { "type": "string", "description": "Código de identificação visual (ex: #01)." },
+        "category": { "type": "string", "enum": ["DRIFT", "JEEP", "BATE_BATE"], "description": "Categoria do veículo." },
+        "status": { "type": "string", "enum": ["disponivel", "em_uso", "manutencao"], "description": "Status operacional atual." },
+        "batteryLevel": { "type": "number", "description": "Nível de bateria percentual (0 a 100)." },
+        "totalRuns": { "type": "number", "description": "Quantidade total acumulada de corridas realizadas." },
+        "activeRentalId": { "type": "string", "description": "ID da corrida ativa vinculada caso em_uso." },
+        "imageUrl": { "type": "string", "description": "URL ou link da foto do veículo." }
+      },
+      "required": ["id", "tenantId", "name", "code", "category", "status"]
+    },
+    "Rental": {
+      "title": "Rental",
+      "description": "Registro de corrida ou aluguel de veículo em pista com telemetria e financeiro.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Identificador único da corrida." },
+        "tenantId": { "type": "string", "description": "UID do tenant ao qual a corrida pertence." },
+        "vehicleId": { "type": "string", "description": "ID do veículo utilizado." },
+        "vehicleName": { "type": "string", "description": "Nome do veículo utilizado." },
+        "vehicleCode": { "type": "string", "description": "Código do veículo utilizado." },
+        "vehicleCategory": { "type": "string", "description": "Categoria do veículo." },
+        "customerName": { "type": "string", "description": "Nome do piloto ou responsável." },
+        "customerPhone": { "type": "string", "description": "Telefone de contato do cliente." },
+        "durationMinutes": { "type": "number", "description": "Duração contratada da corrida em minutos." },
+        "amount": { "type": "number", "description": "Valor total cobrado em reais." },
+        "paymentMethod": { "type": "string", "enum": ["PIX", "DINHEIRO", "CARTAO_CREDITO", "CARTAO_DEBITO"], "description": "Forma de pagamento." },
+        "paymentStatus": { "type": "string", "enum": ["PAGO", "PENDENTE"], "description": "Status do pagamento." },
+        "mode": { "type": "string", "enum": ["LIVRE", "CRONOMETRADO"], "description": "Modo da corrida." },
+        "startTime": { "type": "number", "description": "Timestamp Unix de início da corrida." },
+        "endTime": { "type": "number", "description": "Timestamp Unix previsto ou real de término." },
+        "status": { "type": "string", "enum": ["ativa", "concluida", "anulada"], "description": "Status do aluguel." },
+        "operatorId": { "type": "string", "description": "UID do operador que iniciou a corrida." },
+        "operatorName": { "type": "string", "description": "Nome do operador da corrida." },
+        "createdAt": { "type": "number", "description": "Timestamp Unix de criação do registro." }
+      },
+      "required": ["id", "tenantId", "vehicleId", "durationMinutes", "amount", "status", "startTime", "endTime"]
+    },
+    "QueueItem": {
+      "title": "QueueItem",
+      "description": "Item da fila de espera para pilotos aguardando liberação de veículos na pista.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Identificador único do item da fila." },
+        "tenantId": { "type": "string", "description": "UID do tenant proprietário." },
+        "customerName": { "type": "string", "description": "Nome do cliente aguardando na fila." },
+        "customerPhone": { "type": "string", "description": "Telefone de contato." },
+        "category": { "type": "string", "enum": ["DRIFT", "JEEP", "BATE_BATE"], "description": "Categoria de veículo desejada." },
+        "durationMinutes": { "type": "number", "description": "Tempo desejado em minutos." },
+        "createdAt": { "type": "number", "description": "Timestamp Unix de entrada na fila." },
+        "notes": { "type": "string", "description": "Observações adicionais." },
+        "status": { "type": "string", "enum": ["esperando", "chamado", "atendido", "cancelado"], "description": "Status na fila." }
+      },
+      "required": ["id", "tenantId", "customerName", "category", "durationMinutes", "createdAt"]
+    },
+    "TenantSettings": {
+      "title": "TenantSettings",
+      "description": "Configurações da pista de drift e tabela de preços por duração.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Identificador / UID do tenant da pista." },
+        "name": { "type": "string", "description": "Nome da pista ou franquia." },
+        "city": { "type": "string", "description": "Cidade da pista." },
+        "state": { "type": "string", "description": "Estado UF." },
+        "code": { "type": "string", "description": "Código curto da pista." },
+        "ownerUid": { "type": "string", "description": "UID do Administrador dono da pista." },
+        "pricing": { "type": "object", "description": "Mapeamento de duração em minutos para valor em reais." }
+      },
+      "required": ["id", "name"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Coleção de perfis de usuários com isolamento multi-tenant."
+    },
+    "/veiculos/{veiculoId}": {
+      "schema": "Vehicle",
+      "description": "Coleção de veículos com telemetria e status particionada por tenantId."
+    },
+    "/corridas/{corridaId}": {
+      "schema": "Rental",
+      "description": "Coleção de corridas ativas, concluídas e histórico particionada por tenantId."
+    },
+    "/fila/{queueId}": {
+      "schema": "QueueItem",
+      "description": "Coleção de clientes aguardando na fila de espera da pista particionada por tenantId."
+    },
+    "/tenants/{tenantId}": {
+      "schema": "TenantSettings",
+      "description": "Configurações do tenant, dados da pista e tabela de preços."
+    }
+  }
+}

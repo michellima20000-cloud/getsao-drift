@@ -3,49 +3,55 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // =========================================================================
-    // REGRAS DE SEGURANÇA FIRESTORE - AUTENTICAÇÃO E MULTI-TENANT
+    // REGRAS DE SEGURANÇA FIRESTORE - DRIFT PARK MULTI-TENANT
     // =========================================================================
 
     function isSignedIn() {
       return request.auth != null;
     }
 
-    // Coleções de Usuários: permite leitura e gravação para usuários autenticados
-    // Salvando email, perfil, tenantId e adminEmail do administrador vinculado
-    match /usuarios/{userId} {
-      allow read, write: if isSignedIn();
-    }
-
+    // Perfis de Usuários e Operadores
     match /users/{userId} {
       allow read, write: if isSignedIn();
     }
 
-    // Frota de Veículos
+    match /usuarios/{userId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // Frota de Veículos particionada por tenantId / UID
     match /veiculos/{veiculoId} {
       allow read, write: if isSignedIn();
     }
 
-    // Corridas e Aluguéis
+    match /vehicles/{vehicleId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // Corridas e Telemetria particionadas por tenantId / UID
     match /corridas/{corridaId} {
       allow read, write: if isSignedIn();
     }
 
-    // Clientes
-    match /clientes/{clienteId} {
+    match /rentals/{rentalId} {
       allow read, write: if isSignedIn();
     }
 
-    // Caixa & Financeiro
-    match /caixa/{caixaId} {
-      allow read, write: if isSignedIn();
-    }
-
-    // Fila de Espera
+    // Fila de Espera particionada por tenantId / UID
     match /fila/{filaId} {
       allow read, write: if isSignedIn();
     }
 
-    // Regra padrão para demais documentos
+    match /queue/{queueId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // Configurações e Preços do Tenant / Pista
+    match /tenants/{tenantId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // Demais coleções autenticadas
     match /{document=**} {
       allow read, write: if isSignedIn();
     }

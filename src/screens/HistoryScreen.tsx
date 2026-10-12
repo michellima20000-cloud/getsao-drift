@@ -27,6 +27,7 @@ import {
   Flame,
   Compass,
   Zap,
+  ZoomIn,
 } from 'lucide-react';
 
 export const HistoryScreen: React.FC = () => {
@@ -46,6 +47,14 @@ export const HistoryScreen: React.FC = () => {
   } = useDriftPark();
 
   const isAdmin = currentUser?.role === 'admin';
+
+  // Modal de Foto Ampliada
+  const [zoomedPhoto, setZoomedPhoto] = useState<{
+    url: string;
+    title: string;
+    code?: string;
+    category?: string;
+  } | null>(null);
 
   // Helper de formatação de data YYYY-MM-DD
   const formatYMD = (d: Date) => {
@@ -664,21 +673,54 @@ export const HistoryScreen: React.FC = () => {
                 }`}
               >
                 <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-center gap-2.5">
-                    {/* Badge Veículo / Noite */}
-                    <div
-                      className={`w-9 h-9 rounded-lg border flex flex-col items-center justify-center font-display shrink-0 ${
-                        isClosure
-                          ? 'bg-purple-500/20 border-purple-500/40 text-purple-300'
-                          : 'bg-[#0B132B] border-slate-700 text-cyan-400 font-bold'
-                      }`}
-                    >
-                      {isClosure ? (
-                        <Moon size={16} />
-                      ) : (
-                        <span className="text-[10px] leading-none">{rental.vehicleCode}</span>
-                      )}
-                    </div>
+                  <div className="flex items-center gap-3">
+                    {/* Badge Veículo com Foto Nítida se disponível ou Ícone */}
+                    {(() => {
+                      const matchingVehicle = vehicles.find((v) => v.id === rental.vehicleId);
+                      const histCarImg = matchingVehicle?.imageUrl || rental.vehicleImageUrl;
+
+                      if (isClosure) {
+                        return (
+                          <div className="w-11 h-11 rounded-xl border flex flex-col items-center justify-center font-display shrink-0 bg-purple-500/20 border-purple-500/40 text-purple-300">
+                            <Moon size={18} />
+                          </div>
+                        );
+                      }
+
+                      if (histCarImg) {
+                        return (
+                          <div
+                            onClick={() =>
+                              setZoomedPhoto({
+                                url: histCarImg,
+                                title: rental.vehicleName,
+                                code: rental.vehicleCode,
+                                category: rental.vehicleCategory,
+                              })
+                            }
+                            className="relative w-12 h-12 rounded-xl overflow-hidden bg-slate-900 border border-cyan-500/40 shrink-0 flex items-center justify-center cursor-pointer shadow group"
+                            title="Clique para ver a foto do carrinho"
+                          >
+                            <img
+                              src={histCarImg}
+                              alt={rental.vehicleName}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                            />
+                            <div className="absolute bottom-0 inset-x-0 bg-black/85 py-0.2 text-center">
+                              <span className="text-[8px] font-mono font-black text-cyan-300 leading-none">
+                                {rental.vehicleCode}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="w-11 h-11 rounded-xl border flex flex-col items-center justify-center font-display shrink-0 bg-[#0B132B] border-slate-700 text-cyan-400 font-bold">
+                          <span className="text-xs font-black">{rental.vehicleCode}</span>
+                        </div>
+                      );
+                    })()}
 
                     <div>
                       <div className="flex items-center gap-2">
@@ -1362,6 +1404,61 @@ export const HistoryScreen: React.FC = () => {
                 className="flex-1 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold shadow-md"
               >
                 Sim, Limpar Tudo
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL LIGHTBOX: FOTO AMPLIADA EM ALTA RESOLUÇÃO */}
+      {zoomedPhoto && (
+        <div
+          onClick={() => setZoomedPhoto(null)}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-lg animate-in fade-in"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-lg rounded-2xl bg-[#0F172A] border-2 border-cyan-400/60 p-4 shadow-2xl space-y-3 relative"
+          >
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                {zoomedPhoto.code && (
+                  <span className="text-xs font-mono font-black text-cyan-300 bg-cyan-950 px-2 py-0.5 rounded border border-cyan-500/40">
+                    {zoomedPhoto.code}
+                  </span>
+                )}
+                <h3 className="text-sm font-extrabold text-white truncate">{zoomedPhoto.title}</h3>
+                {zoomedPhoto.category && (
+                  <span className="text-[10px] text-slate-400 font-bold bg-slate-800 px-1.5 py-0.5 rounded">
+                    {zoomedPhoto.category}
+                  </span>
+                )}
+              </div>
+              <button
+                onClick={() => setZoomedPhoto(null)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Imagem em Tamanho Real / Nítida */}
+            <div className="relative rounded-xl overflow-hidden bg-black/80 flex items-center justify-center max-h-[70vh] border border-slate-800">
+              <img
+                src={zoomedPhoto.url}
+                alt={zoomedPhoto.title}
+                className="max-h-[65vh] w-auto max-w-full object-contain rounded-lg shadow-2xl"
+              />
+            </div>
+
+            <div className="flex items-center justify-between pt-1 text-xs text-slate-400">
+              <span>Registro do veículo no histórico</span>
+              <button
+                type="button"
+                onClick={() => setZoomedPhoto(null)}
+                className="px-3 py-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs shadow-md transition-all"
+              >
+                Fechar Foto
               </button>
             </div>
           </div>
