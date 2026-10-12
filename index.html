@@ -67,8 +67,22 @@
     <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
     <script>
       // Suprime avisos normais de WebSocket em ambiente em nuvem onde HMR é desativado
+      (function() {
+        var origWarn = console.warn;
+        var origError = console.error;
+        console.warn = function() {
+          var first = arguments[0];
+          if (typeof first === 'string' && (first.includes('[vite]') || first.includes('websocket') || first.includes('WebSocket'))) return;
+          return origWarn.apply(console, arguments);
+        };
+        console.error = function() {
+          var first = arguments[0];
+          if (typeof first === 'string' && (first.includes('[vite]') || first.includes('websocket') || first.includes('WebSocket'))) return;
+          return origError.apply(console, arguments);
+        };
+      })();
       window.addEventListener('error', function (event) {
-        if (event && event.message && (event.message.includes('WebSocket') || event.message.includes('closed without opened'))) {
+        if (event && event.message && (event.message.includes('WebSocket') || event.message.includes('closed without opened') || event.message.includes('[vite]'))) {
           event.stopImmediatePropagation && event.stopImmediatePropagation();
           event.preventDefault && event.preventDefault();
         }
