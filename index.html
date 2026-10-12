@@ -65,6 +65,20 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+    <script>
+      // Suprime avisos normais de WebSocket em ambiente em nuvem onde HMR é desativado
+      window.addEventListener('error', function (event) {
+        if (event && event.message && (event.message.includes('WebSocket') || event.message.includes('closed without opened'))) {
+          event.stopImmediatePropagation && event.stopImmediatePropagation();
+          event.preventDefault && event.preventDefault();
+        }
+      }, true);
+      window.addEventListener('unhandledrejection', function (event) {
+        if (event && event.reason && String(event.reason).includes('WebSocket')) {
+          event.preventDefault && event.preventDefault();
+        }
+      });
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -220,6 +220,23 @@ export async function createSubAccountInAuth(
       } catch (profErr) {
         console.warn('Aviso ao atualizar perfil no Firebase Auth:', profErr);
       }
+
+      // Salva também no Cloud Sync Service para acesso imediato em qualquer dispositivo
+      try {
+        fetch('/api/cloud-sync/user', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: uid,
+            email: cleanEmail,
+            name: profileData.name || cleanEmail.split('@')[0],
+            role: profileData.role || 'operador',
+            tenantId: profileData.tenantId,
+            adminEmail: profileData.adminEmail,
+            createdAt: Date.now(),
+          }),
+        }).catch(() => {});
+      } catch {}
     }
 
     await signOut(secondaryAuth).catch(() => {});

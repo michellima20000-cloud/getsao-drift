@@ -30,8 +30,16 @@ export const TopHeader: React.FC = () => {
           </div>
         </div>
 
-        {/* Right Tools: User Menu */}
-        <div className="flex items-center gap-1.5">
+        {/* Right Tools: Cloud Indicator & User Menu */}
+        <div className="flex items-center gap-2">
+          {/* Cloud Active Pill */}
+          <div
+            className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-[10px] text-emerald-400 font-semibold"
+            title="Sincronização em nuvem ativa em tempo real"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="hidden sm:inline">Nuvem</span>
+          </div>
 
           {/* User Profile / Role menu */}
           <div className="relative">

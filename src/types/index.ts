@@ -66,7 +66,10 @@ export interface Rental {
   mode: RentalMode;
   startTime: number; // timestamp ms
   endTime: number;   // timestamp ms
-  status: 'ativa' | 'concluida' | 'cancelada' | 'anulada';
+  status: 'ativa' | 'pausada' | 'concluida' | 'cancelada' | 'anulada';
+  remainingTimeMs?: number; // Tempo restante congelado em ms quando pausada
+  pausedAt?: number;        // Timestamp ms em que foi pausada
+  pauseReason?: string;     // Motivo da pausa (ex: 'Troca de bateria')
   operatorId: string;
   operatorName: string;
   createdAt: number;
