@@ -68,6 +68,7 @@ import {
   findUserInCloudByEmail,
   registerUserInCloud,
 } from '../services/cloudSync';
+import { safeSetItem, safeGetItem, safeRemoveItem } from '../utils/safeStorage';
 
 interface DriftParkContextType {
   currentUser: UserProfile | null;
@@ -448,7 +449,7 @@ function mergeUsers(
 export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   // 1. Tenants State
   const [allTenants, setAllTenants] = useState<Tenant[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.TENANTS);
+    const saved = safeGetItem(STORAGE_KEYS.TENANTS);
     if (!saved) return INITIAL_TENANTS;
     try {
       const parsed = JSON.parse(saved);
@@ -459,7 +460,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
   });
 
   const [currentTenantId, setCurrentTenantId] = useState<string>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.CURRENT_TENANT);
+    const saved = safeGetItem(STORAGE_KEYS.CURRENT_TENANT);
     return saved || INITIAL_TENANTS[0].id;
   });
 
@@ -505,23 +506,21 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   // Limpeza de cache local caso adm.cledson@gmail.com estivesse gravado
   try {
-    if (typeof window !== 'undefined') {
-      const savedEmail = localStorage.getItem('driftpark_saved_email');
-      if (savedEmail && isDeactivatedAccount(savedEmail)) {
-        localStorage.removeItem('driftpark_saved_email');
-        localStorage.removeItem('driftpark_saved_password');
-      }
-      const curUser = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
-      if (curUser && curUser.includes('adm.cledson')) {
-        localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
-      }
+    const savedEmail = safeGetItem('driftpark_saved_email');
+    if (savedEmail && isDeactivatedAccount(savedEmail)) {
+      safeRemoveItem('driftpark_saved_email');
+      safeRemoveItem('driftpark_saved_password');
+    }
+    const curUser = safeGetItem(STORAGE_KEYS.CURRENT_USER);
+    if (curUser && curUser.includes('adm.cledson')) {
+      safeRemoveItem(STORAGE_KEYS.CURRENT_USER);
     }
   } catch {}
 
   // 2. Users State: Carregado de forma resiliente preservando apenas os operadores reais cadastrados pelo cliente
   const [users, setUsers] = useState<UserProfile[]>(() => {
     let list: UserProfile[] = [];
-    const saved = localStorage.getItem(STORAGE_KEYS.USERS);
+    const saved = safeGetItem(STORAGE_KEYS.USERS);
     if (saved) {
       try {
         const parsed: UserProfile[] = JSON.parse(saved);
@@ -531,13 +530,15 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
 
     // Carrega também de backups de operadores salvos por tenant/admin
     try {
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && (key.startsWith('driftpark_operators_') || key.startsWith('driftpark_admin_operators_'))) {
-          const ops: UserProfile[] = JSON.parse(localStorage.getItem(key) || '[]');
-          for (const op of ops) {
-            if (op && op.email && !isMockEmail(op.email) && !list.some((u) => u.email.toLowerCase() === op.email.toLowerCase())) {
-              list.push(op);
+      if (typeof window !== 'undefined' && window.localStorage) {
+        for (let i = 0; i < window.localStorage.length; i++) {
+          const key = window.localStorage.key(i);
+          if (key && (key.startsWith('driftpark_operators_') || key.startsWith('driftpark_admin_operators_'))) {
+            const ops: UserProfile[] = JSON.parse(safeGetItem(key) || '[]');
+            for (const op of ops) {
+              if (op && op.email && !isMockEmail(op.email) && !list.some((u) => u.email.toLowerCase() === op.email.toLowerCase())) {
+                list.push(op);
+              }
             }
           }
         }
@@ -549,7 +550,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   // Usuário Autenticado: Inicia como null se não houver sessão salva para exigir login real
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
+    const saved = safeGetItem(STORAGE_KEYS.CURRENT_USER);
     if (saved) {
       try {
         const parsed: UserProfile = JSON.parse(saved);
@@ -565,7 +566,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   // 3. Vehicles State: Frota 100% limpa, filtrando qualquer dado fictício de mock
   const [vehiclesState, setVehiclesState] = useState<Vehicle[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.VEHICLES);
+    const saved = safeGetItem(STORAGE_KEYS.VEHICLES);
     if (!saved) return [];
     try {
       const parsed: Vehicle[] = JSON.parse(saved);
@@ -577,7 +578,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   // 4. Rentals State: Corridas 100% reais, sem pilotos fictícios
   const [rentalsState, setRentalsState] = useState<Rental[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.RENTALS);
+    const saved = safeGetItem(STORAGE_KEYS.RENTALS);
     if (!saved) return [];
     try {
       const parsed: Rental[] = JSON.parse(saved);
@@ -589,7 +590,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   // 5. Queue State: Fila 100% real
   const [queueState, setQueueState] = useState<QueueItem[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.QUEUE);
+    const saved = safeGetItem(STORAGE_KEYS.QUEUE);
     if (!saved) return [];
     try {
       const parsed: QueueItem[] = JSON.parse(saved);
@@ -615,29 +616,29 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     return res;
   };
 
-  // Sync to LocalStorage
+  // Sync to LocalStorage com proteção total contra cota e falhas de disco
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.TENANTS, JSON.stringify(allTenants));
+    safeSetItem(STORAGE_KEYS.TENANTS, JSON.stringify(allTenants));
   }, [allTenants]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.CURRENT_TENANT, currentTenantId);
+    safeSetItem(STORAGE_KEYS.CURRENT_TENANT, currentTenantId);
   }, [currentTenantId]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+    safeSetItem(STORAGE_KEYS.USERS, JSON.stringify(users));
     try {
       const ops = users.filter((u) => u.role === 'operador');
       if (ops.length > 0) {
         if (currentTenant?.id) {
           const tenantOps = ops.filter((u) => u.tenantId === currentTenant.id);
-          localStorage.setItem(`driftpark_operators_${currentTenant.id}`, JSON.stringify(tenantOps));
+          safeSetItem(`driftpark_operators_${currentTenant.id}`, JSON.stringify(tenantOps));
         }
         if (currentUser?.email) {
           const adminOps = ops.filter(
             (u) => u.adminEmail === currentUser.email || u.tenantId === currentUser.tenantId
           );
-          localStorage.setItem(`driftpark_admin_operators_${currentUser.email}`, JSON.stringify(adminOps));
+          safeSetItem(`driftpark_admin_operators_${currentUser.email}`, JSON.stringify(adminOps));
         }
       }
     } catch {}
@@ -645,22 +646,22 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   useEffect(() => {
     if (currentUser) {
-      localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(currentUser));
+      safeSetItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(currentUser));
     } else {
-      localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
+      safeRemoveItem(STORAGE_KEYS.CURRENT_USER);
     }
   }, [currentUser]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.VEHICLES, JSON.stringify(vehiclesState));
+    safeSetItem(STORAGE_KEYS.VEHICLES, JSON.stringify(vehiclesState));
   }, [vehiclesState]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.RENTALS, JSON.stringify(rentalsState));
+    safeSetItem(STORAGE_KEYS.RENTALS, JSON.stringify(rentalsState));
   }, [rentalsState]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.QUEUE, JSON.stringify(queueState));
+    safeSetItem(STORAGE_KEYS.QUEUE, JSON.stringify(queueState));
   }, [queueState]);
 
   // Alarme sonoro contínuo e repetitivo de fim de corrida
@@ -1174,8 +1175,8 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
 
           setCurrentUser(userObj);
           setCurrentTenantId(userObj.tenantId);
-          localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(userObj));
-          localStorage.setItem(STORAGE_KEYS.CURRENT_TENANT, userObj.tenantId);
+          safeSetItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(userObj));
+          safeSetItem(STORAGE_KEYS.CURRENT_TENANT, userObj.tenantId);
 
           // Puxa imediatamente todos os dados da conta diretamente do Firebase Firestore em alta velocidade!
           pullFromFirestoreDirectly(userObj.tenantId);
@@ -1192,8 +1193,8 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
           };
           setCurrentUser(defaultAdmin);
           setCurrentTenantId(defaultAdmin.tenantId);
-          localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(defaultAdmin));
-          localStorage.setItem(STORAGE_KEYS.CURRENT_TENANT, defaultAdmin.tenantId);
+          safeSetItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(defaultAdmin));
+          safeSetItem(STORAGE_KEYS.CURRENT_TENANT, defaultAdmin.tenantId);
           registerUserInCloud(defaultAdmin);
 
           pullFromFirestoreDirectly(defaultAdmin.tenantId);
@@ -1540,7 +1541,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       try {
         // 1. Veículos que já existem no aparelho do cliente (apenas veículos reais)
         let clientVehicles: Vehicle[] = [];
-        const rawVeh = localStorage.getItem(STORAGE_KEYS.VEHICLES);
+        const rawVeh = safeGetItem(STORAGE_KEYS.VEHICLES);
         if (rawVeh) {
           try {
             const parsed = JSON.parse(rawVeh);
@@ -1563,7 +1564,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
 
         // 2. Corridas e Histórico que já existem no aparelho do cliente (apenas corridas reais)
         let clientRentals: Rental[] = [];
-        const rawRent = localStorage.getItem(STORAGE_KEYS.RENTALS);
+        const rawRent = safeGetItem(STORAGE_KEYS.RENTALS);
         if (rawRent) {
           try {
             const parsed = JSON.parse(rawRent);
@@ -1586,7 +1587,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
 
         // 3. Operadores reais que o cliente já cadastrou no aparelho
         let clientOps: UserProfile[] = [];
-        const rawUsers = localStorage.getItem(STORAGE_KEYS.USERS);
+        const rawUsers = safeGetItem(STORAGE_KEYS.USERS);
         if (rawUsers) {
           try {
             const parsed = JSON.parse(rawUsers);
@@ -1603,7 +1604,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
 
         // 4. Fila de espera que já existe no aparelho do cliente
         let clientQueue: QueueItem[] = [];
-        const rawQueue = localStorage.getItem(STORAGE_KEYS.QUEUE);
+        const rawQueue = safeGetItem(STORAGE_KEYS.QUEUE);
         if (rawQueue) {
           try {
             const parsed = JSON.parse(rawQueue);
@@ -1675,7 +1676,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
           ).catch(() => {});
         }
 
-        localStorage.setItem('driftpark_last_cloud_sync', String(Date.now()));
+        safeSetItem('driftpark_last_cloud_sync', String(Date.now()));
       } catch (err) {
         console.warn('Aviso durante migração segura dos dados locais para a nuvem:', err);
       }
@@ -1898,8 +1899,8 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       return [...filtered, profile];
     });
 
-    localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(profile));
-    localStorage.setItem(STORAGE_KEYS.CURRENT_TENANT, profile.tenantId);
+    safeSetItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(profile));
+    safeSetItem(STORAGE_KEYS.CURRENT_TENANT, profile.tenantId);
 
     playTone('start');
 
@@ -1935,7 +1936,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     try {
       await signOut(auth);
     } catch {}
-    localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
+    safeRemoveItem(STORAGE_KEYS.CURRENT_USER);
     setCurrentUser(null);
     setVehiclesState([]);
     setRentalsState([]);
@@ -2055,17 +2056,17 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
 
     try {
       const curTenantOps = JSON.parse(
-        localStorage.getItem(`driftpark_operators_${currentUser.tenantId}`) || '[]'
+        safeGetItem(`driftpark_operators_${currentUser.tenantId}`) || '[]'
       );
       const updated = [
         ...curTenantOps.filter((o: any) => o.email?.toLowerCase() !== cleanEmail),
         newMember,
       ];
-      localStorage.setItem(
+      safeSetItem(
         `driftpark_operators_${currentUser.tenantId}`,
         JSON.stringify(updated)
       );
-      localStorage.setItem(
+      safeSetItem(
         `driftpark_admin_operators_${currentUser.email}`,
         JSON.stringify(updated)
       );
@@ -2084,9 +2085,9 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       if (currentUser?.tenantId) {
         try {
           const curOps = JSON.parse(
-            localStorage.getItem(`driftpark_operators_${currentUser.tenantId}`) || '[]'
+            safeGetItem(`driftpark_operators_${currentUser.tenantId}`) || '[]'
           );
-          localStorage.setItem(
+          safeSetItem(
             `driftpark_operators_${currentUser.tenantId}`,
             JSON.stringify(curOps.filter((u: any) => u.id !== operatorId))
           );
@@ -2095,9 +2096,9 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       if (currentUser?.email) {
         try {
           const adminOps = JSON.parse(
-            localStorage.getItem(`driftpark_admin_operators_${currentUser.email}`) || '[]'
+            safeGetItem(`driftpark_admin_operators_${currentUser.email}`) || '[]'
           );
-          localStorage.setItem(
+          safeSetItem(
             `driftpark_admin_operators_${currentUser.email}`,
             JSON.stringify(adminOps.filter((u: any) => u.id !== operatorId))
           );

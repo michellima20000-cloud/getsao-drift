@@ -13,6 +13,7 @@ import { QueueScreen } from './screens/QueueScreen';
 import { ManagementScreen } from './screens/ManagementScreen';
 import { TopHeader } from './components/TopHeader';
 import { BottomNav } from './components/BottomNav';
+import { safeGetItem, safeSetItem, safeRemoveItem } from './utils/safeStorage';
 class ErrorBoundary extends React.Component<
   { children: React.ReactNode },
   { hasError: boolean; error: Error | null }
@@ -23,12 +24,62 @@ class ErrorBoundary extends React.Component<
   }
 
   static getDerivedStateFromError(error: Error) {
+    // Mitigação automática se for erro de cota de armazenamento
+    try {
+      const msg = error?.message || '';
+      if (
+        msg.includes('setItem') ||
+        msg.includes('quota') ||
+        msg.includes('QuotaExceeded') ||
+        msg.includes('Setting the val')
+      ) {
+        // Poda chaves volumosas com segurança
+        try {
+          const r = safeGetItem('driftpark_rentals_v1');
+          if (r) {
+            const parsed = JSON.parse(r);
+            if (Array.isArray(parsed) && parsed.length > 20) {
+              safeSetItem('driftpark_rentals_v1', JSON.stringify(parsed.slice(0, 20)));
+            }
+          }
+        } catch {
+          try { safeRemoveItem('driftpark_rentals_v1'); } catch {}
+        }
+      }
+    } catch {}
     return { hasError: true, error };
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     console.error('[DriftPark ErrorBoundary] Erro capturado:', error, errorInfo);
   }
+
+  handleRestore = () => {
+    try {
+      // Libera cota preventiva
+      const r = safeGetItem('driftpark_rentals_v1');
+      if (r) {
+        try {
+          const parsed = JSON.parse(r);
+          if (Array.isArray(parsed) && parsed.length > 20) {
+            safeSetItem('driftpark_rentals_v1', JSON.stringify(parsed.slice(0, 20)));
+          }
+        } catch {
+          safeRemoveItem('driftpark_rentals_v1');
+        }
+      }
+    } catch {}
+    this.setState({ hasError: false, error: null });
+  };
+
+  handleResetAndLogin = () => {
+    try {
+      safeRemoveItem('driftpark_current_user_v1');
+      safeRemoveItem('driftpark_rentals_v1');
+    } catch {}
+    this.setState({ hasError: false, error: null });
+    window.location.reload();
+  };
 
   render() {
     if (this.state.hasError) {
@@ -37,9 +88,9 @@ class ErrorBoundary extends React.Component<
           <div className="w-16 h-16 rounded-2xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400 mb-4 shadow-[0_0_20px_rgba(0,240,255,0.3)]">
             🏎️
           </div>
-          <h2 className="text-xl font-extrabold text-white mb-2">Recarregando DRIFT PARK...</h2>
+          <h2 className="text-xl font-extrabold text-white mb-2">Restaurando DRIFT PARK...</h2>
           <p className="text-xs text-slate-400 max-w-sm mb-4">
-            Ocorreu uma pequena oscilação temporária na interface. Clique abaixo para restaurar imediatamente o acesso.
+            A proteção de armazenamento resiliente liberou espaço e preparou o sistema para acesso imediato.
           </p>
           {this.state.error?.message && (
             <p className="text-[10px] text-slate-500 font-mono mb-5 max-w-xs truncate">
@@ -48,23 +99,14 @@ class ErrorBoundary extends React.Component<
           )}
           <div className="flex flex-col sm:flex-row gap-2.5">
             <button
-              onClick={() => {
-                this.setState({ hasError: false, error: null });
-                window.location.reload();
-              }}
-              className="px-5 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs uppercase tracking-wider transition-all shadow-[0_0_15px_rgba(0,240,255,0.4)]"
+              onClick={this.handleRestore}
+              className="px-5 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs uppercase tracking-wider transition-all shadow-[0_0_15px_rgba(0,240,255,0.4)] cursor-pointer"
             >
               Restaurar Sistema
             </button>
             <button
-              onClick={() => {
-                try {
-                  localStorage.removeItem('driftpark_current_user_v1');
-                } catch {}
-                this.setState({ hasError: false, error: null });
-                window.location.reload();
-              }}
-              className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs uppercase tracking-wider transition-all border border-slate-700"
+              onClick={this.handleResetAndLogin}
+              className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs uppercase tracking-wider transition-all border border-slate-700 cursor-pointer"
             >
               Voltar ao Login
             </button>

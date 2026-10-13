@@ -2,10 +2,6 @@
   "version": 2,
   "rewrites": [
     {
-      "source": "/api/cloud/:path*",
-      "destination": "https://ais-dev-kyyw3vpv6pjlsdorur5kj2-503290812821.us-west1.run.app/api/cloud/:path*"
-    },
-    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

@@ -2,25 +2,26 @@ import React, { useState } from 'react';
 import { useDriftPark } from '../context/DriftParkContext';
 import { SpeedometerLogo } from '../components/SpeedometerLogo';
 import { Mail, Lock, Eye, EyeOff, User, Check, AlertCircle } from 'lucide-react';
+import { safeGetItem, safeSetItem, safeRemoveItem } from '../utils/safeStorage';
 
 export const LoginScreen: React.FC = () => {
   const { login, register } = useDriftPark();
 
   const [email, setEmail] = useState(() => {
-    const saved = localStorage.getItem('driftpark_saved_email') || '';
+    const saved = safeGetItem('driftpark_saved_email') || '';
     if (saved.toLowerCase().includes('adm.cledson') || saved.toLowerCase().includes('adm_cledson')) {
-      localStorage.removeItem('driftpark_saved_email');
-      localStorage.removeItem('driftpark_saved_password');
+      safeRemoveItem('driftpark_saved_email');
+      safeRemoveItem('driftpark_saved_password');
       return '';
     }
     return saved;
   });
   const [password, setPassword] = useState(() => {
-    return localStorage.getItem('driftpark_saved_password') || '';
+    return safeGetItem('driftpark_saved_password') || '';
   });
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(() => {
-    return localStorage.getItem('driftpark_remember_me') !== 'false';
+    return safeGetItem('driftpark_remember_me') !== 'false';
   });
   const [isRegisterMode, setIsRegisterMode] = useState(false);
   const [registerName, setRegisterName] = useState('');
@@ -49,13 +50,13 @@ export const LoginScreen: React.FC = () => {
     }
 
     if (rememberMe) {
-      localStorage.setItem('driftpark_saved_email', email.trim());
-      localStorage.setItem('driftpark_saved_password', password.trim());
-      localStorage.setItem('driftpark_remember_me', 'true');
+      safeSetItem('driftpark_saved_email', email.trim());
+      safeSetItem('driftpark_saved_password', password.trim());
+      safeSetItem('driftpark_remember_me', 'true');
     } else {
-      localStorage.removeItem('driftpark_saved_email');
-      localStorage.removeItem('driftpark_saved_password');
-      localStorage.setItem('driftpark_remember_me', 'false');
+      safeRemoveItem('driftpark_saved_email');
+      safeRemoveItem('driftpark_saved_password');
+      safeSetItem('driftpark_remember_me', 'false');
     }
 
     setIsSubmitting(true);

@@ -10,21 +10,14 @@ export interface TenantCloudPayload {
   city?: string;
 }
 
-const ACTIVE_BACKEND_URL = 'https://ais-dev-es25zfjn6oqk6olk52wjx2-408064427062.us-east1.run.app';
+const BACKEND_URL =
+  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_BACKEND_URL) || '';
 
 /**
- * Executa requisição HTTP otimizada e ultra-rápida (timeout de 800ms) sem travar a interface
+ * Executa requisição HTTP otimizada e ultra-rápida (timeout de 1200ms) sem travar a interface
  */
-async function apiFetch(path: string, options?: RequestInit, timeoutMs = 800): Promise<any | null> {
-  const isExternalHost =
-    typeof window !== 'undefined' &&
-    window.location.hostname !== 'localhost' &&
-    !window.location.hostname.includes('run.app');
-
-  // Prioriza a rota relativa /api/... que responde em < 10ms no servidor da aplicação
-  const targets = isExternalHost
-    ? [path, `${ACTIVE_BACKEND_URL}${path}`]
-    : [path, `${ACTIVE_BACKEND_URL}${path}`];
+async function apiFetch(path: string, options?: RequestInit, timeoutMs = 1200): Promise<any | null> {
+  const targets = BACKEND_URL ? [path, `${BACKEND_URL}${path}`] : [path];
 
   for (const target of targets) {
     const controller = new AbortController();

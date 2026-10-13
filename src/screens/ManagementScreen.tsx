@@ -160,9 +160,9 @@ export const ManagementScreen: React.FC = () => {
     reader.onload = (event) => {
       const img = new Image();
       img.onload = () => {
-        // Redimensiona proporcionalmente para otimizar armazenamento (max 800px)
+        // Redimensiona proporcionalmente para otimizar armazenamento (max 400px)
         const canvas = document.createElement('canvas');
-        const maxDim = 800;
+        const maxDim = 400;
         let width = img.width;
         let height = img.height;
 
@@ -183,7 +183,7 @@ export const ManagementScreen: React.FC = () => {
         const ctx = canvas.getContext('2d');
         if (ctx) {
           ctx.drawImage(img, 0, 0, width, height);
-          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.82);
+          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.65);
           setVehImageUrl(compressedDataUrl);
           stopCamera();
         }
@@ -251,13 +251,20 @@ export const ManagementScreen: React.FC = () => {
     if (!videoRef.current) return;
     const video = videoRef.current;
     const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth || 640;
-    canvas.height = video.videoHeight || 480;
+    const maxDim = 400;
+    let width = video.videoWidth || 640;
+    let height = video.videoHeight || 480;
+    if (width > maxDim) {
+      height = Math.round((height * maxDim) / width);
+      width = maxDim;
+    }
+    canvas.width = width;
+    canvas.height = height;
 
     const ctx = canvas.getContext('2d');
     if (ctx) {
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const photoDataUrl = canvas.toDataURL('image/jpeg', 0.85);
+      ctx.drawImage(video, 0, 0, width, height);
+      const photoDataUrl = canvas.toDataURL('image/jpeg', 0.65);
       setVehImageUrl(photoDataUrl);
       stopCamera();
     }
