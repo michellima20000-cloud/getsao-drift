@@ -5,7 +5,8 @@ import { Gauge, PlusCircle, History, Users, ShieldCheck } from 'lucide-react';
 export const BottomNav: React.FC = () => {
   const { activeTab, setActiveTab, queue, currentUser } = useDriftPark();
 
-  const waitingCount = queue.filter((q) => q.status === 'aguardando').length;
+  const safeQueue = Array.isArray(queue) ? queue.filter(Boolean) : [];
+  const waitingCount = safeQueue.filter((q) => q && q.status === 'aguardando').length;
 
   const tabs = [
     {

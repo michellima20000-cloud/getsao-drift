@@ -1213,7 +1213,7 @@ export const ManagementScreen: React.FC = () => {
                       type="button"
                       onClick={() => {
                         setSelectedDuration(min);
-                        setNewPriceValue(String(currentTenant.pricing[min] || min * 2.5));
+                        setNewPriceValue(String((currentTenant?.pricing && currentTenant.pricing[min]) || min * 2.5));
                       }}
                       className={`py-2 rounded-xl border text-xs font-bold ${
                         selectedDuration === min

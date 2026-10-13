@@ -449,7 +449,13 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
   // 1. Tenants State
   const [allTenants, setAllTenants] = useState<Tenant[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.TENANTS);
-    return saved ? JSON.parse(saved) : INITIAL_TENANTS;
+    if (!saved) return INITIAL_TENANTS;
+    try {
+      const parsed = JSON.parse(saved);
+      return Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_TENANTS;
+    } catch {
+      return INITIAL_TENANTS;
+    }
   });
 
   const [currentTenantId, setCurrentTenantId] = useState<string>(() => {
@@ -457,7 +463,18 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     return saved || INITIAL_TENANTS[0].id;
   });
 
-  const currentTenant = allTenants.find((t) => t.id === currentTenantId) || allTenants[0];
+  const rawTenant =
+    (Array.isArray(allTenants) && allTenants.find((t) => t && t.id === currentTenantId)) ||
+    (Array.isArray(allTenants) && allTenants[0]) ||
+    INITIAL_TENANTS[0];
+
+  const currentTenant: Tenant = {
+    ...rawTenant,
+    id: rawTenant?.id || 'tenant_drift_01',
+    name: rawTenant?.name || 'DRIFT PARK',
+    city: rawTenant?.city || 'Pista Principal',
+    pricing: rawTenant?.pricing || { 5: 15.0, 10: 25.0, 15: 35.0, 20: 45.0, 30: 60.0 },
+  };
 
   // Conta desativada a pedido do usuário: nunca utilizar ou aceitar adm.cledson@gmail.com
   const isDeactivatedAccount = (email?: string): boolean => {
@@ -686,13 +703,18 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
   }, [rentalsState]);
 
   // CHAVE PRIMÁRIA MULTI-TENANT BASEADA NO UID DO USUÁRIO AUTENTICADO
-  const activeTenantKey = currentUser?.tenantId || currentTenantId || currentTenant.id;
+  const activeTenantKey = currentUser?.tenantId || currentTenantId || currentTenant?.id || 'tenant_drift_01';
 
-  // STRICT MULTI-TENANT FILTERING
-  // Todos os dados visíveis correspondem estritamente ao activeTenantKey do usuário logado
-  const vehicles = vehiclesState.filter((v) => v.tenantId === activeTenantKey);
-  const rentals = rentalsState.filter((r) => r.tenantId === activeTenantKey);
-  const queue = queueState.filter((q) => q.tenantId === activeTenantKey);
+  // STRICT MULTI-TENANT FILTERING COM PROTEÇÃO TOTAL CONTRA NULOS
+  const vehicles = (Array.isArray(vehiclesState) ? vehiclesState : []).filter(
+    (v) => v && v.id && v.tenantId === activeTenantKey
+  );
+  const rentals = (Array.isArray(rentalsState) ? rentalsState : []).filter(
+    (r) => r && r.id && r.tenantId === activeTenantKey
+  );
+  const queue = (Array.isArray(queueState) ? queueState : []).filter(
+    (q) => q && q.id && q.tenantId === activeTenantKey
+  );
 
   // =========================================================================
   // 1. SINCRONIZAÇÃO DIRETA COM O FIREBASE CLOUD DATABASE (FIRESTORE + REALTIME DB)

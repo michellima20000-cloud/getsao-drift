@@ -38,18 +38,37 @@ class ErrorBoundary extends React.Component<
             🏎️
           </div>
           <h2 className="text-xl font-extrabold text-white mb-2">Recarregando DRIFT PARK...</h2>
-          <p className="text-xs text-slate-400 max-w-sm mb-5">
-            Ocorreu uma pequena oscilação temporária na interface. Clique abaixo para restaurar imediatamente a tela inicial.
+          <p className="text-xs text-slate-400 max-w-sm mb-4">
+            Ocorreu uma pequena oscilação temporária na interface. Clique abaixo para restaurar imediatamente o acesso.
           </p>
-          <button
-            onClick={() => {
-              this.setState({ hasError: false, error: null });
-              window.location.reload();
-            }}
-            className="px-5 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs uppercase tracking-wider transition-all shadow-[0_0_15px_rgba(0,240,255,0.4)]"
-          >
-            Restaurar Sistema
-          </button>
+          {this.state.error?.message && (
+            <p className="text-[10px] text-slate-500 font-mono mb-5 max-w-xs truncate">
+              {this.state.error.message}
+            </p>
+          )}
+          <div className="flex flex-col sm:flex-row gap-2.5">
+            <button
+              onClick={() => {
+                this.setState({ hasError: false, error: null });
+                window.location.reload();
+              }}
+              className="px-5 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs uppercase tracking-wider transition-all shadow-[0_0_15px_rgba(0,240,255,0.4)]"
+            >
+              Restaurar Sistema
+            </button>
+            <button
+              onClick={() => {
+                try {
+                  localStorage.removeItem('driftpark_current_user_v1');
+                } catch {}
+                this.setState({ hasError: false, error: null });
+                window.location.reload();
+              }}
+              className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs uppercase tracking-wider transition-all border border-slate-700"
+            >
+              Voltar ao Login
+            </button>
+          </div>
         </div>
       );
     }

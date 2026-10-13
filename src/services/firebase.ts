@@ -267,7 +267,8 @@ export async function saveDocToCloud(
   }
 
   try {
-    await Promise.allSettled(promises);
+    const timeout = new Promise((resolve) => setTimeout(resolve, 600));
+    await Promise.race([Promise.allSettled(promises), timeout]);
     return true;
   } catch {
     return false;
@@ -308,7 +309,8 @@ export async function deleteDocFromCloud(
   }
 
   try {
-    await Promise.allSettled(promises);
+    const timeout = new Promise((resolve) => setTimeout(resolve, 600));
+    await Promise.race([Promise.allSettled(promises), timeout]);
     return true;
   } catch {
     return false;
@@ -423,8 +425,8 @@ export async function getFirestoreUserProfile(uidOrEmail: string): Promise<any |
   };
 
   try {
-    // Timeout máximo de 1200ms para evitar qualquer travamento da tela
-    const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 1200));
+    // Timeout máximo de 400ms para evitar qualquer travamento da tela
+    const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 400));
     return await Promise.race([fetchInternal(), timeoutPromise]);
   } catch (err) {
     console.warn('Aviso ao consultar perfil no Firestore:', err);

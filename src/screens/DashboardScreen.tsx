@@ -156,7 +156,7 @@ export const DashboardScreen: React.FC = () => {
 
           <div className="text-right">
             <span className="text-2xl font-black text-cyan-300 font-display">
-              {vehicles.length}
+              {safeVehicles.length}
             </span>
             <span className="text-xs text-slate-400 block -mt-1">veículos</span>
           </div>
@@ -167,7 +167,7 @@ export const DashboardScreen: React.FC = () => {
           <div
             className="h-full bg-gradient-to-r from-cyan-500 to-[#00F0FF] rounded-full transition-all duration-500 shadow-[0_0_8px_#00F0FF]"
             style={{
-              width: `${vehicles.length > 0 ? (freeVehicles.length / vehicles.length) * 100 : 0}%`,
+              width: `${safeVehicles.length > 0 ? (freeVehicles.length / safeVehicles.length) * 100 : 0}%`,
             }}
           />
         </div>
@@ -217,7 +217,7 @@ export const DashboardScreen: React.FC = () => {
           </div>
           {currentUser?.role === 'admin' ? (
             <div className="text-sm font-extrabold text-emerald-400 font-display mt-0.5">
-              R$ {todayRevenue.toFixed(2)}
+              R$ {Number(todayRevenue || 0).toFixed(2)}
             </div>
           ) : (
             <div className="text-xs font-semibold text-slate-400 font-display mt-1 flex items-center justify-center gap-1">
@@ -245,7 +245,7 @@ export const DashboardScreen: React.FC = () => {
           </div>
           <div className="text-sm font-extrabold text-cyan-400 font-display mt-0.5 flex items-center justify-center gap-1">
             <Users size={12} />
-            <span>{queue.length} pessoas</span>
+            <span>{safeQueue.length} pessoas</span>
           </div>
         </button>
       </div>
