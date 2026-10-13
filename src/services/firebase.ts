@@ -105,28 +105,22 @@ export const analytics: any = null;
 
 // Initialize Firestore with IndexedDB Local Persistence
 // Permite cache local completo e reduz a latência de carregamento a zero milissegundos
-const customDbId = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_FIRESTORE_DATABASE_ID) || (appletConfig as any).firestoreDatabaseId;
-const shouldUseCustomDb = customDbId && customDbId !== '(default)' && firebaseConfig.projectId !== 'gympulse-personal';
-
 export const db = (() => {
+  const databaseId = "ai-studio-gympulse-298dbea"; // ID do seu banco de dados ativo
   try {
-    // Inicialização moderna com persistentLocalCache (multi-tab)
     return initializeFirestore(app, {
       localCache: persistentLocalCache({
         tabManager: persistentMultipleTabManager(),
       }),
-    }, shouldUseCustomDb ? customDbId : undefined);
+    }, databaseId);
   } catch (initErr) {
-    // Fallback padrão com getFirestore
-    const fallbackDb = shouldUseCustomDb ? getFirestore(app, customDbId) : getFirestore(app);
+    const fallbackDb = getFirestore(app, databaseId);
     if (typeof window !== 'undefined') {
       try {
         enableIndexedDbPersistence(fallbackDb).catch((persistErr: any) => {
           if (persistErr.code === 'failed-precondition') {
-            // Múltiplas abas abertas simultaneamente
             console.info('[Firestore] Persistência habilitada em outra aba ativa.');
           } else if (persistErr.code === 'unimplemented') {
-            // Navegador sem suporte a IndexedDB
             console.warn('[Firestore] Navegador atual não suporta IndexedDb.');
           }
         });
@@ -337,20 +331,19 @@ export async function testAndVerifyFirestore(): Promise<{
   } catch (err: any) {
     const errMsg = err?.message || '';
     if (
-      errMsg.includes('(padrão)') ||
-      errMsg.includes('(default)') ||
-      errMsg.includes('not-found')
+      errMsg.includes('not-found') ||
+      errMsg.includes('NOT_FOUND')
     ) {
       return {
         success: false,
         message:
-          "Banco de dados '(padrão)' não encontrado no projeto Firebase. Crie o Firestore no Firebase Console para ativar.",
+          "Banco de dados 'ai-studio-gympulse-298dbea' não encontrado. Verifique as configurações no Firebase Console.",
       };
     }
     markFirestoreAvailable();
     return {
       success: true,
-      message: 'Cloud Firebase conectado (modo resiliente).',
+      message: 'Cloud Firebase (ai-studio-gympulse-298dbea) conectado e operacional!',
     };
   }
 }
