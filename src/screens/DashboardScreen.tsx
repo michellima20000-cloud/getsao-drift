@@ -46,7 +46,11 @@ export const DashboardScreen: React.FC = () => {
   } = useDriftPark();
 
   // Active & Paused races on track
-  const activeRentals = rentals.filter((r) => r.status === 'ativa' || r.status === 'pausada');
+  const safeRentals = Array.isArray(rentals) ? rentals.filter(Boolean) : [];
+  const safeVehicles = Array.isArray(vehicles) ? vehicles.filter(Boolean) : [];
+  const safeQueue = Array.isArray(queue) ? queue.filter(Boolean) : [];
+
+  const activeRentals = safeRentals.filter((r) => r?.status === 'ativa' || r?.status === 'pausada');
 
   // Modal para conferência de pagamento e finalização manual
   const [rentalToFinalize, setRentalToFinalize] = useState<Rental | null>(null);
@@ -62,18 +66,18 @@ export const DashboardScreen: React.FC = () => {
   } | null>(null);
 
   // Free vehicles count
-  const freeVehicles = vehicles.filter((v) => v.status === 'disponivel');
-  const inUseVehicles = vehicles.filter((v) => v.status === 'em_uso');
+  const freeVehicles = safeVehicles.filter((v) => v?.status === 'disponivel');
+  const inUseVehicles = safeVehicles.filter((v) => v?.status === 'em_uso');
 
   // Categories breakdown
-  const driftCount = vehicles.filter((v) => v.category === 'DRIFT').length;
-  const driftFree = vehicles.filter((v) => v.category === 'DRIFT' && v.status === 'disponivel').length;
+  const driftCount = safeVehicles.filter((v) => v?.category === 'DRIFT').length;
+  const driftFree = safeVehicles.filter((v) => v?.category === 'DRIFT' && v?.status === 'disponivel').length;
 
-  const jeepCount = vehicles.filter((v) => v.category === 'JEEP').length;
-  const jeepFree = vehicles.filter((v) => v.category === 'JEEP' && v.status === 'disponivel').length;
+  const jeepCount = safeVehicles.filter((v) => v?.category === 'JEEP').length;
+  const jeepFree = safeVehicles.filter((v) => v?.category === 'JEEP' && v?.status === 'disponivel').length;
 
-  const bumpCount = vehicles.filter((v) => v.category === 'BATE_BATE').length;
-  const bumpFree = vehicles.filter((v) => v.category === 'BATE_BATE' && v.status === 'disponivel').length;
+  const bumpCount = safeVehicles.filter((v) => v?.category === 'BATE_BATE').length;
+  const bumpFree = safeVehicles.filter((v) => v?.category === 'BATE_BATE' && v?.status === 'disponivel').length;
 
   // Dynamic greeting based on time of day
   const getGreeting = () => {
@@ -82,23 +86,31 @@ export const DashboardScreen: React.FC = () => {
     if (hour >= 12 && hour < 18) period = 'Boa tarde';
     if (hour >= 18 || hour < 5) period = 'Boa noite';
 
+    const rawName = currentUser?.name || currentUser?.email?.split('@')[0] || 'Usuário';
+    const firstName = String(rawName).trim().split(' ')[0] || 'Admin';
+
     if (currentUser?.role === 'admin') {
-      return `${period}, Admin ${currentUser.name.split(' ')[0]}!`;
+      return `${period}, Admin ${firstName}!`;
     }
-    return `${period}, Operador ${currentUser?.name ? currentUser.name.split(' ')[0] : ''}!`;
+    return `${period}, Operador ${firstName}!`;
   };
 
   // Today's revenue calculation
-  const todayRevenue = rentals
+  const todayRevenue = safeRentals
     .filter((r) => {
+      if (!r || !r.createdAt) return false;
       const today = new Date().toDateString();
-      return (
-        new Date(r.createdAt).toDateString() === today &&
-        r.status === 'concluida' &&
-        r.paymentStatus === 'PAGO'
-      );
+      try {
+        return (
+          new Date(r.createdAt).toDateString() === today &&
+          r.status === 'concluida' &&
+          r.paymentStatus === 'PAGO'
+        );
+      } catch {
+        return false;
+      }
     })
-    .reduce((acc, curr) => acc + curr.amount, 0);
+    .reduce((acc, curr) => acc + (typeof curr?.amount === 'number' ? curr.amount : 0), 0);
 
   return (
     <div className="space-y-5 pb-6">
