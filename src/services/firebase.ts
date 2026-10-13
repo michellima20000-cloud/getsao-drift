@@ -37,7 +37,6 @@ import {
 } from 'firebase/database';
 import { Vehicle, Rental, QueueItem, UserProfile, Tenant } from '../types';
 import appletConfig from '../../firebase-applet-config.json';
-import { getAnalytics, isSupported } from 'firebase/analytics';
 
 // Credenciais canônicas do projeto Firebase gympulse-personal fornecidas pelo usuário
 const USER_API_KEY = "AIzaSyCPg3vNSexfASWeRwQfWkQBF7Uq_kAp-uY";
@@ -101,21 +100,8 @@ if (typeof window !== 'undefined') {
   });
 }
 
-// Initialize Firebase Analytics (browser safe e sem bloquear a aplicação)
-export let analytics: any = null;
-if (typeof window !== 'undefined') {
-  isSupported()
-    .then((supported) => {
-      if (supported && firebaseConfig.measurementId) {
-        try {
-          analytics = getAnalytics(app);
-        } catch {
-          // Analytics é opcional e não-crítico
-        }
-      }
-    })
-    .catch(() => {});
-}
+// Analytics is omitted to prevent invalid API key installations errors
+export const analytics: any = null;
 
 // Initialize Firestore with IndexedDB Local Persistence
 // Permite cache local completo e reduz a latência de carregamento a zero milissegundos

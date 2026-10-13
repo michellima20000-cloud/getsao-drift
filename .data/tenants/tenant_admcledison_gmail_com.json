@@ -1,0 +1,35 @@
+{
+  "id": "tenant_admcledison_gmail_com",
+  "name": "DRIFT PARK",
+  "city": "Pista Principal",
+  "pricing": {
+    "5": 15,
+    "10": 25,
+    "15": 35,
+    "20": 45,
+    "30": 60
+  },
+  "vehicles": [],
+  "rentals": [],
+  "queue": [],
+  "users": [
+    {
+      "id": "usr_admcledison",
+      "email": "admcledison@gmail.com",
+      "name": "admcledison",
+      "role": "admin",
+      "tenantId": "tenant_admcledison_gmail_com",
+      "createdAt": 1791804530878
+    },
+    {
+      "id": "usr_op_1791804703979",
+      "name": "carollimap1993",
+      "email": "carollimap1993@gmail.com",
+      "role": "operador",
+      "tenantId": "tenant_admcledison_gmail_com",
+      "adminEmail": "admcledison@gmail.com",
+      "createdAt": 1791804703979
+    }
+  ],
+  "updatedAt": 1791804416553
+}

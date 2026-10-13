@@ -70,6 +70,9 @@ export interface Rental {
   remainingTimeMs?: number; // Tempo restante congelado em ms quando pausada
   pausedAt?: number;        // Timestamp ms em que foi pausada
   pauseReason?: string;     // Motivo da pausa (ex: 'Troca de bateria')
+  isPaused?: boolean;
+  totalPausedDurationMs?: number;
+  batterySwapped?: boolean;
   operatorId: string;
   operatorName: string;
   createdAt: number;
@@ -83,11 +86,6 @@ export interface Rental {
     cashAmount?: number;
     shiftName?: string;
   };
-  isPaused?: boolean;
-  pausedAt?: number;
-  totalPausedDurationMs?: number;
-  batterySwapped?: boolean;
-  pauseReason?: string;
 }
 
 export interface QueueItem {
