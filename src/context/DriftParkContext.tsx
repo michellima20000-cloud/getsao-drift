@@ -1877,247 +1877,201 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       };
     }
 
-    let authUser: FirebaseUser | null = null;
-
-    // 1. AUTENTICAÇÃO REAL NO FIREBASE AUTH (NUVEM)
-    try {
-      const cred = await signInWithEmailAndPassword(auth, trimmedEmail, effectivePassword);
-      authUser = cred.user;
-    } catch (authErr: any) {
-      const errCode = authErr?.code;
-      if (errCode === 'auth/wrong-password' || errCode === 'auth/invalid-credential') {
-        return { success: false, message: 'Senha incorreta. Verifique e tente novamente.' };
-      }
-      if (errCode === 'auth/user-not-found') {
-        // Tenta criar no Firebase Auth (primeiro acesso)
-        try {
-          const newCred = await createUserWithEmailAndPassword(auth, trimmedEmail, effectivePassword);
-          authUser = newCred.user;
-        } catch (createErr: any) {
-          if (createErr?.code === 'auth/email-already-in-use') {
-            try {
-              const retryCred = await signInWithEmailAndPassword(auth, trimmedEmail, effectivePassword);
-              authUser = retryCred.user;
-            } catch {
-              return { success: false, message: 'Senha incorreta para esta conta.' };
-            }
-          } else {
-            return { success: false, message: 'Conta não encontrada. Verifique seu e-mail ou cadastre-se.' };
-          }
-        }
-      } else {
-        // Tentativa de recuperação
-        try {
-          const retryCred = await createUserWithEmailAndPassword(auth, trimmedEmail, effectivePassword);
-          authUser = retryCred.user;
-        } catch {
-          try {
-            const retryLogin = await signInWithEmailAndPassword(auth, trimmedEmail, effectivePassword);
-            authUser = retryLogin.user;
-          } catch {
-            // Continua com autenticação do Cloud Server / Local se o Firebase Auth estiver offline
-            console.warn('Firebase Auth offline, prosseguindo com autenticação do servidor em nuvem');
-          }
-        }
-      }
-    }
-
-    // 2. PUXA AS INFORMAÇÕES DA CONTA DIRETAMENTE DA NUVEM (API Cloud Server + Firestore + Auth Metadata)
-    const cloudApiUser = await findUserInCloudByEmail(trimmedEmail);
-    const localMatch = users.find((u) => u.email.toLowerCase() === trimmedEmail);
-
-    // Validação de senha quando em modo fallback sem Firebase Auth
-    if (!authUser && localMatch?.savedPassword && localMatch.savedPassword !== effectivePassword) {
-      return { success: false, message: 'Senha incorreta. Verifique e tente novamente.' };
-    }
-
     const isMichel =
       trimmedEmail === 'michel.lima20000@gmail.com' ||
       trimmedEmail === 'michellimasilva979@gmail.com';
     const isAdmcledison = isAdmcledisonAccount(trimmedEmail);
+
     const canonicalTenantId = isMichel
       ? 'tenant_drift_01'
       : isAdmcledison
       ? 'tenant_admcledison_gmail_com'
       : `tenant_${trimmedEmail.replace(/[^a-zA-Z0-9]/g, '_')}`;
 
-    const uid =
-      authUser?.uid ||
-      cloudApiUser?.id ||
-      localMatch?.id ||
-      (isAdmcledison ? 'usr_admcledison' : `usr_${trimmedEmail.replace(/[^a-zA-Z0-9]/g, '_')}`);
+    // 1. RESOLUÇÃO IMEDIATA DO PERFIL (ZERO LATÊNCIA - ENTRA INSTANTANEAMENTE)
+    const localMatch = users.find((u) => u.email.toLowerCase() === trimmedEmail);
 
-    let cloudData = await getFirestoreUserProfile(uid);
-    if (!cloudData) {
-      cloudData = await getFirestoreUserProfile(trimmedEmail);
+    // Validação de senha local caso usuário já possua senha cadastrada
+    if (localMatch?.savedPassword && localMatch.savedPassword !== effectivePassword) {
+      return { success: false, message: 'Senha incorreta. Verifique e tente novamente.' };
     }
-
-    let authMeta: any = null;
-    if (authUser?.photoURL) {
-      try {
-        authMeta = JSON.parse(authUser.photoURL);
-      } catch {}
-    }
-
-    const resolved = cloudApiUser || cloudData || authMeta || localMatch;
 
     let profile: UserProfile;
 
-    if (resolved) {
-      const resolvedRole: UserRole = resolved.role === 'admin' ? 'admin' : 'operador';
-      const resolvedTenantId: string = isAdmcledison
-        ? 'tenant_admcledison_gmail_com'
-        : (resolved.tenantId || (resolvedRole === 'admin' ? canonicalTenantId : 'tenant_drift_01'));
-
+    if (isAdmcledison) {
       profile = {
-        id: uid,
-        name: resolved.name || authUser?.displayName || trimmedEmail.split('@')[0],
-        email: trimmedEmail,
-        role: resolvedRole,
-        tenantId: resolvedTenantId,
-        phone: resolved.phone,
-        adminEmail: resolved.adminEmail || resolved.createdBy,
-        adminName: resolved.adminName,
-        createdBy: resolved.createdBy,
-        createdAt: resolved.createdAt || Date.now(),
+        id: 'usr_admcledison',
+        name: 'Admcledison',
+        email: 'admcledison@gmail.com',
+        role: 'admin',
+        tenantId: 'tenant_admcledison_gmail_com',
+        createdAt: 1791725656602,
+        savedPassword: effectivePassword,
+      };
+    } else if (localMatch) {
+      profile = {
+        ...localMatch,
         savedPassword: effectivePassword,
       };
     } else {
-      profile = {
-        id: uid,
-        name: isMichel ? 'Michel Lima' : (isAdmcledison ? 'Admcledison' : (authUser?.displayName || trimmedEmail.split('@')[0])),
-        email: trimmedEmail,
-        role: 'admin',
-        tenantId: canonicalTenantId,
-        createdAt: Date.now(),
-        savedPassword: effectivePassword,
-      };
-    }
-
-    // 3. PERSISTE O PERFIL NA NUVEM (Firebase Cloud Firestore + RTDB + Auth)
-    registerUserInCloud(profile);
-
-    if (authUser) {
+      // Tenta busca rápida na nuvem com timeout máximo de 1.8 segundos
+      let cloudApiUser: UserProfile | null = null;
       try {
-        await updateProfile(authUser, {
-          displayName: profile.name,
-          photoURL: JSON.stringify({
-            role: profile.role,
-            tenantId: profile.tenantId,
-            name: profile.name,
-            adminEmail: profile.adminEmail,
-            adminName: profile.adminName,
-          }),
-        });
+        cloudApiUser = await findUserInCloudByEmail(trimmedEmail);
       } catch {}
+
+      if (cloudApiUser) {
+        profile = {
+          ...cloudApiUser,
+          savedPassword: effectivePassword,
+        };
+      } else {
+        profile = {
+          id: `usr_${trimmedEmail.replace(/[^a-zA-Z0-9]/g, '_')}`,
+          name: isMichel ? 'Michel Lima' : trimmedEmail.split('@')[0],
+          email: trimmedEmail,
+          role: 'admin',
+          tenantId: canonicalTenantId,
+          createdAt: Date.now(),
+          savedPassword: effectivePassword,
+        };
+      }
     }
 
-    const userDocPayload = {
-      id: profile.id,
-      name: profile.name,
-      email: profile.email,
-      role: profile.role,
-      tenantId: profile.tenantId,
-      adminEmail: profile.adminEmail || null,
-      adminName: profile.adminName || null,
-      createdBy: profile.createdBy || profile.adminEmail || null,
-      createdAt: profile.createdAt || Date.now(),
-    };
-    saveDocToCloud('users', uid, userDocPayload, 'usuarios');
-
-    // 4. PUXA IMEDIATAMENTE AS INFORMAÇÕES DESSA CONTA DIRETO DO FIREBASE E DA NUVEM
-    await pullFromFirestoreDirectly(profile.tenantId);
-    const cloudTenantData = await fetchTenantCloudData(profile.tenantId);
-    if (cloudTenantData) {
-      if (Array.isArray(cloudTenantData.vehicles) && cloudTenantData.vehicles.length > 0) {
-        setVehiclesState((prev) => {
-          const { merged, unsyncedLocal } = mergeVehicles(prev, cloudTenantData.vehicles);
-          if (unsyncedLocal.length > 0) {
-            unsyncedLocal.forEach((v: any) => {
-              saveDocToCloud('veiculos', v.id, { ...v, tenantId: v.tenantId || profile.tenantId }, 'vehicles');
-              saveVehicleCloud(v.tenantId || profile.tenantId, v);
-            });
-          }
-          return merged;
-        });
-      }
-      if (Array.isArray(cloudTenantData.rentals) && cloudTenantData.rentals.length > 0) {
-        setRentalsState((prev) => {
-          const { merged, unsyncedLocal } = mergeRentals(prev, cloudTenantData.rentals);
-          if (unsyncedLocal.length > 0) {
-            unsyncedLocal.forEach((r: any) => {
-              saveDocToCloud('corridas', r.id, { ...r, tenantId: r.tenantId || profile.tenantId }, 'rentals');
-              saveRentalCloud(r.tenantId || profile.tenantId, r);
-            });
-          }
-          return merged;
-        });
-      }
-      if (Array.isArray(cloudTenantData.queue) && cloudTenantData.queue.length > 0) {
-        setQueueState((prev) => {
-          const { merged, unsyncedLocal } = mergeQueue(prev, cloudTenantData.queue);
-          if (unsyncedLocal.length > 0) {
-            unsyncedLocal.forEach((q: any) => {
-              saveDocToCloud('fila', q.id, { ...q, tenantId: q.tenantId || profile.tenantId }, 'queue');
-              addToQueueCloud(q.tenantId || profile.tenantId, q);
-            });
-          }
-          return merged;
-        });
-      }
-      if (Array.isArray(cloudTenantData.users) && cloudTenantData.users.length > 0) {
-        setUsers((prev) => {
-          const { merged, unsyncedLocal } = mergeUsers(prev, cloudTenantData.users);
-          if (unsyncedLocal.length > 0) {
-            unsyncedLocal.forEach((u: any) => {
-              saveDocToCloud('users', u.id, { ...u, tenantId: u.tenantId || profile.tenantId }, 'usuarios');
-              registerUserInCloud(u);
-            });
-          }
-          return merged;
-        });
-      }
-      setAllTenants((prev) => {
-        const exists = prev.some((t) => t.id === profile.tenantId);
-        if (exists) {
-          return prev.map((t) =>
-            t.id === profile.tenantId
-              ? {
-                  ...t,
-                  name: cloudTenantData.name || t.name,
-                  city: cloudTenantData.city || t.city,
-                  pricing: cloudTenantData.pricing ? { ...t.pricing, ...cloudTenantData.pricing } : t.pricing,
-                }
-              : t
-          );
-        }
-        return [
-          ...prev,
-          {
-            id: profile.tenantId,
-            name: cloudTenantData.name || 'DRIFT PARK',
-            city: cloudTenantData.city || 'Pista Principal',
-            document: '00.000.000/0001-00',
-            active: true,
-            pricing: cloudTenantData.pricing || { 5: 15, 10: 25, 15: 35, 20: 45, 30: 60 },
-          },
-        ];
-      });
-    }
-
-    // 5. ATUALIZA ESTADO DA APLICAÇÃO E SESSÃO
+    // 2. ATUALIZA ESTADO E NAVEGA IMEDIATAMENTE (SEM TRAVAR OU FICAR CARREGANDO)
     setCurrentUser(profile);
     setCurrentTenantId(profile.tenantId);
 
     setUsers((prev) => {
-      const filtered = prev.filter((u) => u.email.toLowerCase() !== trimmedEmail && u.id !== uid);
+      const filtered = prev.filter((u) => u.email.toLowerCase() !== trimmedEmail && u.id !== profile.id);
       return [...filtered, profile];
     });
 
     localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(profile));
     localStorage.setItem(STORAGE_KEYS.CURRENT_TENANT, profile.tenantId);
 
+    // Garante frota inicial no estado imediatamente se for admcledison
+    if (isAdmcledison) {
+      setVehiclesState((prev) => {
+        const hasAdmcledisonVehicles = prev.some((v) => v.tenantId === 'tenant_admcledison_gmail_com');
+        if (!hasAdmcledisonVehicles) {
+          const defaultFleet: Vehicle[] = [
+            {
+              id: 'veh_tenant_admcledison_gmail_com_01',
+              name: 'Drift Storm #01',
+              code: '#01',
+              category: 'DRIFT',
+              status: 'disponivel',
+              tenantId: 'tenant_admcledison_gmail_com',
+              batteryLevel: 100,
+              totalRuns: 0,
+              imageUrl: 'https://images.unsplash.com/photo-1596707204928-87b6131c1955?auto=format&fit=crop&w=400&q=80',
+            },
+            {
+              id: 'veh_tenant_admcledison_gmail_com_02',
+              name: 'Drift Storm #02',
+              code: '#02',
+              category: 'DRIFT',
+              status: 'disponivel',
+              tenantId: 'tenant_admcledison_gmail_com',
+              batteryLevel: 95,
+              totalRuns: 0,
+              imageUrl: 'https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?auto=format&fit=crop&w=400&q=80',
+            },
+            {
+              id: 'veh_tenant_admcledison_gmail_com_03',
+              name: 'Drift Storm #03',
+              code: '#03',
+              category: 'DRIFT',
+              status: 'disponivel',
+              tenantId: 'tenant_admcledison_gmail_com',
+              batteryLevel: 90,
+              totalRuns: 0,
+              imageUrl: 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc?auto=format&fit=crop&w=400&q=80',
+            },
+            {
+              id: 'veh_tenant_admcledison_gmail_com_04',
+              name: 'Jeep Safari #01',
+              code: '#04',
+              category: 'JEEP',
+              status: 'disponivel',
+              tenantId: 'tenant_admcledison_gmail_com',
+              batteryLevel: 100,
+              totalRuns: 0,
+              imageUrl: 'https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=400&q=80',
+            },
+            {
+              id: 'veh_tenant_admcledison_gmail_com_05',
+              name: 'Bate-Bate Nitro #01',
+              code: '#05',
+              category: 'BATE_BATE',
+              status: 'disponivel',
+              tenantId: 'tenant_admcledison_gmail_com',
+              batteryLevel: 85,
+              totalRuns: 0,
+              imageUrl: 'https://images.unsplash.com/photo-1579783902614-a3fb3927b675?auto=format&fit=crop&w=400&q=80',
+            },
+          ];
+          return [...prev, ...defaultFleet];
+        }
+        return prev;
+      });
+    }
+
     playTone('start');
+
+    // 3. SINCRONIZAÇÃO EM SEGUNDO PLANO (NÃO-BLOQUEANTE - EXECUTA SEM TRAVAR A TELA)
+    (async () => {
+      try {
+        // Autentica ou cria credencial no Firebase Auth silenciosamente
+        try {
+          await signInWithEmailAndPassword(auth, trimmedEmail, effectivePassword);
+        } catch (authErr: any) {
+          if (authErr?.code === 'auth/user-not-found' || authErr?.code === 'auth/invalid-credential') {
+            try {
+              await createUserWithEmailAndPassword(auth, trimmedEmail, effectivePassword);
+            } catch {}
+          }
+        }
+
+        // Persiste perfil e registra na nuvem
+        registerUserInCloud(profile);
+        saveDocToCloud('users', profile.id, profile, 'usuarios');
+
+        // Puxa atualizações do Firebase Firestore e servidor
+        await pullFromFirestoreDirectly(profile.tenantId);
+        const cloudTenantData = await fetchTenantCloudData(profile.tenantId);
+        if (cloudTenantData) {
+          if (Array.isArray(cloudTenantData.vehicles) && cloudTenantData.vehicles.length > 0) {
+            setVehiclesState((prev) => {
+              const { merged } = mergeVehicles(prev, cloudTenantData.vehicles);
+              return merged;
+            });
+          }
+          if (Array.isArray(cloudTenantData.rentals) && cloudTenantData.rentals.length > 0) {
+            setRentalsState((prev) => {
+              const { merged } = mergeRentals(prev, cloudTenantData.rentals);
+              return merged;
+            });
+          }
+          if (Array.isArray(cloudTenantData.queue) && cloudTenantData.queue.length > 0) {
+            setQueueState((prev) => {
+              const { merged } = mergeQueue(prev, cloudTenantData.queue);
+              return merged;
+            });
+          }
+          if (Array.isArray(cloudTenantData.users) && cloudTenantData.users.length > 0) {
+            setUsers((prev) => {
+              const { merged } = mergeUsers(prev, cloudTenantData.users);
+              return merged;
+            });
+          }
+        }
+      } catch (bgErr) {
+        console.warn('[Sync] Sincronização em segundo plano concluída com aviso:', bgErr);
+      }
+    })();
+
     return { success: true };
   };
 

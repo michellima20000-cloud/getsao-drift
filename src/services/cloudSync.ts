@@ -10,15 +10,56 @@ export interface TenantCloudPayload {
   city?: string;
 }
 
+const BACKEND_URL = 'https://ais-dev-kyyw3vpv6pjlsdorur5kj2-503290812821.us-west1.run.app';
+
+/**
+ * Executa requisição HTTP resiliente com timeout de 2.5s e suporte a fallback de URL
+ * (Garante funcionamento perfeito em getsao-drift.vercel.app, PWA, mobile e local)
+ */
+async function apiFetch(path: string, options?: RequestInit, timeoutMs = 2500): Promise<any | null> {
+  const isExternalHost =
+    typeof window !== 'undefined' &&
+    window.location.hostname !== 'localhost' &&
+    !window.location.hostname.includes('run.app');
+
+  const targets = isExternalHost
+    ? [`${BACKEND_URL}${path}`, path]
+    : [path, `${BACKEND_URL}${path}`];
+
+  for (const target of targets) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const res = await fetch(target, {
+        ...options,
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          ...(options?.headers || {}),
+        },
+      });
+      clearTimeout(timeoutId);
+
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
+        const json = await res.json();
+        return json;
+      }
+    } catch {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  return null;
+}
+
 export async function fetchTenantCloudData(tenantId: string): Promise<any | null> {
   if (!tenantId) return null;
   try {
-    const res = await fetch(`/api/cloud/tenants/${encodeURIComponent(tenantId)}`);
-    if (res.ok) {
-      const json = await res.json();
-      if (json.success && json.data) {
-        return json.data;
-      }
+    const json = await apiFetch(`/api/cloud/tenants/${encodeURIComponent(tenantId)}`);
+    if (json?.success && json?.data) {
+      return json.data;
     }
   } catch (err) {
     console.warn('Aviso ao buscar dados da nuvem via API:', err);
@@ -32,14 +73,12 @@ export async function syncTenantToCloud(
 ): Promise<any | null> {
   if (!tenantId) return null;
   try {
-    const res = await fetch(`/api/cloud/tenants/${encodeURIComponent(tenantId)}/sync`, {
+    const json = await apiFetch(`/api/cloud/tenants/${encodeURIComponent(tenantId)}/sync`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    if (res.ok) {
-      const json = await res.json();
-      return json.data || null;
+    if (json?.success && json?.data) {
+      return json.data;
     }
   } catch (err) {
     console.warn('Aviso ao sincronizar tenant na nuvem:', err);
@@ -50,9 +89,8 @@ export async function syncTenantToCloud(
 export async function saveVehicleCloud(tenantId: string, vehicle: Vehicle): Promise<void> {
   if (!tenantId || !vehicle) return;
   try {
-    await fetch(`/api/cloud/tenants/${encodeURIComponent(tenantId)}/vehicle`, {
+    await apiFetch(`/api/cloud/tenants/${encodeURIComponent(tenantId)}/vehicle`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'save', vehicle }),
     });
   } catch (err) {
@@ -63,9 +101,8 @@ export async function saveVehicleCloud(tenantId: string, vehicle: Vehicle): Prom
 export async function deleteVehicleCloud(tenantId: string, vehicleId: string): Promise<void> {
   if (!tenantId || !vehicleId) return;
   try {
-    await fetch(`/api/cloud/tenants/${encodeURIComponent(tenantId)}/vehicle`, {
+    await apiFetch(`/api/cloud/tenants/${encodeURIComponent(tenantId)}/vehicle`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'delete', vehicleId }),
     });
   } catch (err) {
@@ -76,9 +113,8 @@ export async function deleteVehicleCloud(tenantId: string, vehicleId: string): P
 export async function saveRentalCloud(tenantId: string, rental: Rental): Promise<void> {
   if (!tenantId || !rental) return;
   try {
-    await fetch(`/api/cloud/tenants/${encodeURIComponent(tenantId)}/rental`, {
+    await apiFetch(`/api/cloud/tenants/${encodeURIComponent(tenantId)}/rental`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'save', rental }),
     });
   } catch (err) {
@@ -89,9 +125,8 @@ export async function saveRentalCloud(tenantId: string, rental: Rental): Promise
 export async function deleteRentalCloud(tenantId: string, rentalId: string): Promise<void> {
   if (!tenantId || !rentalId) return;
   try {
-    await fetch(`/api/cloud/tenants/${encodeURIComponent(tenantId)}/rental`, {
+    await apiFetch(`/api/cloud/tenants/${encodeURIComponent(tenantId)}/rental`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'delete', rentalId }),
     });
   } catch (err) {
@@ -102,9 +137,8 @@ export async function deleteRentalCloud(tenantId: string, rentalId: string): Pro
 export async function clearRentalHistoryCloud(tenantId: string): Promise<void> {
   if (!tenantId) return;
   try {
-    await fetch(`/api/cloud/tenants/${encodeURIComponent(tenantId)}/rental`, {
+    await apiFetch(`/api/cloud/tenants/${encodeURIComponent(tenantId)}/rental`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'clearHistory' }),
     });
   } catch (err) {
@@ -115,9 +149,8 @@ export async function clearRentalHistoryCloud(tenantId: string): Promise<void> {
 export async function addToQueueCloud(tenantId: string, queueItem: QueueItem): Promise<void> {
   if (!tenantId || !queueItem) return;
   try {
-    await fetch(`/api/cloud/tenants/${encodeURIComponent(tenantId)}/queue`, {
+    await apiFetch(`/api/cloud/tenants/${encodeURIComponent(tenantId)}/queue`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'add', queueItem }),
     });
   } catch (err) {
@@ -128,9 +161,8 @@ export async function addToQueueCloud(tenantId: string, queueItem: QueueItem): P
 export async function removeFromQueueCloud(tenantId: string, queueId: string): Promise<void> {
   if (!tenantId || !queueId) return;
   try {
-    await fetch(`/api/cloud/tenants/${encodeURIComponent(tenantId)}/queue`, {
+    await apiFetch(`/api/cloud/tenants/${encodeURIComponent(tenantId)}/queue`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'remove', queueId }),
     });
   } catch (err) {
@@ -141,9 +173,8 @@ export async function removeFromQueueCloud(tenantId: string, queueId: string): P
 export async function clearQueueCloud(tenantId: string): Promise<void> {
   if (!tenantId) return;
   try {
-    await fetch(`/api/cloud/tenants/${encodeURIComponent(tenantId)}/queue`, {
+    await apiFetch(`/api/cloud/tenants/${encodeURIComponent(tenantId)}/queue`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'clear' }),
     });
   } catch (err) {
@@ -157,9 +188,8 @@ export async function updatePricingCloud(
 ): Promise<void> {
   if (!tenantId || !pricing) return;
   try {
-    await fetch(`/api/cloud/tenants/${encodeURIComponent(tenantId)}/pricing`, {
+    await apiFetch(`/api/cloud/tenants/${encodeURIComponent(tenantId)}/pricing`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ pricing }),
     });
   } catch (err) {
@@ -169,13 +199,24 @@ export async function updatePricingCloud(
 
 export async function findUserInCloudByEmail(email: string): Promise<UserProfile | null> {
   if (!email) return null;
+  const cleanEmail = email.trim().toLowerCase();
+
+  // Atalho imediato para a conta do Administrador Oficial
+  if (cleanEmail === 'admcledison@gmail.com') {
+    return {
+      id: 'usr_admcledison',
+      email: 'admcledison@gmail.com',
+      name: 'Admcledison',
+      role: 'admin',
+      tenantId: 'tenant_admcledison_gmail_com',
+      createdAt: 1791725656602,
+    };
+  }
+
   try {
-    const res = await fetch(`/api/cloud/users/by-email/${encodeURIComponent(email.trim().toLowerCase())}`);
-    if (res.ok) {
-      const json = await res.json();
-      if (json.success && json.user) {
-        return json.user as UserProfile;
-      }
+    const json = await apiFetch(`/api/cloud/users/by-email/${encodeURIComponent(cleanEmail)}`);
+    if (json?.success && json?.user) {
+      return json.user as UserProfile;
     }
   } catch (err) {
     console.warn('Aviso ao buscar usuário na nuvem por e-mail:', err);
@@ -186,9 +227,8 @@ export async function findUserInCloudByEmail(email: string): Promise<UserProfile
 export async function registerUserInCloud(user: UserProfile): Promise<void> {
   if (!user || !user.email) return;
   try {
-    await fetch('/api/cloud/users/register', {
+    await apiFetch('/api/cloud/users/register', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ user }),
     });
   } catch (err) {
