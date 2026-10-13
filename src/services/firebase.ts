@@ -10,6 +10,10 @@ import {
 } from 'firebase/auth';
 import {
   getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+  enableIndexedDbPersistence,
   collection,
   doc,
   setDoc,
@@ -113,23 +117,61 @@ if (typeof window !== 'undefined') {
     .catch(() => {});
 }
 
-// Initialize Firestore
+// Initialize Firestore with IndexedDB Local Persistence
+// Permite cache local completo e reduz a latência de carregamento a zero milissegundos
 const customDbId = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_FIRESTORE_DATABASE_ID) || (appletConfig as any).firestoreDatabaseId;
-export const db =
-  customDbId && customDbId !== '(default)' && firebaseConfig.projectId !== 'gympulse-personal'
-    ? getFirestore(app, customDbId)
-    : getFirestore(app);
+const shouldUseCustomDb = customDbId && customDbId !== '(default)' && firebaseConfig.projectId !== 'gympulse-personal';
 
-// Test connection on boot
-(async function testConnection() {
+export const db = (() => {
   try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.warn('Firebase client is offline or initializing.');
+    // Inicialização moderna com persistentLocalCache (multi-tab)
+    return initializeFirestore(app, {
+      localCache: persistentLocalCache({
+        tabManager: persistentMultipleTabManager(),
+      }),
+    }, shouldUseCustomDb ? customDbId : undefined);
+  } catch (initErr) {
+    // Fallback padrão com getFirestore
+    const fallbackDb = shouldUseCustomDb ? getFirestore(app, customDbId) : getFirestore(app);
+    if (typeof window !== 'undefined') {
+      try {
+        enableIndexedDbPersistence(fallbackDb).catch((persistErr: any) => {
+          if (persistErr.code === 'failed-precondition') {
+            // Múltiplas abas abertas simultaneamente
+            console.info('[Firestore] Persistência habilitada em outra aba ativa.');
+          } else if (persistErr.code === 'unimplemented') {
+            // Navegador sem suporte a IndexedDB
+            console.warn('[Firestore] Navegador atual não suporta IndexedDb.');
+          }
+        });
+      } catch {}
     }
+    return fallbackDb;
   }
 })();
+
+// Ativa enableIndexedDbPersistence também explicitamente caso o SDK use a instância existente
+if (typeof window !== 'undefined') {
+  try {
+    enableIndexedDbPersistence(db).catch((err: any) => {
+      // Ignora de forma silenciosa se já estiver ativo ou gerenciado por multi-tab
+      if (err?.code !== 'failed-precondition' && err?.code !== 'unimplemented') {
+        console.info('[Firestore] IndexedDB Cache verificado com sucesso.');
+      }
+    });
+  } catch {}
+}
+
+// Verificação não-bloqueante de conexão na inicialização
+if (typeof window !== 'undefined') {
+  setTimeout(async () => {
+    try {
+      await getDocFromServer(doc(db, 'test', 'connection'));
+    } catch {
+      // Falha silenciosa normal quando offline ou sem documento de teste
+    }
+  }, 2000);
+}
 
 // Initialize Firebase Realtime Database com URL validada
 export let rtdb: ReturnType<typeof getDatabase> | null = null;

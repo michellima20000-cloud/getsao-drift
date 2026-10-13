@@ -169,12 +169,29 @@ const STORAGE_KEYS = {
   QUEUE: 'driftpark_queue_v1',
 };
 
-// Web Audio API sound synthesizer potente e com alarme sonoro forte de fim de corrida
+// Web Audio API sound synthesizer otimizado (singleton para evitar travamento de memória e CPU)
+let sharedAudioCtx: AudioContext | null = null;
+const getSharedAudioContext = (): AudioContext | null => {
+  try {
+    if (typeof window === 'undefined') return null;
+    const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    if (!AudioContextClass) return null;
+    if (!sharedAudioCtx || sharedAudioCtx.state === 'closed') {
+      sharedAudioCtx = new AudioContextClass();
+    }
+    if (sharedAudioCtx.state === 'suspended') {
+      sharedAudioCtx.resume().catch(() => {});
+    }
+    return sharedAudioCtx;
+  } catch {
+    return null;
+  }
+};
+
 const playTone = (type: 'start' | 'finish' | 'click' | 'alert' | 'countdown_beep' | 'countdown_go') => {
   try {
-    const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    if (!AudioContextClass) return;
-    const ctx = new AudioContextClass();
+    const ctx = getSharedAudioContext();
+    if (!ctx) return;
 
     if (type === 'start') {
       // 3 racing beeps: low, mid, high
@@ -190,44 +207,27 @@ const playTone = (type: 'start' | 'finish' | 'click' | 'alert' | 'countdown_beep
         osc.stop(ctx.currentTime + offset + 0.13);
       });
     } else if (type === 'finish') {
-      // EFEITO SONORO BEM FORTE PARA AVISAR O ADMINISTRADOR QUE A CORRIDA TERMINOU
-      // Alarme potente estilo sirene/buzina de kartódromo em alta potência (5 pulsos fortes)
-      const pulses = [0, 0.28, 0.56, 0.84, 1.12];
+      // Alarme sonoro potente de fim de corrida estilo sirene (2 pulsos rápidos e leves)
+      const pulses = [0, 0.3];
       pulses.forEach((offset, idx) => {
         const osc1 = ctx.createOscillator();
-        const osc2 = ctx.createOscillator();
-        const osc3 = ctx.createOscillator();
         const gain = ctx.createGain();
-
         osc1.type = 'sawtooth';
-        osc2.type = 'square';
-        osc3.type = 'triangle';
 
-        const baseFreq = idx % 2 === 0 ? 1046.5 : 880; // C6 e A5 alternados
+        const baseFreq = idx % 2 === 0 ? 1046.5 : 880;
         osc1.frequency.setValueAtTime(baseFreq, ctx.currentTime + offset);
         osc1.frequency.exponentialRampToValueAtTime(baseFreq * 0.9, ctx.currentTime + offset + 0.22);
 
-        osc2.frequency.setValueAtTime(baseFreq * 1.5, ctx.currentTime + offset);
-        osc3.frequency.setValueAtTime(baseFreq * 2, ctx.currentTime + offset);
-
         osc1.connect(gain);
-        osc2.connect(gain);
-        osc3.connect(gain);
         gain.connect(ctx.destination);
 
-        // Volume elevado e estridente (0.95 peak)
-        gain.gain.setValueAtTime(0.95, ctx.currentTime + offset);
+        gain.gain.setValueAtTime(0.6, ctx.currentTime + offset);
         gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + offset + 0.24);
 
         osc1.start(ctx.currentTime + offset);
         osc1.stop(ctx.currentTime + offset + 0.25);
-        osc2.start(ctx.currentTime + offset);
-        osc2.stop(ctx.currentTime + offset + 0.25);
-        osc3.start(ctx.currentTime + offset);
-        osc3.stop(ctx.currentTime + offset + 0.25);
       });
     } else if (type === 'countdown_beep') {
-      // Beep de contagem regressiva da largada (3, 2, 1)
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.type = 'sine';
@@ -239,7 +239,6 @@ const playTone = (type: 'start' | 'finish' | 'click' | 'alert' | 'countdown_beep
       osc.start();
       osc.stop(ctx.currentTime + 0.19);
     } else if (type === 'countdown_go') {
-      // Alerta de LARGADA / GO! (potente e agudo)
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.type = 'sawtooth';
@@ -1237,44 +1236,52 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     return () => unsubscribeAuth();
   }, []);
 
-  // Sincronização periódica contínua em nuvem (mantém mobile e desktop 100% atualizados no Firebase)
+  // Sincronização periódica em nuvem automatizada e ultra-leve (a cada 30 segundos sem travar a tela)
   useEffect(() => {
     if (!activeTenantKey) return;
     let isMounted = true;
+    let isExecuting = false;
 
     const syncTick = async () => {
-      if (!isMounted) return;
-      await pullFromFirestoreDirectly(activeTenantKey);
-      const cData = await fetchTenantCloudData(activeTenantKey);
-      if (!isMounted || !cData) return;
+      if (!isMounted || isExecuting) return;
+      isExecuting = true;
+      try {
+        await pullFromFirestoreDirectly(activeTenantKey);
+        const cData = await fetchTenantCloudData(activeTenantKey);
+        if (!isMounted || !cData) return;
 
-      if (Array.isArray(cData.vehicles) && cData.vehicles.length > 0) {
-        setVehiclesState((prev) => {
-          const { merged, unsyncedLocal } = mergeVehicles(prev, cData.vehicles);
-          if (unsyncedLocal.length > 0) {
-            unsyncedLocal.forEach((v: any) => {
-              saveDocToCloud('veiculos', v.id, { ...v, tenantId: v.tenantId || activeTenantKey }, 'vehicles');
-              saveVehicleCloud(v.tenantId || activeTenantKey, v);
-            });
-          }
-          return merged;
-        });
-      }
-      if (Array.isArray(cData.rentals) && cData.rentals.length > 0) {
-        setRentalsState((prev) => {
-          const { merged, unsyncedLocal } = mergeRentals(prev, cData.rentals);
-          if (unsyncedLocal.length > 0) {
-            unsyncedLocal.forEach((r: any) => {
-              saveDocToCloud('corridas', r.id, { ...r, tenantId: r.tenantId || activeTenantKey }, 'rentals');
-              saveRentalCloud(r.tenantId || activeTenantKey, r);
-            });
-          }
-          return merged;
-        });
+        if (Array.isArray(cData.vehicles) && cData.vehicles.length > 0) {
+          setVehiclesState((prev) => {
+            const { merged, unsyncedLocal } = mergeVehicles(prev, cData.vehicles);
+            if (unsyncedLocal.length > 0) {
+              unsyncedLocal.forEach((v: any) => {
+                saveDocToCloud('veiculos', v.id, { ...v, tenantId: v.tenantId || activeTenantKey }, 'vehicles');
+                saveVehicleCloud(v.tenantId || activeTenantKey, v);
+              });
+            }
+            return merged;
+          });
+        }
+        if (Array.isArray(cData.rentals) && cData.rentals.length > 0) {
+          setRentalsState((prev) => {
+            const { merged, unsyncedLocal } = mergeRentals(prev, cData.rentals);
+            if (unsyncedLocal.length > 0) {
+              unsyncedLocal.forEach((r: any) => {
+                saveDocToCloud('corridas', r.id, { ...r, tenantId: r.tenantId || activeTenantKey }, 'rentals');
+                saveRentalCloud(r.tenantId || activeTenantKey, r);
+              });
+            }
+            return merged;
+          });
+        }
+      } catch (e) {
+        console.warn('[Sync] Aviso de sincronização em segundo plano:', e);
+      } finally {
+        isExecuting = false;
       }
     };
 
-    const interval = setInterval(syncTick, 4500);
+    const interval = setInterval(syncTick, 30000);
     return () => {
       isMounted = false;
       clearInterval(interval);
@@ -1557,12 +1564,12 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
   // =========================================================================
   // SINCRONIZAÇÃO INTELIGENTE: MIGRAÇÃO DOS DADOS LOCAIS DO CLIENTE PARA A NUVEM
   // Garante que as informações que já foram salvas localmente no aparelho do cliente
-  // (veículos, corridas, histórico, fila, operadores e tabela de preços) subam
-  // diretamente para a nuvem sob o tenantId dele, sem misturar com outros tenants
-  // e sem acrescentar nenhuma informação fictícia ou desnecessária.
+  // subam diretamente para a nuvem sob o tenantId dele de forma 100% não-bloqueante (executa apenas 1x)
   // =========================================================================
+  const migrationRanRef = React.useRef<string | null>(null);
   useEffect(() => {
-    if (!activeTenantKey) return;
+    if (!activeTenantKey || migrationRanRef.current === activeTenantKey) return;
+    migrationRanRef.current = activeTenantKey;
 
     const migrateLocalDataToCloud = async () => {
       try {
@@ -1653,60 +1660,44 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
         }
 
         // Sobe os dados limpos do cliente diretamente para a API em Nuvem do servidor
-        await syncTenantToCloud(activeTenantKey, {
+        syncTenantToCloud(activeTenantKey, {
           vehicles: clientVehicles,
           rentals: clientRentals,
           queue: clientQueue,
           users: clientOps,
           pricing: currentTenant?.pricing,
-        });
+        }).catch(() => {});
 
-        // Sincroniza também no Firestore
-        for (const v of clientVehicles) {
-          await setDoc(
-            doc(db, 'veiculos', v.id),
-            { ...v, tenantId: activeTenantKey },
-            { merge: true }
-          ).catch(() => {});
-        }
-
-        for (const r of clientRentals) {
-          await setDoc(
-            doc(db, 'corridas', r.id),
-            { ...r, tenantId: activeTenantKey },
-            { merge: true }
-          ).catch(() => {});
-        }
-
-        for (const op of clientOps) {
-          const opPayload = {
-            id: op.id,
-            name: op.name,
-            email: op.email.toLowerCase().trim(),
-            role: 'operador',
-            tenantId: activeTenantKey,
-            adminEmail: currentUser?.email || op.adminEmail,
-            adminName: currentUser?.name || op.adminName,
-            createdBy: currentUser?.email || op.createdBy,
-            phone: op.phone || null,
-            createdAt: op.createdAt || Date.now(),
-          };
-          await Promise.all([
-            setDoc(doc(db, 'users', op.id), opPayload, { merge: true }).catch(() => {}),
-            setDoc(doc(db, 'usuarios', op.id), opPayload, { merge: true }).catch(() => {}),
-          ]);
-        }
-
-        for (const q of clientQueue) {
-          await setDoc(
-            doc(db, 'fila', q.id),
-            { ...q, tenantId: activeTenantKey },
-            { merge: true }
-          ).catch(() => {});
-        }
+        // Sincroniza também no Firestore em background sem bloquear o navegador
+        Promise.allSettled([
+          ...clientVehicles.map((v) =>
+            setDoc(doc(db, 'veiculos', v.id), { ...v, tenantId: activeTenantKey }, { merge: true })
+          ),
+          ...clientRentals.map((r) =>
+            setDoc(doc(db, 'corridas', r.id), { ...r, tenantId: activeTenantKey }, { merge: true })
+          ),
+          ...clientOps.map((op) => {
+            const opPayload = {
+              id: op.id,
+              name: op.name,
+              email: op.email.toLowerCase().trim(),
+              role: 'operador',
+              tenantId: activeTenantKey,
+              adminEmail: currentUser?.email || op.adminEmail,
+              adminName: currentUser?.name || op.adminName,
+              createdBy: currentUser?.email || op.createdBy,
+              phone: op.phone || null,
+              createdAt: op.createdAt || Date.now(),
+            };
+            return setDoc(doc(db, 'users', op.id), opPayload, { merge: true });
+          }),
+          ...clientQueue.map((q) =>
+            setDoc(doc(db, 'fila', q.id), { ...q, tenantId: activeTenantKey }, { merge: true })
+          ),
+        ]).catch(() => {});
 
         if (currentTenant && currentTenant.pricing) {
-          await setDoc(
+          setDoc(
             doc(db, 'tenants', activeTenantKey),
             {
               id: activeTenantKey,
@@ -1719,19 +1710,19 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
           ).catch(() => {});
         }
 
-        // Limpa estado local de quaisquer resquícios de mock
-        setVehiclesState((prev) => prev.filter((v) => !isMockVehicle(v)));
-        setRentalsState((prev) => prev.filter((r) => !isMockRental(r)));
-        setQueueState((prev) => prev.filter((q) => !isMockQueue(q)));
-
         localStorage.setItem('driftpark_last_cloud_sync', String(Date.now()));
       } catch (err) {
         console.warn('Aviso durante migração segura dos dados locais para a nuvem:', err);
       }
     };
 
-    migrateLocalDataToCloud();
-  }, [activeTenantKey, currentUser?.email]);
+    // Executa em idle/próximo frame para não concorrer com a renderização da interface
+    const timer = setTimeout(() => {
+      migrateLocalDataToCloud();
+    }, 1500);
+
+    return () => clearTimeout(timer);
+  }, [activeTenantKey]);
 
   // Auth functions with Firebase project gympulse-personal & Cloud Server
   const register = async (name: string, email: string, password: string) => {
