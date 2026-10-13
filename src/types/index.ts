@@ -83,6 +83,11 @@ export interface Rental {
     cashAmount?: number;
     shiftName?: string;
   };
+  isPaused?: boolean;
+  pausedAt?: number;
+  totalPausedDurationMs?: number;
+  batterySwapped?: boolean;
+  pauseReason?: string;
 }
 
 export interface QueueItem {
