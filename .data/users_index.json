@@ -1,0 +1,37 @@
+{
+  "admcledison@gmail.com": {
+    "id": "usr_admcledison",
+    "email": "admcledison@gmail.com",
+    "name": "Admcledison",
+    "role": "admin",
+    "tenantId": "tenant_admcledison_gmail_com",
+    "createdAt": 1791725656602
+  },
+  "carollimap1993@gmail.com": {
+    "id": "usr_op_1791804703979",
+    "email": "carollimap1993@gmail.com",
+    "name": "carollimap1993",
+    "role": "operador",
+    "tenantId": "tenant_admcledison_gmail_com",
+    "adminEmail": "admcledison@gmail.com",
+    "createdAt": 1791804703979
+  },
+  "michel.lima20000@gmail.com": {
+    "id": "8vMouomTIqbZegeXq9DkT8bPPha2",
+    "name": "Michel Lima",
+    "email": "michel.lima20000@gmail.com",
+    "role": "admin",
+    "tenantId": "tenant_drift_01",
+    "createdAt": 1791813452613,
+    "savedPassword": "123456"
+  },
+  "8vMouomTIqbZegeXq9DkT8bPPha2": {
+    "id": "8vMouomTIqbZegeXq9DkT8bPPha2",
+    "name": "Michel Lima",
+    "email": "michel.lima20000@gmail.com",
+    "role": "admin",
+    "tenantId": "tenant_drift_01",
+    "createdAt": 1791813452613,
+    "savedPassword": "123456"
+  }
+}

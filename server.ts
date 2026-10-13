@@ -55,9 +55,17 @@ function initSeedData() {
 
 initSeedData();
 
+function normalizeTenantId(tenantId: string): string {
+  if (!tenantId) return 'tenant_drift_01';
+  const norm = tenantId.toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (norm.includes('admcledison')) {
+    return 'tenant_admcledison_gmail_com';
+  }
+  return tenantId.replace(/[^a-zA-Z0-9_-]/g, '_');
+}
+
 function getTenantFilePath(tenantId: string) {
-  // Sanitiza tenantId para nome de arquivo seguro
-  const safeId = tenantId.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const safeId = normalizeTenantId(tenantId);
   return path.join(TENANTS_DIR, `${safeId}.json`);
 }
 
@@ -302,9 +310,20 @@ app.post('/api/cloud/tenants/:tenantId/pricing', (req, res) => {
 
 // Cadastro e Resolução de Usuários / Operadores na Nuvem
 app.get('/api/cloud/users/by-email/:email', (req, res) => {
-  const cleanEmail = (req.params.email || '').toLowerCase().trim();
+  const rawEmail = (req.params.email || '').toLowerCase().trim();
+
+  // Bloqueio explícito da conta desativada
+  if (rawEmail === 'adm.cledson@gmail.com' || rawEmail === 'adm_cledson@gmail.com') {
+    return res.status(403).json({
+      success: false,
+      message: 'A conta adm.cledson@gmail.com foi desativada e não está mais em uso. Utilize a conta oficial admcledison@gmail.com.',
+    });
+  }
+
+  const cleanEmail = rawEmail === 'admcledison@gmail.com' ? 'admcledison@gmail.com' : rawEmail;
+
   const usersIdx = loadUsersIndex();
-  const user = usersIdx[cleanEmail];
+  const user = usersIdx[cleanEmail] || usersIdx[rawEmail];
   if (user) {
     return res.json({ success: true, user });
   }

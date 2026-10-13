@@ -453,16 +453,47 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   const currentTenant = allTenants.find((t) => t.id === currentTenantId) || allTenants[0];
 
-  // Helper para identificar apenas dados dummy de teste internos
+  // Conta desativada a pedido do usuário: nunca utilizar ou aceitar adm.cledson@gmail.com
+  const isDeactivatedAccount = (email?: string): boolean => {
+    if (!email) return false;
+    const lower = email.toLowerCase().trim();
+    return lower === 'adm.cledson@gmail.com' || lower === 'adm_cledson@gmail.com';
+  };
+
+  // Helper para identificar apenas dados dummy de teste internos ou contas desativadas
   const isMockEmail = (email?: string): boolean => {
     if (!email) return false;
     const lower = email.toLowerCase().trim();
     return (
       lower === 'test-internal-dummy@speedarena.test' ||
       lower === 'fake-sample-bot@driftpark.test' ||
-      lower === 'operador.pista@driftpark.com'
+      lower === 'operador.pista@driftpark.com' ||
+      isDeactivatedAccount(lower)
     );
   };
+
+  // Helper para reconhecer a conta e o tenant do administrador oficial Admcledison
+  const isAdmcledisonAccount = (str?: string): boolean => {
+    if (!str) return false;
+    if (isDeactivatedAccount(str)) return false;
+    const clean = str.toLowerCase().replace(/[^a-z0-9]/g, '');
+    return clean.includes('admcledison') || clean === 'tenant_admcledison_gmail_com';
+  };
+
+  // Limpeza de cache local caso adm.cledson@gmail.com estivesse gravado
+  try {
+    if (typeof window !== 'undefined') {
+      const savedEmail = localStorage.getItem('driftpark_saved_email');
+      if (savedEmail && isDeactivatedAccount(savedEmail)) {
+        localStorage.removeItem('driftpark_saved_email');
+        localStorage.removeItem('driftpark_saved_password');
+      }
+      const curUser = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
+      if (curUser && curUser.includes('adm.cledson')) {
+        localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
+      }
+    }
+  } catch {}
 
   // 2. Users State: Carregado de forma resiliente preservando apenas os operadores reais cadastrados pelo cliente
   const [users, setUsers] = useState<UserProfile[]>(() => {
@@ -698,7 +729,8 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
           vTenant === tenantKey ||
           vTenant === currentTenantId ||
           (cleanUserEmail && adminEmail === cleanUserEmail) ||
-          (vTenant === 'tenant_admcledison_gmail_com' && (tenantKey.includes('admcledison') || cleanUserEmail.includes('admcledison'))) ||
+          (vTenant === 'tenant_admcledison_gmail_com' && (isAdmcledisonAccount(tenantKey) || isAdmcledisonAccount(cleanUserEmail))) ||
+          (isAdmcledisonAccount(vTenant) && (isAdmcledisonAccount(tenantKey) || isAdmcledisonAccount(cleanUserEmail))) ||
           (!vTenant && tenantKey === 'tenant_drift_01');
 
         if (match) {
@@ -726,7 +758,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       // Seed automático da frota de admcledison no Firebase caso ainda não exista na nuvem
       if (
         foundVehiclesMap.size === 0 &&
-        (tenantKey === 'tenant_admcledison_gmail_com' || cleanUserEmail.includes('admcledison'))
+        (isAdmcledisonAccount(tenantKey) || isAdmcledisonAccount(cleanUserEmail))
       ) {
         const defaultAdmcledisonVehicles: Vehicle[] = [
           {
@@ -823,7 +855,8 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
           rTenant === tenantKey ||
           rTenant === currentTenantId ||
           (cleanUserEmail && rAdminEmail === cleanUserEmail) ||
-          (rTenant === 'tenant_admcledison_gmail_com' && (tenantKey.includes('admcledison') || cleanUserEmail.includes('admcledison'))) ||
+          (rTenant === 'tenant_admcledison_gmail_com' && (isAdmcledisonAccount(tenantKey) || isAdmcledisonAccount(cleanUserEmail))) ||
+          (isAdmcledisonAccount(rTenant) && (isAdmcledisonAccount(tenantKey) || isAdmcledisonAccount(cleanUserEmail))) ||
           (!rTenant && tenantKey === 'tenant_drift_01');
 
         if (match) {
@@ -898,7 +931,8 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
           qTenant === tenantKey ||
           qTenant === currentTenantId ||
           (cleanUserEmail && qAdminEmail === cleanUserEmail) ||
-          (qTenant === 'tenant_admcledison_gmail_com' && (tenantKey.includes('admcledison') || cleanUserEmail.includes('admcledison'))) ||
+          (qTenant === 'tenant_admcledison_gmail_com' && (isAdmcledisonAccount(tenantKey) || isAdmcledisonAccount(cleanUserEmail))) ||
+          (isAdmcledisonAccount(qTenant) && (isAdmcledisonAccount(tenantKey) || isAdmcledisonAccount(cleanUserEmail))) ||
           (!qTenant && tenantKey === 'tenant_drift_01');
 
         if (match) {
@@ -970,7 +1004,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
             ];
           });
         }
-      } else if (tenantKey === 'tenant_admcledison_gmail_com') {
+      } else if (isAdmcledisonAccount(tenantKey) || isAdmcledisonAccount(cleanUserEmail)) {
         const defaultTenantObj: Tenant = {
           id: 'tenant_admcledison_gmail_com',
           name: 'DRIFT PARK',
@@ -1002,7 +1036,9 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
 
         const match =
           uTenant === tenantKey ||
-          (cleanUserEmail && (d.adminEmail?.toLowerCase() === cleanUserEmail || d.createdBy?.toLowerCase() === cleanUserEmail));
+          (isAdmcledisonAccount(uTenant) && (isAdmcledisonAccount(tenantKey) || isAdmcledisonAccount(cleanUserEmail))) ||
+          (cleanUserEmail && (d.adminEmail?.toLowerCase() === cleanUserEmail || d.createdBy?.toLowerCase() === cleanUserEmail)) ||
+          (isAdmcledisonAccount(cleanUserEmail) && (isAdmcledisonAccount(d.adminEmail) || isAdmcledisonAccount(d.createdBy)));
 
         if (match) {
           foundUsersMap.set(email, {
@@ -1026,7 +1062,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       // Seed de usuários padrão para admcledison se lista estiver vazia
       if (
         foundUsersMap.size === 0 &&
-        (tenantKey === 'tenant_admcledison_gmail_com' || cleanUserEmail.includes('admcledison'))
+        (isAdmcledisonAccount(tenantKey) || isAdmcledisonAccount(cleanUserEmail))
       ) {
         const defaultUsers: UserProfile[] = [
           {
@@ -1161,14 +1197,14 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
         if (resolved) {
           const resolvedRole: UserRole = resolved.role === 'admin' ? 'admin' : 'operador';
           const resolvedTenantId =
-            resolved.tenantId || (resolvedRole === 'admin' ? (email.includes('admcledison') ? 'tenant_admcledison_gmail_com' : uid) : 'tenant_drift_01');
+            resolved.tenantId || (resolvedRole === 'admin' ? (isAdmcledisonAccount(email) ? 'tenant_admcledison_gmail_com' : uid) : 'tenant_drift_01');
 
           const userObj: UserProfile = {
             id: uid,
             name: resolved.name || firebaseUser.displayName || email.split('@')[0],
             email: email || resolved.email,
             role: resolvedRole,
-            tenantId: resolvedTenantId,
+            tenantId: isAdmcledisonAccount(email) ? 'tenant_admcledison_gmail_com' : resolvedTenantId,
             phone: resolved.phone,
             adminEmail: resolved.adminEmail || resolved.createdBy,
             adminName: resolved.adminName,
@@ -1177,20 +1213,20 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
           };
 
           setCurrentUser(userObj);
-          setCurrentTenantId(resolvedTenantId);
+          setCurrentTenantId(userObj.tenantId);
           localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(userObj));
-          localStorage.setItem(STORAGE_KEYS.CURRENT_TENANT, resolvedTenantId);
+          localStorage.setItem(STORAGE_KEYS.CURRENT_TENANT, userObj.tenantId);
 
           // Puxa imediatamente todos os dados da conta diretamente do Firebase Firestore!
-          pullFromFirestoreDirectly(resolvedTenantId);
-          fetchTenantCloudData(resolvedTenantId).then((cData) => {
+          pullFromFirestoreDirectly(userObj.tenantId);
+          fetchTenantCloudData(userObj.tenantId).then((cData) => {
             if (cData && Array.isArray(cData.vehicles) && cData.vehicles.length > 0) {
               setVehiclesState((prev) => {
                 const { merged, unsyncedLocal } = mergeVehicles(prev, cData.vehicles);
                 if (unsyncedLocal.length > 0) {
                   unsyncedLocal.forEach((v: any) => {
-                    saveDocToCloud('veiculos', v.id, { ...v, tenantId: v.tenantId || resolvedTenantId }, 'vehicles');
-                    saveVehicleCloud(v.tenantId || resolvedTenantId, v);
+                    saveDocToCloud('veiculos', v.id, { ...v, tenantId: v.tenantId || userObj.tenantId }, 'vehicles');
+                    saveVehicleCloud(v.tenantId || userObj.tenantId, v);
                   });
                 }
                 return merged;
@@ -1201,8 +1237,8 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
                 const { merged, unsyncedLocal } = mergeRentals(prev, cData.rentals);
                 if (unsyncedLocal.length > 0) {
                   unsyncedLocal.forEach((r: any) => {
-                    saveDocToCloud('corridas', r.id, { ...r, tenantId: r.tenantId || resolvedTenantId }, 'rentals');
-                    saveRentalCloud(r.tenantId || resolvedTenantId, r);
+                    saveDocToCloud('corridas', r.id, { ...r, tenantId: r.tenantId || userObj.tenantId }, 'rentals');
+                    saveRentalCloud(r.tenantId || userObj.tenantId, r);
                   });
                 }
                 return merged;
@@ -1212,7 +1248,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
         } else if (email) {
           const isMichel =
             email === 'michel.lima20000@gmail.com' || email === 'michellimasilva979@gmail.com';
-          const isAdmcledison = email === 'admcledison@gmail.com';
+          const isAdmcledison = isAdmcledisonAccount(email);
           const defaultTenant = isMichel ? 'tenant_drift_01' : (isAdmcledison ? 'tenant_admcledison_gmail_com' : uid);
 
           const defaultAdmin: UserProfile = {
@@ -1731,6 +1767,12 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     const effectivePassword = password.trim();
 
     if (!trimmedEmail) return { success: false, message: 'Informe seu e-mail de acesso.' };
+    if (isDeactivatedAccount(trimmedEmail)) {
+      return {
+        success: false,
+        message: 'A conta adm.cledson@gmail.com foi desativada e não pode ser utilizada. Utilize admcledison@gmail.com.',
+      };
+    }
     if (!effectivePassword || effectivePassword.length < 6) {
       return { success: false, message: 'A senha deve conter no mínimo 6 caracteres.' };
     }
@@ -1828,6 +1870,12 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     const effectivePassword = password?.trim() || '123456';
 
     if (!trimmedEmail) return { success: false, message: 'Informe seu e-mail de acesso.' };
+    if (isDeactivatedAccount(trimmedEmail)) {
+      return {
+        success: false,
+        message: 'A conta adm.cledson@gmail.com foi desativada e não está mais em uso. Utilize a conta oficial admcledison@gmail.com.',
+      };
+    }
 
     let authUser: FirebaseUser | null = null;
 
@@ -1886,7 +1934,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     const isMichel =
       trimmedEmail === 'michel.lima20000@gmail.com' ||
       trimmedEmail === 'michellimasilva979@gmail.com';
-    const isAdmcledison = trimmedEmail === 'admcledison@gmail.com' || trimmedEmail.includes('admcledison');
+    const isAdmcledison = isAdmcledisonAccount(trimmedEmail);
     const canonicalTenantId = isMichel
       ? 'tenant_drift_01'
       : isAdmcledison
@@ -1917,8 +1965,9 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
 
     if (resolved) {
       const resolvedRole: UserRole = resolved.role === 'admin' ? 'admin' : 'operador';
-      const resolvedTenantId: string =
-        resolved.tenantId || (resolvedRole === 'admin' ? canonicalTenantId : 'tenant_drift_01');
+      const resolvedTenantId: string = isAdmcledison
+        ? 'tenant_admcledison_gmail_com'
+        : (resolved.tenantId || (resolvedRole === 'admin' ? canonicalTenantId : 'tenant_drift_01'));
 
       profile = {
         id: uid,

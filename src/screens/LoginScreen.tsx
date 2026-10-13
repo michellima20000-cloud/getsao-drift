@@ -7,7 +7,13 @@ export const LoginScreen: React.FC = () => {
   const { login, register } = useDriftPark();
 
   const [email, setEmail] = useState(() => {
-    return localStorage.getItem('driftpark_saved_email') || '';
+    const saved = localStorage.getItem('driftpark_saved_email') || '';
+    if (saved.toLowerCase().includes('adm.cledson') || saved.toLowerCase().includes('adm_cledson')) {
+      localStorage.removeItem('driftpark_saved_email');
+      localStorage.removeItem('driftpark_saved_password');
+      return '';
+    }
+    return saved;
   });
   const [password, setPassword] = useState(() => {
     return localStorage.getItem('driftpark_saved_password') || '';
