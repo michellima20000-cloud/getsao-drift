@@ -688,12 +688,8 @@ export const ManagementScreen: React.FC = () => {
                           🏎️
                         </div>
                         <div>
-                          <div className="font-bold text-white flex items-center gap-1.5 text-xs">
+                          <div className="font-bold text-white text-xs">
                             <span>{op.name}</span>
-                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-semibold flex items-center gap-1">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                              Firebase Auth
-                            </span>
                           </div>
                           <div className="text-[11px] text-cyan-400 font-mono mt-0.5">{op.email}</div>
                           
@@ -762,16 +758,6 @@ export const ManagementScreen: React.FC = () => {
                               <span>Copiar Acesso</span>
                             </>
                           )}
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => quickLoginAs('operador')}
-                          className="px-2 py-1 rounded-lg text-[10px] font-bold bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 flex items-center gap-1 transition-all"
-                          title="Alternar para visualização deste operador"
-                        >
-                          <LogIn size={11} />
-                          <span>Testar Login</span>
                         </button>
                       </div>
                     </div>

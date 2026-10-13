@@ -4,12 +4,16 @@ import { SpeedometerLogo } from './SpeedometerLogo';
 import {
   ChevronDown,
   LogOut,
+  RefreshCw,
 } from 'lucide-react';
 
 export const TopHeader: React.FC = () => {
   const {
     currentUser,
     logout,
+    isSyncing,
+    isFirestoreOnline,
+    syncWithCloudNow,
   } = useDriftPark();
 
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
@@ -30,16 +34,33 @@ export const TopHeader: React.FC = () => {
           </div>
         </div>
 
-        {/* Right Tools: Cloud Indicator & User Menu */}
+        {/* Right Tools: Cloud Sync & User Menu */}
         <div className="flex items-center gap-2">
-          {/* Cloud Active Pill */}
-          <div
-            className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-[10px] text-emerald-400 font-semibold"
-            title="Sincronização em nuvem ativa em tempo real"
+          {/* Cloud Sync Status & Instant Refresh */}
+          <button
+            type="button"
+            onClick={syncWithCloudNow}
+            title={
+              isSyncing
+                ? 'Sincronizando dados com o Firebase na Nuvem...'
+                : 'Firebase Conectado na Nuvem. Clique para sincronizar agora.'
+            }
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-bold transition-all ${
+              isSyncing
+                ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/40 animate-pulse'
+                : isFirestoreOnline
+                ? 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                : 'bg-amber-500/10 text-amber-300 border-amber-500/30'
+            }`}
           >
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="hidden sm:inline">Nuvem</span>
-          </div>
+            <RefreshCw
+              size={11}
+              className={`shrink-0 ${isSyncing ? 'animate-spin text-cyan-400' : 'text-emerald-400'}`}
+            />
+            <span className="hidden xs:inline text-[10px]">
+              {isSyncing ? 'Sincronizando...' : 'Nuvem 100%'}
+            </span>
+          </button>
 
           {/* User Profile / Role menu */}
           <div className="relative">

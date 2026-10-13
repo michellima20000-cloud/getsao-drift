@@ -245,35 +245,6 @@ export const LoginScreen: React.FC = () => {
               )}
             </button>
           </div>
-
-          {/* Quick Access Account Button for Cloud Track */}
-          <div className="pt-4 border-t border-slate-800/90 space-y-2">
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider text-center flex items-center justify-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span>Conta Administrador Sincronizada na Nuvem</span>
-            </div>
-            <div>
-              <button
-                type="button"
-                onClick={() => {
-                  setEmail('admcledison@gmail.com');
-                  setPassword('123456');
-                  setErrorMessage('');
-                }}
-                className="w-full p-2.5 rounded-xl bg-[#141E38] hover:bg-[#1C2541] border border-amber-500/40 text-left transition-all active:scale-95 shadow-sm flex items-center justify-between"
-              >
-                <div>
-                  <div className="text-[11px] font-bold text-amber-300 flex items-center gap-1">
-                    👑 Admin Dono da Pista
-                  </div>
-                  <div className="text-[10px] text-slate-400">admcledison@gmail.com</div>
-                </div>
-                <span className="text-[10px] px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono">
-                  Preencher
-                </span>
-              </button>
-            </div>
-          </div>
         </form>
       </div>
     </div>

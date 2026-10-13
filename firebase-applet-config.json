@@ -1,0 +1,13 @@
+{
+  "projectId": "gympulse-personal",
+  "appId": "1:1068724964920:web:d4fec7bbd3dbeceb07a0cd",
+  "apiKey": "AIzaSyCPg3vNSexfASWeRwQfWkQBF7Uq_kAp-uY",
+  "authDomain": "gympulse-personal.firebaseapp.com",
+  "databaseURL": "https://gympulse-personal-default-rtdb.firebaseio.com",
+  "firestoreDatabaseId": "(default)",
+  "storageBucket": "gympulse-personal.firebasestorage.app",
+  "messagingSenderId": "1068724964920",
+  "measurementId": "G-PWD1EYY9DD",
+  "oAuthClientId": "1021285542263-rl6uecqf6kcf1d8bvq30jb2qhv955dj3.apps.googleusercontent.com",
+  "recaptchaSiteKey": ""
+}

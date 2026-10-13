@@ -19,6 +19,42 @@ const USERS_FILE = path.join(DATA_DIR, 'users_index.json');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 if (!fs.existsSync(TENANTS_DIR)) fs.mkdirSync(TENANTS_DIR, { recursive: true });
 
+function initSeedData() {
+  const seedFile = path.join(__dirname, 'data', 'cloud-store.json');
+  if (fs.existsSync(seedFile)) {
+    try {
+      const seedContent = JSON.parse(fs.readFileSync(seedFile, 'utf-8'));
+      if (seedContent.tenants) {
+        for (const [tId, tData] of Object.entries(seedContent.tenants)) {
+          const tFile = getTenantFilePath(tId);
+          if (!fs.existsSync(tFile)) {
+            const raw = tData as any;
+            const normalized = {
+              id: raw.tenant?.id || tId,
+              name: raw.tenant?.name || 'Drift Park',
+              city: raw.tenant?.city || 'Pista Principal',
+              pricing: raw.tenant?.pricing || { 5: 15.0, 10: 25.0, 15: 35.0, 20: 45.0, 30: 60.0 },
+              vehicles: raw.vehicles || [],
+              rentals: raw.rentals || [],
+              queue: raw.queue || [],
+              users: raw.users || [],
+              updatedAt: raw.updatedAt || Date.now(),
+            };
+            fs.writeFileSync(tFile, JSON.stringify(normalized, null, 2), 'utf-8');
+          }
+        }
+      }
+      if (seedContent.users && !fs.existsSync(USERS_FILE)) {
+        fs.writeFileSync(USERS_FILE, JSON.stringify(seedContent.users, null, 2), 'utf-8');
+      }
+    } catch (err) {
+      console.warn('Erro ao ler seed inicial:', err);
+    }
+  }
+}
+
+initSeedData();
+
 function getTenantFilePath(tenantId: string) {
   // Sanitiza tenantId para nome de arquivo seguro
   const safeId = tenantId.replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -31,6 +67,29 @@ function loadTenantData(tenantId: string) {
     try {
       const content = fs.readFileSync(filePath, 'utf-8');
       return JSON.parse(content);
+    } catch {}
+  }
+  // Se ainda não existir no arquivo individual, tenta recuperar do seed
+  const seedFile = path.join(__dirname, 'data', 'cloud-store.json');
+  if (fs.existsSync(seedFile)) {
+    try {
+      const seed = JSON.parse(fs.readFileSync(seedFile, 'utf-8'));
+      if (seed.tenants && seed.tenants[tenantId]) {
+        const raw = seed.tenants[tenantId];
+        const normalized = {
+          id: raw.tenant?.id || tenantId,
+          name: raw.tenant?.name || 'Drift Park',
+          city: raw.tenant?.city || 'Pista Principal',
+          pricing: raw.tenant?.pricing || { 5: 15.0, 10: 25.0, 15: 35.0, 20: 45.0, 30: 60.0 },
+          vehicles: raw.vehicles || [],
+          rentals: raw.rentals || [],
+          queue: raw.queue || [],
+          users: raw.users || [],
+          updatedAt: raw.updatedAt || Date.now(),
+        };
+        fs.writeFileSync(filePath, JSON.stringify(normalized, null, 2), 'utf-8');
+        return normalized;
+      }
     } catch {}
   }
   return {
@@ -285,6 +344,32 @@ app.post('/api/cloud/users/register', (req, res) => {
   saveUsersIndex(usersIdx);
 
   // Atualiza no tenant correspondente
+  const tenantData = loadTenantData(tenantId);
+  tenantData.users = tenantData.users || [];
+  const idx = tenantData.users.findIndex((u: any) => (u.email || '').toLowerCase() === cleanEmail);
+  if (idx >= 0) {
+    tenantData.users[idx] = { ...tenantData.users[idx], ...user, tenantId };
+  } else {
+    tenantData.users.push({ ...user, tenantId });
+  }
+  saveTenantData(tenantId, tenantData);
+
+  res.json({ success: true, user: usersIdx[cleanEmail] });
+});
+
+// Alias para compatibilidade
+app.post('/api/cloud-sync/user', (req, res) => {
+  const user = req.body.user || req.body;
+  if (!user || !user.email) return res.status(400).json({ error: 'Usuário inválido' });
+
+  const cleanEmail = user.email.toLowerCase().trim();
+  const tenantId = user.tenantId || user.id;
+
+  const usersIdx = loadUsersIndex();
+  usersIdx[cleanEmail] = { ...user, tenantId };
+  if (user.id) usersIdx[user.id] = { ...user, tenantId };
+  saveUsersIndex(usersIdx);
+
   const tenantData = loadTenantData(tenantId);
   tenantData.users = tenantData.users || [];
   const idx = tenantData.users.findIndex((u: any) => (u.email || '').toLowerCase() === cleanEmail);

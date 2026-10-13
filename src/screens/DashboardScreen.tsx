@@ -243,9 +243,8 @@ export const DashboardScreen: React.FC = () => {
         <div className="flex items-center justify-between">
           <h3 className="text-xs uppercase tracking-wider font-bold text-slate-300 flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-cyan-400 animate-neon-pulse" />
-            Telemetria em Tempo Real ({activeRentals.length} na pista{activeRentals.some((r) => r.status === 'pausada') ? ` · ${activeRentals.filter((r) => r.status === 'pausada').length} pausada` : ''})
+            Corridas em Andamento ({activeRentals.length} na pista{activeRentals.some((r) => r.status === 'pausada') ? ` · ${activeRentals.filter((r) => r.status === 'pausada').length} pausada` : ''})
           </h3>
-          <span className="text-[10px] text-cyan-400/80 font-mono">LIVE GPS</span>
         </div>
 
         {activeRentals.length === 0 ? (

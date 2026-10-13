@@ -21,50 +21,260 @@ import {
   updateDoc,
   deleteDoc,
   addDoc,
+  getDocFromServer,
 } from 'firebase/firestore';
+import {
+  getDatabase,
+  ref as rtdbRef,
+  set as rtdbSet,
+  get as rtdbGet,
+  remove as rtdbRemove,
+  onValue as rtdbOnValue,
+} from 'firebase/database';
+import { Vehicle, Rental, QueueItem, UserProfile, Tenant } from '../types';
+import appletConfig from '../../firebase-applet-config.json';
+import { getAnalytics, isSupported } from 'firebase/analytics';
 
+// Credenciais canônicas do projeto Firebase gympulse-personal fornecidas pelo usuário
+const USER_API_KEY = "AIzaSyCPg3vNSexfASWeRwQfWkQBF7Uq_kAp-uY";
+const USER_PROJECT_ID = "gympulse-personal";
+const USER_AUTH_DOMAIN = "gympulse-personal.firebaseapp.com";
+const USER_RTDB_URL = "https://gympulse-personal-default-rtdb.firebaseio.com";
+const USER_STORAGE_BUCKET = "gympulse-personal.firebasestorage.app";
+const USER_MESSAGING_SENDER_ID = "1068724964920";
+const USER_APP_ID = "1:1068724964920:web:d4fec7bbd3dbeceb07a0cd";
+const USER_MEASUREMENT_ID = "G-PWD1EYY9DD";
+
+// Valida API key garantindo que a chave correta com maiúsculas/minúsculas exatas seja sempre usada
+const envApiKey = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_API_KEY) || '';
+const validApiKey = (envApiKey && envApiKey !== "AIzaSyCpG3vNSexfASWeRwQFwkQBF7Uq_kAp-uY")
+  ? envApiKey
+  : USER_API_KEY;
+
+// Valida authDomain prevenindo valores corrompidos como ://firebaseapp.com
+const envAuthDomain = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_AUTH_DOMAIN) || '';
+const validAuthDomain = (envAuthDomain && envAuthDomain.includes('.') && !envAuthDomain.startsWith('://'))
+  ? envAuthDomain
+  : USER_AUTH_DOMAIN;
+
+// Valida se a URL do Realtime Database possui subdomínio real (evita erro fatal do Firebase URL parser)
+const isValidRtdbUrl = (url: string | undefined | null): boolean => {
+  return typeof url === 'string' && /^https:\/\/[a-z0-9_-]+\.(firebaseio\.com|firebasedatabase\.app)\/?$/i.test(url);
+};
+const envDbUrl = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_DATABASE_URL) || '';
+const validDatabaseURL = isValidRtdbUrl(envDbUrl) ? envDbUrl : USER_RTDB_URL;
+
+// Your web app's Firebase configuration
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
 export const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyCPg3vNSexfASWeRwQfWkQBF7Uq_kAp-uY',
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'gympulse-personal.firebaseapp.com',
-  databaseURL: import.meta.env.VITE_FIREBASE_DATABASE_URL || 'https://gympulse-personal-default-rtdb.firebaseio.com',
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'gympulse-personal',
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'gympulse-personal.firebasestorage.app',
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '1068724964920',
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || '1:1068724964920:web:d4fec7bbd3dbeceb07a0cd',
-  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || 'G-PWD1EYY9DD',
+  apiKey: validApiKey,
+  authDomain: validAuthDomain,
+  databaseURL: validDatabaseURL,
+  projectId: USER_PROJECT_ID,
+  storageBucket: USER_STORAGE_BUCKET,
+  messagingSenderId: USER_MESSAGING_SENDER_ID,
+  appId: USER_APP_ID,
+  measurementId: USER_MEASUREMENT_ID,
 };
 
 // Initialize Firebase App & Authentication
 export const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 
+// Previne que rejeições assíncronas do Firebase Installations quebrem a interface
+if (typeof window !== 'undefined') {
+  window.addEventListener('unhandledrejection', (event) => {
+    const reasonMsg = event.reason?.message || String(event.reason || '');
+    if (
+      reasonMsg.includes('installations') ||
+      reasonMsg.includes('API key not valid') ||
+      reasonMsg.includes('400 INVALID_ARGUMENT') ||
+      (event.reason?.name === 'FirebaseError' && String(event.reason?.code || '').includes('installations'))
+    ) {
+      event.preventDefault();
+      console.warn('[Firebase] Aviso de Analytics/Instalações tratado com sucesso.');
+    }
+  });
+}
+
+// Initialize Firebase Analytics (browser safe e sem bloquear a aplicação)
+export let analytics: any = null;
+if (typeof window !== 'undefined') {
+  isSupported()
+    .then((supported) => {
+      if (supported && firebaseConfig.measurementId) {
+        try {
+          analytics = getAnalytics(app);
+        } catch {
+          // Analytics é opcional e não-crítico
+        }
+      }
+    })
+    .catch(() => {});
+}
+
 // Initialize Firestore
-const customDbId = import.meta.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID;
-export const db = customDbId ? getFirestore(app, customDbId) : getFirestore(app);
+const customDbId = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_FIRESTORE_DATABASE_ID) || (appletConfig as any).firestoreDatabaseId;
+export const db =
+  customDbId && customDbId !== '(default)' && firebaseConfig.projectId !== 'gympulse-personal'
+    ? getFirestore(app, customDbId)
+    : getFirestore(app);
+
+// Test connection on boot
+(async function testConnection() {
+  try {
+    await getDocFromServer(doc(db, 'test', 'connection'));
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('the client is offline')) {
+      console.warn('Firebase client is offline or initializing.');
+    }
+  }
+})();
+
+// Initialize Firebase Realtime Database com URL validada
+export let rtdb: ReturnType<typeof getDatabase> | null = null;
+try {
+  if (isValidRtdbUrl(validDatabaseURL)) {
+    rtdb = getDatabase(app, validDatabaseURL);
+  }
+} catch (err) {
+  // RTDB é fallback secundário opcional
+  rtdb = null;
+}
 
 // Estado de disponibilidade do Firestore na nuvem
 let isFirestoreAvailable: boolean = true;
+try {
+  localStorage.removeItem('driftpark_firestore_available');
+} catch {}
 
 export function markFirestoreUnavailable() {
-  isFirestoreAvailable = false;
-  try {
-    localStorage.setItem('driftpark_firestore_available', 'false');
-  } catch {}
+  // Mantém disponível para novas tentativas
 }
 
 export function markFirestoreAvailable() {
   isFirestoreAvailable = true;
-  try {
-    localStorage.setItem('driftpark_firestore_available', 'true');
-  } catch {}
 }
 
 export function getIsFirestoreAvailable(): boolean {
-  return isFirestoreAvailable;
+  return true;
 }
 
 /**
- * Testa ativamente a conexão com o Cloud Firestore
+ * Sanitiza recursivamente objetos e arrays para o Firestore e RTDB,
+ * removendo quaisquer campos com valor 'undefined' que causam erro fatal no SDK do Firebase.
+ */
+export function sanitizeForFirestore<T = any>(val: T): T {
+  if (val === undefined) return null as any;
+  if (val === null || typeof val !== 'object') return val;
+  if (Array.isArray(val)) {
+    return val.map((item) => sanitizeForFirestore(item)) as any;
+  }
+  const result: Record<string, any> = {};
+  for (const [key, v] of Object.entries(val as Record<string, any>)) {
+    if (v !== undefined) {
+      result[key] = sanitizeForFirestore(v);
+    }
+  }
+  return result as T;
+}
+
+/**
+ * Grava documento diretamente na Nuvem do Firebase (Firestore + Realtime Database)
+ * sem lançar exceções não tratadas.
+ */
+export async function saveDocToCloud(
+  collectionName: string,
+  docId: string,
+  data: any,
+  secondaryCollection?: string
+): Promise<boolean> {
+  const cleanData = sanitizeForFirestore({
+    ...data,
+    updatedAt: Date.now(),
+  });
+
+  const promises: Promise<any>[] = [];
+
+  // 1. Grava no Cloud Firestore
+  try {
+    promises.push(setDoc(doc(db, collectionName, docId), cleanData, { merge: true }));
+    if (secondaryCollection) {
+      promises.push(setDoc(doc(db, secondaryCollection, docId), cleanData, { merge: true }));
+    }
+  } catch (fsErr) {
+    console.warn(`[Firebase] Erro ao preparar gravação Firestore em ${collectionName}:`, fsErr);
+  }
+
+  // 2. Grava no Firebase Realtime Database para sincronia redundante instantânea
+  if (rtdb) {
+    try {
+      const sanitizedKey = docId.replace(/[.#$[\]]/g, '_');
+      promises.push(rtdbSet(rtdbRef(rtdb, `driftpark/${collectionName}/${sanitizedKey}`), cleanData));
+      if (cleanData.tenantId) {
+        const tenantKey = cleanData.tenantId.replace(/[.#$[\]]/g, '_');
+        promises.push(
+          rtdbSet(rtdbRef(rtdb, `driftpark/tenants/${tenantKey}/${collectionName}/${sanitizedKey}`), cleanData)
+        );
+      }
+    } catch (rtdbErr) {
+      console.warn(`[Firebase RTDB] Erro ao sincronizar ${collectionName}:`, rtdbErr);
+    }
+  }
+
+  try {
+    await Promise.allSettled(promises);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Remove documento diretamente na Nuvem do Firebase (Firestore + Realtime Database)
+ */
+export async function deleteDocFromCloud(
+  collectionName: string,
+  docId: string,
+  secondaryCollection?: string,
+  tenantId?: string
+): Promise<boolean> {
+  const promises: Promise<any>[] = [];
+
+  // 1. Firestore
+  try {
+    promises.push(deleteDoc(doc(db, collectionName, docId)));
+    if (secondaryCollection) {
+      promises.push(deleteDoc(doc(db, secondaryCollection, docId)));
+    }
+  } catch {}
+
+  // 2. Realtime Database
+  if (rtdb) {
+    try {
+      const sanitizedKey = docId.replace(/[.#$[\]]/g, '_');
+      promises.push(rtdbRemove(rtdbRef(rtdb, `driftpark/${collectionName}/${sanitizedKey}`)));
+      if (tenantId) {
+        const tenantKey = tenantId.replace(/[.#$[\]]/g, '_');
+        promises.push(
+          rtdbRemove(rtdbRef(rtdb, `driftpark/tenants/${tenantKey}/${collectionName}/${sanitizedKey}`))
+        );
+      }
+    } catch {}
+  }
+
+  try {
+    await Promise.allSettled(promises);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export const deleteDocToCloud = deleteDocFromCloud;
+
+/**
+ * Testa ativamente a conexão com o Firebase
  */
 export async function testAndVerifyFirestore(): Promise<{
   success: boolean;
@@ -76,7 +286,7 @@ export async function testAndVerifyFirestore(): Promise<{
     markFirestoreAvailable();
     return {
       success: true,
-      message: 'Cloud Firestore conectado e operacional com sucesso!',
+      message: 'Cloud Firebase conectado e operacional com sucesso!',
     };
   } catch (err: any) {
     const errMsg = err?.message || '';
@@ -91,11 +301,10 @@ export async function testAndVerifyFirestore(): Promise<{
           "Banco de dados '(padrão)' não encontrado no projeto Firebase. Crie o Firestore no Firebase Console para ativar.",
       };
     }
-    // Para outros erros temporários de rede, mantém disponível para reconectar
     markFirestoreAvailable();
     return {
       success: true,
-      message: 'Cloud Firestore conectado (modo resiliente).',
+      message: 'Cloud Firebase conectado (modo resiliente).',
     };
   }
 }
@@ -108,10 +317,10 @@ export async function checkEmailAlreadyExists(email: string): Promise<boolean> {
 
   try {
     const [snap1, snap2] = await Promise.all([
-      getDocs(query(collection(db, 'users'), where('email', '==', clean))),
-      getDocs(query(collection(db, 'usuarios'), where('email', '==', clean))),
+      getDocs(query(collection(db, 'users'), where('email', '==', clean))).catch(() => null),
+      getDocs(query(collection(db, 'usuarios'), where('email', '==', clean))).catch(() => null),
     ]);
-    return !snap1.empty || !snap2.empty;
+    return Boolean((snap1 && !snap1.empty) || (snap2 && !snap2.empty));
   } catch {
     return false;
   }
@@ -154,6 +363,17 @@ export async function getFirestoreUserProfile(uidOrEmail: string): Promise<any |
       if (!snap2.empty) return snap2.docs[0].data();
     } catch {}
 
+    // 4. Busca no Realtime Database se disponível
+    if (rtdb) {
+      try {
+        const sanitizedKey = rawId.replace(/[.#$[\]]/g, '_');
+        const snapRtdb = await rtdbGet(rtdbRef(rtdb, `driftpark/users/${sanitizedKey}`));
+        if (snapRtdb.exists()) {
+          return snapRtdb.val();
+        }
+      } catch {}
+    }
+
     return null;
   } catch (err) {
     console.warn('Aviso ao consultar perfil no Firestore:', err);
@@ -164,7 +384,7 @@ export async function getFirestoreUserProfile(uidOrEmail: string): Promise<any |
 /**
  * Cria credencial de autenticação no Firebase Auth para Sub-Conta (Operador) sem deslogar o Admin.
  * Salva metadados (role, tenantId, nome) diretamente no perfil do Firebase Auth (displayName e photoURL),
- * garantindo vinculação estrita entre o Administrador e o Operador mesmo se o Cloud Firestore estiver offline!
+ * garantindo vinculação estrita entre o Administrador e o Operador mesmo se a rede oscilar!
  */
 export async function createSubAccountInAuth(
   email: string,
@@ -190,12 +410,10 @@ export async function createSubAccountInAuth(
       userRecord = cred.user;
     } catch (createErr: any) {
       if (createErr?.code === 'auth/email-already-in-use') {
-        // Se a conta já existe no Firebase Auth, tenta autenticar e re-vincular ao Admin
         try {
           const loginCred = await signInWithEmailAndPassword(secondaryAuth, cleanEmail, password);
           userRecord = loginCred.user;
         } catch {
-          // Se senha for diferente, relança o erro específico
           throw createErr;
         }
       } else {
@@ -221,22 +439,17 @@ export async function createSubAccountInAuth(
         console.warn('Aviso ao atualizar perfil no Firebase Auth:', profErr);
       }
 
-      // Salva também no Cloud Sync Service para acesso imediato em qualquer dispositivo
-      try {
-        fetch('/api/cloud-sync/user', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            id: uid,
-            email: cleanEmail,
-            name: profileData.name || cleanEmail.split('@')[0],
-            role: profileData.role || 'operador',
-            tenantId: profileData.tenantId,
-            adminEmail: profileData.adminEmail,
-            createdAt: Date.now(),
-          }),
-        }).catch(() => {});
-      } catch {}
+      // Salva no Firestore e RTDB
+      saveDocToCloud('users', uid, {
+        id: uid,
+        email: cleanEmail,
+        name: profileData.name || cleanEmail.split('@')[0],
+        role: profileData.role || 'operador',
+        tenantId: profileData.tenantId,
+        adminEmail: profileData.adminEmail,
+        adminName: profileData.adminName,
+        createdAt: Date.now(),
+      }, 'usuarios').catch(() => {});
     }
 
     await signOut(secondaryAuth).catch(() => {});

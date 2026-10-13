@@ -66,7 +66,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
     <script>
-      // Suprime avisos normais de WebSocket em ambiente em nuvem onde HMR é desativado
+      // Suprime avisos normais de WebSocket do Vite HMR quando desativado pelo ambiente
       (function() {
         var origWarn = console.warn;
         var origError = console.error;
@@ -77,21 +77,68 @@
         };
         console.error = function() {
           var first = arguments[0];
-          if (typeof first === 'string' && (first.includes('[vite]') || first.includes('websocket') || first.includes('WebSocket'))) return;
+          if (typeof first === 'string' && (first.includes('[vite]') || first.includes('websocket') || first.includes('WebSocket') || first.includes('closed without opened'))) return;
           return origError.apply(console, arguments);
         };
+
+        // Intercepta instâncias de WebSocket destinadas ao Vite HMR
+        if (typeof window !== 'undefined' && window.WebSocket) {
+          var OrigWebSocket = window.WebSocket;
+          var PatchedWebSocket = function(url, protocols) {
+            var ws;
+            try {
+              ws = protocols !== undefined ? new OrigWebSocket(url, protocols) : new OrigWebSocket(url);
+            } catch (e) {
+              ws = {};
+            }
+            if (typeof url === 'string' && (url.includes('ais-dev') || url.includes('@vite') || url.includes(':3000') || protocols === 'vite-hmr')) {
+              var origAddEventListener = ws.addEventListener;
+              if (origAddEventListener) {
+                ws.addEventListener = function(type, listener, options) {
+                  if (type === 'error' || type === 'close') {
+                    var safeListener = function(ev) {
+                      try {
+                        if (ev && ev.stopImmediatePropagation) ev.stopImmediatePropagation();
+                        if (ev && ev.preventDefault) ev.preventDefault();
+                      } catch (err) {}
+                      try {
+                        if (listener) listener.call(this, ev);
+                      } catch (err) {}
+                    };
+                    return origAddEventListener.call(this, type, safeListener, options);
+                  }
+                  return origAddEventListener.apply(this, arguments);
+                };
+              }
+            }
+            return ws;
+          };
+          PatchedWebSocket.prototype = OrigWebSocket.prototype;
+          PatchedWebSocket.CONNECTING = OrigWebSocket.CONNECTING;
+          PatchedWebSocket.OPEN = OrigWebSocket.OPEN;
+          PatchedWebSocket.CLOSING = OrigWebSocket.CLOSING;
+          PatchedWebSocket.CLOSED = OrigWebSocket.CLOSED;
+          window.WebSocket = PatchedWebSocket;
+        }
       })();
+
       window.addEventListener('error', function (event) {
-        if (event && event.message && (event.message.includes('WebSocket') || event.message.includes('closed without opened') || event.message.includes('[vite]'))) {
-          event.stopImmediatePropagation && event.stopImmediatePropagation();
-          event.preventDefault && event.preventDefault();
+        var msg = (event && (event.message || (event.error && event.error.message))) || '';
+        if (typeof msg === 'string' && (msg.includes('WebSocket') || msg.includes('closed without opened') || msg.includes('[vite]'))) {
+          if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+          if (event.preventDefault) event.preventDefault();
+          return true;
         }
       }, true);
+
       window.addEventListener('unhandledrejection', function (event) {
-        if (event && event.reason && String(event.reason).includes('WebSocket')) {
-          event.preventDefault && event.preventDefault();
+        var reason = (event && event.reason) || '';
+        if (String(reason).includes('WebSocket') || String(reason).includes('closed without opened')) {
+          if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+          if (event.preventDefault) event.preventDefault();
+          return true;
         }
-      });
+      }, true);
     </script>
   </head>
   <body>

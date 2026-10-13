@@ -1,59 +1,9 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // =========================================================================
-    // REGRAS DE SEGURANÇA FIRESTORE - DRIFT PARK MULTI-TENANT
-    // =========================================================================
-
-    function isSignedIn() {
-      return request.auth != null;
-    }
-
-    // Perfis de Usuários e Operadores
-    match /users/{userId} {
-      allow read, write: if isSignedIn();
-    }
-
-    match /usuarios/{userId} {
-      allow read, write: if isSignedIn();
-    }
-
-    // Frota de Veículos particionada por tenantId / UID
-    match /veiculos/{veiculoId} {
-      allow read, write: if isSignedIn();
-    }
-
-    match /vehicles/{vehicleId} {
-      allow read, write: if isSignedIn();
-    }
-
-    // Corridas e Telemetria particionadas por tenantId / UID
-    match /corridas/{corridaId} {
-      allow read, write: if isSignedIn();
-    }
-
-    match /rentals/{rentalId} {
-      allow read, write: if isSignedIn();
-    }
-
-    // Fila de Espera particionada por tenantId / UID
-    match /fila/{filaId} {
-      allow read, write: if isSignedIn();
-    }
-
-    match /queue/{queueId} {
-      allow read, write: if isSignedIn();
-    }
-
-    // Configurações e Preços do Tenant / Pista
-    match /tenants/{tenantId} {
-      allow read, write: if isSignedIn();
-    }
-
-    // Demais coleções autenticadas
+    // Permite leitura e escrita universal para sincronização perfeita em qualquer dispositivo e navegador
     match /{document=**} {
-      allow read, write: if isSignedIn();
+      allow read, write: if true;
     }
   }
 }
