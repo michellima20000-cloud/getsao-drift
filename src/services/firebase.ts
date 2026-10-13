@@ -230,6 +230,16 @@ export async function saveDocToCloud(
     if (secondaryCollection) {
       promises.push(setDoc(doc(db, secondaryCollection, docId), cleanData, { merge: true }));
     }
+    // Para contas de usuários, grava também com chave de e-mail limpa para busca instantânea O(1)
+    if ((collectionName === 'users' || collectionName === 'usuarios') && cleanData?.email) {
+      const emailDocId = String(cleanData.email).toLowerCase().trim();
+      if (emailDocId && emailDocId !== docId) {
+        promises.push(setDoc(doc(db, collectionName, emailDocId), cleanData, { merge: true }));
+        if (secondaryCollection) {
+          promises.push(setDoc(doc(db, secondaryCollection, emailDocId), cleanData, { merge: true }));
+        }
+      }
+    }
   } catch (fsErr) {
     console.warn(`[Firebase] Erro ao preparar gravação Firestore em ${collectionName}:`, fsErr);
   }
@@ -239,6 +249,12 @@ export async function saveDocToCloud(
     try {
       const sanitizedKey = docId.replace(/[.#$[\]]/g, '_');
       promises.push(rtdbSet(rtdbRef(rtdb, `driftpark/${collectionName}/${sanitizedKey}`), cleanData));
+      if (cleanData?.email) {
+        const emailRtdbKey = String(cleanData.email).toLowerCase().trim().replace(/[.#$[\]]/g, '_');
+        if (emailRtdbKey !== sanitizedKey) {
+          promises.push(rtdbSet(rtdbRef(rtdb, `driftpark/${collectionName}/${emailRtdbKey}`), cleanData));
+        }
+      }
       if (cleanData.tenantId) {
         const tenantKey = cleanData.tenantId.replace(/[.#$[\]]/g, '_');
         promises.push(
@@ -354,55 +370,62 @@ export async function checkEmailAlreadyExists(email: string): Promise<boolean> {
   }
 }
 
-/**
- * Busca perfil do usuário no Firestore diretamente na nuvem pelo UID ou e-mail
- */
 export async function getFirestoreUserProfile(uidOrEmail: string): Promise<any | null> {
   const clean = uidOrEmail.trim().toLowerCase();
   const rawId = uidOrEmail.trim();
 
-  try {
-    // 1. Tenta buscar direto pelo UID na coleção 'users'
-    try {
-      const docRef = doc(db, 'users', rawId);
-      const snap = await getDoc(docRef);
-      if (snap.exists()) {
-        return snap.data();
+  const fetchInternal = async (): Promise<any | null> => {
+    // 1. Busca direta simultânea O(1) por Document ID (e-mail e UID em paralelo)
+    const directPromises = [
+      getDoc(doc(db, 'users', clean)).catch(() => null),
+      getDoc(doc(db, 'usuarios', clean)).catch(() => null),
+    ];
+    if (rawId && rawId !== clean) {
+      directPromises.push(getDoc(doc(db, 'users', rawId)).catch(() => null));
+      directPromises.push(getDoc(doc(db, 'usuarios', rawId)).catch(() => null));
+    }
+
+    const directSnaps = await Promise.all(directPromises);
+    for (const snap of directSnaps) {
+      if (snap && snap.exists && snap.exists()) {
+        const d = snap.data();
+        if (d) return d;
       }
-    } catch {}
+    }
 
-    // 2. Tenta buscar direto pelo UID na coleção 'usuarios'
-    try {
-      const docRef = doc(db, 'usuarios', rawId);
-      const snap = await getDoc(docRef);
-      if (snap.exists()) {
-        return snap.data();
-      }
-    } catch {}
+    // 2. Busca paralela nas coleções users e usuarios pelo campo email
+    const [snap1, snap2] = await Promise.all([
+      getDocs(query(collection(db, 'users'), where('email', '==', clean))).catch(() => null),
+      getDocs(query(collection(db, 'usuarios'), where('email', '==', clean))).catch(() => null),
+    ]);
+    if (snap1 && !snap1.empty) return snap1.docs[0].data();
+    if (snap2 && !snap2.empty) return snap2.docs[0].data();
 
-    // 3. Busca nas coleções pelo campo 'email'
-    try {
-      const snap1 = await getDocs(query(collection(db, 'users'), where('email', '==', clean)));
-      if (!snap1.empty) return snap1.docs[0].data();
-    } catch {}
-
-    try {
-      const snap2 = await getDocs(query(collection(db, 'usuarios'), where('email', '==', clean)));
-      if (!snap2.empty) return snap2.docs[0].data();
-    } catch {}
-
-    // 4. Busca no Realtime Database se disponível
+    // 3. Busca no Realtime Database se disponível
     if (rtdb) {
       try {
-        const sanitizedKey = rawId.replace(/[.#$[\]]/g, '_');
-        const snapRtdb = await rtdbGet(rtdbRef(rtdb, `driftpark/users/${sanitizedKey}`));
+        const emailSanitized = clean.replace(/[.#$[\]]/g, '_');
+        const snapRtdb = await rtdbGet(rtdbRef(rtdb, `driftpark/users/${emailSanitized}`));
         if (snapRtdb.exists()) {
           return snapRtdb.val();
+        }
+        if (rawId !== clean) {
+          const rawSanitized = rawId.replace(/[.#$[\]]/g, '_');
+          const snapRaw = await rtdbGet(rtdbRef(rtdb, `driftpark/users/${rawSanitized}`));
+          if (snapRaw.exists()) {
+            return snapRaw.val();
+          }
         }
       } catch {}
     }
 
     return null;
+  };
+
+  try {
+    // Timeout máximo de 1200ms para evitar qualquer travamento da tela
+    const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 1200));
+    return await Promise.race([fetchInternal(), timeoutPromise]);
   } catch (err) {
     console.warn('Aviso ao consultar perfil no Firestore:', err);
     return null;

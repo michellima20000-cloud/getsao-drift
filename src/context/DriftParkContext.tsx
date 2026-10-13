@@ -705,51 +705,74 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
 
     try {
       const cleanUserEmail = (currentUser?.email || '').toLowerCase().trim();
+      const userAdminEmail = (currentUser?.adminEmail || '').toLowerCase().trim();
+      const isCurrentAdmcledison = isAdmcledisonAccount(cleanUserEmail) || isAdmcledisonAccount(tenantKey);
 
-      // 1. VEÍCULOS: Busca nas coleções 'veiculos' e 'vehicles' no Firebase
-      const [snapVeiculos, snapVehicles] = await Promise.all([
-        getDocs(collection(db, 'veiculos')).catch((err) => {
-          console.warn('[Firebase] Aviso ao consultar veiculos:', err?.message || err);
-          return null;
-        }),
-        getDocs(collection(db, 'vehicles')).catch((err) => {
-          console.warn('[Firebase] Aviso ao consultar vehicles:', err?.message || err);
-          return null;
-        }),
+      // 1. EXECUTA TODAS AS CONSULTAS AO FIREBASE E NUVEM EM PARALELO (RESOLUÇÃO EM < 500ms)
+      const [
+        snapVeiculos,
+        snapVehicles,
+        snapCorridas,
+        snapRentals,
+        snapFila,
+        snapQueue,
+        tenantDoc,
+        snapUsers,
+        snapUsuarios,
+        cloudApiData,
+      ] = await Promise.all([
+        getDocs(collection(db, 'veiculos')).catch(() => null),
+        getDocs(collection(db, 'vehicles')).catch(() => null),
+        getDocs(collection(db, 'corridas')).catch(() => null),
+        getDocs(collection(db, 'rentals')).catch(() => null),
+        getDocs(collection(db, 'fila')).catch(() => null),
+        getDocs(collection(db, 'queue')).catch(() => null),
+        getDoc(doc(db, 'tenants', tenantKey)).catch(() => null),
+        getDocs(collection(db, 'users')).catch(() => null),
+        getDocs(collection(db, 'usuarios')).catch(() => null),
+        fetchTenantCloudData(tenantKey).catch(() => null),
       ]);
 
+      // 2. VEÍCULOS / FROTA: Correspondência estrita de tenant e de administrador criador
       const foundVehiclesMap = new Map<string, Vehicle>();
-      const processVehDoc = (docSnap: any) => {
-        const d = docSnap?.data ? docSnap.data() : docSnap;
-        if (!d) return;
+      const isVehicleMatch = (d: any): boolean => {
+        if (!d) return false;
         const vTenant = d.tenantId || '';
         const adminEmail = (d.adminEmail || d.createdBy || '').toLowerCase().trim();
 
-        const match =
-          vTenant === tenantKey ||
-          (cleanUserEmail && adminEmail === cleanUserEmail);
+        if (vTenant === tenantKey) return true;
+        if (cleanUserEmail && (adminEmail === cleanUserEmail || d.createdBy?.toLowerCase() === cleanUserEmail)) return true;
+        if (userAdminEmail && (adminEmail === userAdminEmail || d.createdBy?.toLowerCase() === userAdminEmail)) return true;
+        if (isCurrentAdmcledison && (isAdmcledisonAccount(vTenant) || isAdmcledisonAccount(adminEmail))) return true;
+        return false;
+      };
 
-        if (match) {
-          const veh: Vehicle = {
-            id: docSnap.id || d.id,
-            tenantId: vTenant || tenantKey,
-            name: d.name || 'Veículo',
-            code: d.code || '#01',
-            category: d.category || 'DRIFT',
-            status: d.status || 'disponivel',
-            batteryLevel: typeof d.batteryLevel === 'number' ? d.batteryLevel : 100,
-            totalRuns: typeof d.totalRuns === 'number' ? d.totalRuns : 0,
-            activeRentalId: d.activeRentalId || undefined,
-            imageUrl: d.imageUrl || undefined,
-          };
-          if (!isMockVehicle(veh)) {
-            foundVehiclesMap.set(veh.id, veh);
-          }
+      const processVehDoc = (docSnap: any) => {
+        const d = docSnap?.data ? docSnap.data() : docSnap;
+        if (!d || !isVehicleMatch(d)) return;
+
+        const veh: Vehicle = {
+          id: docSnap.id || d.id,
+          tenantId: d.tenantId || tenantKey,
+          name: d.name || 'Veículo',
+          code: d.code || '#01',
+          category: d.category || 'DRIFT',
+          status: d.status || 'disponivel',
+          batteryLevel: typeof d.batteryLevel === 'number' ? d.batteryLevel : 100,
+          totalRuns: typeof d.totalRuns === 'number' ? d.totalRuns : 0,
+          activeRentalId: d.activeRentalId || undefined,
+          imageUrl: d.imageUrl || undefined,
+        };
+        if (!isMockVehicle(veh)) {
+          foundVehiclesMap.set(veh.id, veh);
         }
       };
 
       if (snapVeiculos) snapVeiculos.forEach(processVehDoc);
       if (snapVehicles) snapVehicles.forEach(processVehDoc);
+      if (cloudApiData && Array.isArray(cloudApiData.vehicles)) {
+        cloudApiData.vehicles.forEach(processVehDoc);
+      }
 
       const cloudVehicles = Array.from(foundVehiclesMap.values());
       setVehiclesState((prev) => {
@@ -765,61 +788,63 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
         return merged;
       });
 
-      // 2. CORRIDAS: Busca nas coleções 'corridas' e 'rentals' no Firebase
-      const [snapCorridas, snapRentals] = await Promise.all([
-        getDocs(collection(db, 'corridas')).catch(() => null),
-        getDocs(collection(db, 'rentals')).catch(() => null),
-      ]);
-
+      // 3. CORRIDAS / HISTÓRICO
       const foundRentalsMap = new Map<string, Rental>();
-      const processRentalDoc = (docSnap: any) => {
-        const d = docSnap?.data ? docSnap.data() : docSnap;
-        if (!d) return;
+      const isRentalMatch = (d: any): boolean => {
+        if (!d) return false;
         const rTenant = d.tenantId || '';
         const rAdminEmail = (d.adminEmail || d.createdBy || '').toLowerCase().trim();
 
-        const match =
-          rTenant === tenantKey ||
-          (cleanUserEmail && rAdminEmail === cleanUserEmail);
+        if (rTenant === tenantKey) return true;
+        if (cleanUserEmail && (rAdminEmail === cleanUserEmail || d.createdBy?.toLowerCase() === cleanUserEmail)) return true;
+        if (userAdminEmail && (rAdminEmail === userAdminEmail || d.createdBy?.toLowerCase() === userAdminEmail)) return true;
+        if (isCurrentAdmcledison && (isAdmcledisonAccount(rTenant) || isAdmcledisonAccount(rAdminEmail))) return true;
+        return false;
+      };
 
-        if (match) {
-          const rent: Rental = {
-            id: docSnap.id || d.id,
-            tenantId: rTenant || tenantKey,
-            vehicleId: d.vehicleId,
-            vehicleName: d.vehicleName,
-            vehicleCode: d.vehicleCode,
-            vehicleCategory: d.vehicleCategory,
-            vehicleImageUrl: d.vehicleImageUrl,
-            customerName: d.customerName || 'Piloto',
-            customerPhone: d.customerPhone || '-',
-            durationMinutes: d.durationMinutes || 10,
-            amount: d.amount || 0,
-            paymentMethod: d.paymentMethod || 'PIX',
-            paymentStatus: d.paymentStatus || 'PAGO',
-            mode: d.mode || 'LIVRE',
-            startTime: d.startTime || d.createdAt || Date.now(),
-            endTime: d.endTime || Date.now(),
-            status: d.status || 'concluida',
-            remainingTimeMs: d.remainingTimeMs,
-            pausedAt: d.pausedAt,
-            pauseReason: d.pauseReason,
-            operatorId: d.operatorId,
-            operatorName: d.operatorName,
-            createdAt: d.createdAt || d.startTime || Date.now(),
-            notes: d.notes,
-            isManualPastEntry: d.isManualPastEntry,
-            isNightClosure: d.isNightClosure,
-            closureDetails: d.closureDetails,
-          };
-          if (!isMockRental(rent)) {
-            foundRentalsMap.set(rent.id, rent);
-          }
+      const processRentalDoc = (docSnap: any) => {
+        const d = docSnap?.data ? docSnap.data() : docSnap;
+        if (!d || !isRentalMatch(d)) return;
+
+        const rent: Rental = {
+          id: docSnap.id || d.id,
+          tenantId: d.tenantId || tenantKey,
+          vehicleId: d.vehicleId,
+          vehicleName: d.vehicleName,
+          vehicleCode: d.vehicleCode,
+          vehicleCategory: d.vehicleCategory,
+          vehicleImageUrl: d.vehicleImageUrl,
+          customerName: d.customerName || 'Piloto',
+          customerPhone: d.customerPhone || '-',
+          durationMinutes: d.durationMinutes || 10,
+          amount: d.amount || 0,
+          paymentMethod: d.paymentMethod || 'PIX',
+          paymentStatus: d.paymentStatus || 'PAGO',
+          mode: d.mode || 'LIVRE',
+          startTime: d.startTime || d.createdAt || Date.now(),
+          endTime: d.endTime || Date.now(),
+          status: d.status || 'concluida',
+          remainingTimeMs: d.remainingTimeMs,
+          pausedAt: d.pausedAt,
+          pauseReason: d.pauseReason,
+          operatorId: d.operatorId,
+          operatorName: d.operatorName,
+          createdAt: d.createdAt || d.startTime || Date.now(),
+          notes: d.notes,
+          isManualPastEntry: d.isManualPastEntry,
+          isNightClosure: d.isNightClosure,
+          closureDetails: d.closureDetails,
+        };
+        if (!isMockRental(rent)) {
+          foundRentalsMap.set(rent.id, rent);
         }
       };
 
       if (snapCorridas) snapCorridas.forEach(processRentalDoc);
       if (snapRentals) snapRentals.forEach(processRentalDoc);
+      if (cloudApiData && Array.isArray(cloudApiData.rentals)) {
+        cloudApiData.rentals.forEach(processRentalDoc);
+      }
 
       const cloudRentals = Array.from(foundRentalsMap.values()).sort(
         (a, b) => (b.createdAt || 0) - (a.createdAt || 0)
@@ -837,43 +862,45 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
         return merged;
       });
 
-      // 3. FILA DE ESPERA: Busca nas coleções 'fila' e 'queue' no Firebase
-      const [snapFila, snapQueue] = await Promise.all([
-        getDocs(collection(db, 'fila')).catch(() => null),
-        getDocs(collection(db, 'queue')).catch(() => null),
-      ]);
-
+      // 4. FILA DE ESPERA
       const foundQueueMap = new Map<string, QueueItem>();
-      const processQueueDoc = (docSnap: any) => {
-        const d = docSnap?.data ? docSnap.data() : docSnap;
-        if (!d) return;
+      const isQueueMatch = (d: any): boolean => {
+        if (!d) return false;
         const qTenant = d.tenantId || '';
         const qAdminEmail = (d.adminEmail || d.createdBy || '').toLowerCase().trim();
 
-        const match =
-          qTenant === tenantKey ||
-          (cleanUserEmail && qAdminEmail === cleanUserEmail);
+        if (qTenant === tenantKey) return true;
+        if (cleanUserEmail && (qAdminEmail === cleanUserEmail || d.createdBy?.toLowerCase() === cleanUserEmail)) return true;
+        if (userAdminEmail && (qAdminEmail === userAdminEmail || d.createdBy?.toLowerCase() === userAdminEmail)) return true;
+        if (isCurrentAdmcledison && (isAdmcledisonAccount(qTenant) || isAdmcledisonAccount(qAdminEmail))) return true;
+        return false;
+      };
 
-        if (match) {
-          const item: QueueItem = {
-            id: docSnap.id || d.id,
-            tenantId: qTenant || tenantKey,
-            customerName: d.customerName || 'Cliente',
-            customerPhone: d.customerPhone || '',
-            categoryDesired: d.categoryDesired || d.category || 'DRIFT',
-            durationMinutes: d.durationMinutes || 10,
-            addedAt: d.addedAt || d.createdAt || Date.now(),
-            notes: d.notes,
-            status: d.status || 'aguardando',
-          };
-          if (!isMockQueue(item)) {
-            foundQueueMap.set(item.id, item);
-          }
+      const processQueueDoc = (docSnap: any) => {
+        const d = docSnap?.data ? docSnap.data() : docSnap;
+        if (!d || !isQueueMatch(d)) return;
+
+        const item: QueueItem = {
+          id: docSnap.id || d.id,
+          tenantId: d.tenantId || tenantKey,
+          customerName: d.customerName || 'Cliente',
+          customerPhone: d.customerPhone || '',
+          categoryDesired: d.categoryDesired || d.category || 'DRIFT',
+          durationMinutes: d.durationMinutes || 10,
+          addedAt: d.addedAt || d.createdAt || Date.now(),
+          notes: d.notes,
+          status: d.status || 'aguardando',
+        };
+        if (!isMockQueue(item)) {
+          foundQueueMap.set(item.id, item);
         }
       };
 
       if (snapFila) snapFila.forEach(processQueueDoc);
       if (snapQueue) snapQueue.forEach(processQueueDoc);
+      if (cloudApiData && Array.isArray(cloudApiData.queue)) {
+        cloudApiData.queue.forEach(processQueueDoc);
+      }
 
       const cloudQueue = Array.from(foundQueueMap.values()).sort(
         (a, b) => (a.addedAt || 0) - (b.addedAt || 0)
@@ -891,9 +918,8 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
         return merged;
       });
 
-      // 4. CONFIGURAÇÃO / PREÇOS DO TENANT no Firebase
-      const tenantDoc = await getDoc(doc(db, 'tenants', tenantKey)).catch(() => null);
-      if (tenantDoc && tenantDoc.exists()) {
+      // 5. CONFIGURAÇÃO / PREÇOS DO TENANT
+      if (tenantDoc && tenantDoc.exists && tenantDoc.exists()) {
         const d = tenantDoc.data();
         if (d) {
           setAllTenants((prev) => {
@@ -923,7 +949,11 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
             ];
           });
         }
-      } else if (isAdmcledisonAccount(tenantKey) || isAdmcledisonAccount(cleanUserEmail)) {
+      } else if (cloudApiData && cloudApiData.pricing) {
+        setAllTenants((prev) =>
+          prev.map((t) => (t.id === tenantKey ? { ...t, pricing: { ...t.pricing, ...cloudApiData.pricing } } : t))
+        );
+      } else if (isCurrentAdmcledison) {
         const defaultTenantObj: Tenant = {
           id: 'tenant_admcledison_gmail_com',
           name: 'DRIFT PARK',
@@ -939,74 +969,61 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
         saveDocToCloud('tenants', defaultTenantObj.id, defaultTenantObj);
       }
 
-      // 5. OPERADORES / EQUIPE no Firebase
-      const [snapUsers, snapUsuarios] = await Promise.all([
-        getDocs(collection(db, 'users')).catch(() => null),
-        getDocs(collection(db, 'usuarios')).catch(() => null),
-      ]);
-
+      // 6. OPERADORES / EQUIPE VINCULADA AO ADMINISTRADOR
       const foundUsersMap = new Map<string, UserProfile>();
-      const processUserDoc = (docSnap: any) => {
-        const d = docSnap?.data ? docSnap.data() : docSnap;
-        if (!d) return;
+      const isUserMatch = (d: any): boolean => {
+        if (!d) return false;
         const uTenant = d.tenantId || '';
         const email = (d.email || '').toLowerCase().trim();
-        if (isMockEmail(email)) return;
+        const dAdminEmail = (d.adminEmail || d.createdBy || '').toLowerCase().trim();
+        if (isMockEmail(email)) return false;
 
-        const match =
-          uTenant === tenantKey ||
-          (isAdmcledisonAccount(uTenant) && (isAdmcledisonAccount(tenantKey) || isAdmcledisonAccount(cleanUserEmail))) ||
-          (cleanUserEmail && (d.adminEmail?.toLowerCase() === cleanUserEmail || d.createdBy?.toLowerCase() === cleanUserEmail)) ||
-          (isAdmcledisonAccount(cleanUserEmail) && (isAdmcledisonAccount(d.adminEmail) || isAdmcledisonAccount(d.createdBy)));
+        if (uTenant === tenantKey) return true;
+        if (cleanUserEmail && (dAdminEmail === cleanUserEmail || email === cleanUserEmail)) return true;
+        if (userAdminEmail && (dAdminEmail === userAdminEmail || email === userAdminEmail)) return true;
+        if (isCurrentAdmcledison && (isAdmcledisonAccount(uTenant) || isAdmcledisonAccount(dAdminEmail) || isAdmcledisonAccount(email))) return true;
+        return false;
+      };
 
-        if (match) {
-          foundUsersMap.set(email, {
-            id: docSnap.id || d.id,
-            name: d.name || email.split('@')[0],
-            email,
-            role: d.role === 'admin' ? 'admin' : 'operador',
-            tenantId: uTenant || tenantKey,
-            phone: d.phone,
-            createdAt: d.createdAt || Date.now(),
-            adminEmail: d.adminEmail || d.createdBy,
-            adminName: d.adminName,
-            createdBy: d.createdBy,
-          });
-        }
+      const processUserDoc = (docSnap: any) => {
+        const d = docSnap?.data ? docSnap.data() : docSnap;
+        if (!d || !isUserMatch(d)) return;
+
+        const email = (d.email || '').toLowerCase().trim();
+        foundUsersMap.set(email, {
+          id: docSnap.id || d.id,
+          name: d.name || email.split('@')[0],
+          email,
+          role: d.role === 'admin' ? 'admin' : 'operador',
+          tenantId: d.tenantId || tenantKey,
+          phone: d.phone,
+          createdAt: d.createdAt || Date.now(),
+          adminEmail: d.adminEmail || d.createdBy,
+          adminName: d.adminName,
+          createdBy: d.createdBy,
+        });
       };
 
       if (snapUsers) snapUsers.forEach(processUserDoc);
       if (snapUsuarios) snapUsuarios.forEach(processUserDoc);
+      if (cloudApiData && Array.isArray(cloudApiData.users)) {
+        cloudApiData.users.forEach(processUserDoc);
+      }
 
-      // Seed de usuários padrão para admcledison se lista estiver vazia
-      if (
-        foundUsersMap.size === 0 &&
-        (isAdmcledisonAccount(tenantKey) || isAdmcledisonAccount(cleanUserEmail))
-      ) {
-        const defaultUsers: UserProfile[] = [
-          {
-            id: 'usr_admcledison',
-            name: 'admcledison',
-            email: 'admcledison@gmail.com',
-            role: 'admin',
-            tenantId: 'tenant_admcledison_gmail_com',
-            createdAt: 1791804530878,
-          },
-          {
-            id: 'usr_op_carollimap1993',
-            name: 'carollimap1993',
-            email: 'carollimap1993@gmail.com',
-            role: 'operador',
-            tenantId: 'tenant_admcledison_gmail_com',
-            adminEmail: 'admcledison@gmail.com',
-            adminName: 'admcledison',
-            createdAt: 1791804703979,
-          },
-        ];
-        for (const u of defaultUsers) {
-          foundUsersMap.set(u.email, u);
-          saveDocToCloud('users', u.id, u, 'usuarios');
-        }
+      // Garante operador oficial carollimap1993 se estiver logado como admcledison
+      if (isCurrentAdmcledison && !foundUsersMap.has('carollimap1993@gmail.com')) {
+        const defaultOp: UserProfile = {
+          id: 'usr_op_carollimap1993',
+          name: 'carollimap1993',
+          email: 'carollimap1993@gmail.com',
+          role: 'operador',
+          tenantId: 'tenant_admcledison_gmail_com',
+          adminEmail: 'admcledison@gmail.com',
+          adminName: 'admcledison',
+          createdAt: 1791804703979,
+        };
+        foundUsersMap.set('carollimap1993@gmail.com', defaultOp);
+        saveDocToCloud('users', defaultOp.id, defaultOp, 'usuarios');
       }
 
       if (foundUsersMap.size > 0 || users.length > 0) {
@@ -1090,20 +1107,22 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       if (firebaseUser) {
         const uid = firebaseUser.uid;
         const email = (firebaseUser.email || '').toLowerCase().trim();
+        const isMichel =
+          email === 'michel.lima20000@gmail.com' || email === 'michellimasilva979@gmail.com';
+        const isAdmcledison = isAdmcledisonAccount(email);
+        const canonicalTenant = isMichel
+          ? 'tenant_drift_01'
+          : isAdmcledison
+          ? 'tenant_admcledison_gmail_com'
+          : `tenant_${email.replace(/[^a-zA-Z0-9]/g, '_')}`;
 
-        // 1. Tenta buscar da API em nuvem (servidor full-stack multi-tenant)
-        let cloudApiUser: UserProfile | null = null;
-        if (email) {
-          cloudApiUser = await findUserInCloudByEmail(email);
-        }
+        // 1. Resolução paralela rápida da conta no Firebase e Servidor (máx 800ms)
+        const [cloudApiUser, cloudProfile] = await Promise.all([
+          email ? findUserInCloudByEmail(email).catch(() => null) : Promise.resolve(null),
+          getFirestoreUserProfile(email || uid).catch(() => null),
+        ]);
 
-        // 2. Tenta buscar do Cloud Firestore
-        let cloudProfile = await getFirestoreUserProfile(uid);
-        if (!cloudProfile && email) {
-          cloudProfile = await getFirestoreUserProfile(email);
-        }
-
-        // 3. Fallback de metadados embutidos no Firebase Auth
+        // 2. Fallback de metadados embutidos no Firebase Auth
         let authMeta: any = null;
         if (firebaseUser.photoURL) {
           try {
@@ -1116,14 +1135,14 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
         if (resolved) {
           const resolvedRole: UserRole = resolved.role === 'admin' ? 'admin' : 'operador';
           const resolvedTenantId =
-            resolved.tenantId || (resolvedRole === 'admin' ? (isAdmcledisonAccount(email) ? 'tenant_admcledison_gmail_com' : uid) : 'tenant_drift_01');
+            resolved.tenantId || (resolvedRole === 'admin' ? canonicalTenant : 'tenant_drift_01');
 
           const userObj: UserProfile = {
             id: uid,
             name: resolved.name || firebaseUser.displayName || email.split('@')[0],
             email: email || resolved.email,
             role: resolvedRole,
-            tenantId: isAdmcledisonAccount(email) ? 'tenant_admcledison_gmail_com' : resolvedTenantId,
+            tenantId: isAdmcledison ? 'tenant_admcledison_gmail_com' : resolvedTenantId,
             phone: resolved.phone,
             adminEmail: resolved.adminEmail || resolved.createdBy,
             adminName: resolved.adminName,
@@ -1136,39 +1155,10 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
           localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(userObj));
           localStorage.setItem(STORAGE_KEYS.CURRENT_TENANT, userObj.tenantId);
 
-          // Puxa imediatamente todos os dados da conta diretamente do Firebase Firestore!
+          // Puxa imediatamente todos os dados da conta diretamente do Firebase Firestore em alta velocidade!
           pullFromFirestoreDirectly(userObj.tenantId);
-          fetchTenantCloudData(userObj.tenantId).then((cData) => {
-            if (cData && Array.isArray(cData.vehicles) && cData.vehicles.length > 0) {
-              setVehiclesState((prev) => {
-                const { merged, unsyncedLocal } = mergeVehicles(prev, cData.vehicles);
-                if (unsyncedLocal.length > 0) {
-                  unsyncedLocal.forEach((v: any) => {
-                    saveDocToCloud('veiculos', v.id, { ...v, tenantId: v.tenantId || userObj.tenantId }, 'vehicles');
-                    saveVehicleCloud(v.tenantId || userObj.tenantId, v);
-                  });
-                }
-                return merged;
-              });
-            }
-            if (cData && Array.isArray(cData.rentals) && cData.rentals.length > 0) {
-              setRentalsState((prev) => {
-                const { merged, unsyncedLocal } = mergeRentals(prev, cData.rentals);
-                if (unsyncedLocal.length > 0) {
-                  unsyncedLocal.forEach((r: any) => {
-                    saveDocToCloud('corridas', r.id, { ...r, tenantId: r.tenantId || userObj.tenantId }, 'rentals');
-                    saveRentalCloud(r.tenantId || userObj.tenantId, r);
-                  });
-                }
-                return merged;
-              });
-            }
-          });
         } else if (email) {
-          const isMichel =
-            email === 'michel.lima20000@gmail.com' || email === 'michellimasilva979@gmail.com';
-          const isAdmcledison = isAdmcledisonAccount(email);
-          const defaultTenant = isMichel ? 'tenant_drift_01' : (isAdmcledison ? 'tenant_admcledison_gmail_com' : uid);
+          const defaultTenant = canonicalTenant;
 
           const defaultAdmin: UserProfile = {
             id: uid,
@@ -1805,18 +1795,6 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       ? 'tenant_admcledison_gmail_com'
       : `tenant_${trimmedEmail.replace(/[^a-zA-Z0-9]/g, '_')}`;
 
-    // 1. RESOLUÇÃO DO PERFIL COM BUSCA NO FIREBASE FIRESTORE E NUVEM
-    let cloudProfile: any = null;
-    try {
-      cloudProfile = await getFirestoreUserProfile(trimmedEmail);
-    } catch {}
-
-    if (!cloudProfile) {
-      try {
-        cloudProfile = await findUserInCloudByEmail(trimmedEmail);
-      } catch {}
-    }
-
     const localMatch = users.find((u) => u.email.toLowerCase() === trimmedEmail);
 
     // Validação de senha local caso usuário já possua senha cadastrada
@@ -1824,18 +1802,43 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       return { success: false, message: 'Senha incorreta. Verifique e tente novamente.' };
     }
 
+    // 1. RESOLUÇÃO RÁPIDA E PARALELA DO PERFIL NO FIREBASE E NA NUVEM (MÁX 800ms)
+    let cloudProfile: any = null;
+    let cloudApiUser: any = null;
+    try {
+      [cloudProfile, cloudApiUser] = await Promise.all([
+        getFirestoreUserProfile(trimmedEmail).catch(() => null),
+        findUserInCloudByEmail(trimmedEmail).catch(() => null),
+      ]);
+    } catch {}
+
+    const resolved = cloudProfile || cloudApiUser || localMatch;
+
     let profile: UserProfile;
 
-    if (cloudProfile) {
+    if (resolved) {
+      const resolvedRole: UserRole = resolved.role === 'admin' ? 'admin' : 'operador';
       profile = {
-        id: cloudProfile.id || cloudProfile.uid || `usr_${trimmedEmail.replace(/[^a-zA-Z0-9]/g, '_')}`,
-        name: cloudProfile.name || (isMichel ? 'Michel Lima' : (isAdmcledison ? 'Admcledison' : trimmedEmail.split('@')[0])),
+        id: resolved.id || resolved.uid || `usr_${trimmedEmail.replace(/[^a-zA-Z0-9]/g, '_')}`,
+        name: resolved.name || (isMichel ? 'Michel Lima' : (isAdmcledison ? 'Admcledison' : trimmedEmail.split('@')[0])),
         email: trimmedEmail,
-        role: cloudProfile.role || 'admin',
-        tenantId: cloudProfile.tenantId || canonicalTenantId,
-        createdAt: cloudProfile.createdAt || Date.now(),
-        adminEmail: cloudProfile.adminEmail,
-        adminName: cloudProfile.adminName,
+        role: resolvedRole,
+        tenantId: resolved.tenantId || (resolvedRole === 'operador' && resolved.adminEmail ? (isAdmcledisonAccount(resolved.adminEmail) ? 'tenant_admcledison_gmail_com' : `tenant_${resolved.adminEmail.replace(/[^a-zA-Z0-9]/g, '_')}`) : canonicalTenantId),
+        createdAt: resolved.createdAt || Date.now(),
+        adminEmail: resolved.adminEmail || resolved.createdBy,
+        adminName: resolved.adminName,
+        savedPassword: effectivePassword,
+      };
+    } else if (trimmedEmail === 'carollimap1993@gmail.com') {
+      profile = {
+        id: 'usr_op_carollimap1993',
+        name: 'carollimap1993',
+        email: 'carollimap1993@gmail.com',
+        role: 'operador',
+        tenantId: 'tenant_admcledison_gmail_com',
+        adminEmail: 'admcledison@gmail.com',
+        adminName: 'admcledison',
+        createdAt: 1791804703979,
         savedPassword: effectivePassword,
       };
     } else if (isAdmcledison) {
@@ -1846,11 +1849,6 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
         role: 'admin',
         tenantId: 'tenant_admcledison_gmail_com',
         createdAt: 1791725656602,
-        savedPassword: effectivePassword,
-      };
-    } else if (localMatch) {
-      profile = {
-        ...localMatch,
         savedPassword: effectivePassword,
       };
     } else {
@@ -1883,7 +1881,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
 
     playTone('start');
 
-    // 3. SINCRONIZAÇÃO EM SEGUNDO PLANO (NÃO-BLOQUEANTE - PUXA DIRETAMENTE DO FIREBASE)
+    // 3. SINCRONIZAÇÃO EM SEGUNDO PLANO (PUXA DIRETAMENTE DO FIREBASE SEM TRAVAR A TELA)
     (async () => {
       try {
         // Autentica ou cria credencial no Firebase Auth silenciosamente
@@ -1901,35 +1899,8 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
         registerUserInCloud(profile);
         saveDocToCloud('users', profile.id, profile, 'usuarios');
 
-        // Puxa dados reais do Firebase Firestore diretamente para este tenant
+        // Puxa dados reais do Firebase Firestore diretamente para este tenant em alta velocidade
         await pullFromFirestoreDirectly(profile.tenantId);
-        const cloudTenantData = await fetchTenantCloudData(profile.tenantId);
-        if (cloudTenantData) {
-          if (Array.isArray(cloudTenantData.vehicles) && cloudTenantData.vehicles.length > 0) {
-            setVehiclesState((prev) => {
-              const { merged } = mergeVehicles(prev, cloudTenantData.vehicles, profile.tenantId);
-              return merged;
-            });
-          }
-          if (Array.isArray(cloudTenantData.rentals) && cloudTenantData.rentals.length > 0) {
-            setRentalsState((prev) => {
-              const { merged } = mergeRentals(prev, cloudTenantData.rentals, profile.tenantId);
-              return merged;
-            });
-          }
-          if (Array.isArray(cloudTenantData.queue) && cloudTenantData.queue.length > 0) {
-            setQueueState((prev) => {
-              const { merged } = mergeQueue(prev, cloudTenantData.queue, profile.tenantId);
-              return merged;
-            });
-          }
-          if (Array.isArray(cloudTenantData.users) && cloudTenantData.users.length > 0) {
-            setUsers((prev) => {
-              const { merged } = mergeUsers(prev, cloudTenantData.users);
-              return merged;
-            });
-          }
-        }
       } catch (bgErr) {
         console.warn('[Sync] Sincronização em segundo plano concluída com aviso:', bgErr);
       }

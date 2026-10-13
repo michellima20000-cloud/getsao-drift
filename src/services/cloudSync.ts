@@ -10,21 +10,21 @@ export interface TenantCloudPayload {
   city?: string;
 }
 
-const BACKEND_URL = 'https://ais-dev-kyyw3vpv6pjlsdorur5kj2-503290812821.us-west1.run.app';
+const ACTIVE_BACKEND_URL = 'https://ais-dev-es25zfjn6oqk6olk52wjx2-408064427062.us-east1.run.app';
 
 /**
- * Executa requisição HTTP resiliente com timeout de 2.5s e suporte a fallback de URL
- * (Garante funcionamento perfeito em getsao-drift.vercel.app, PWA, mobile e local)
+ * Executa requisição HTTP otimizada e ultra-rápida (timeout de 1200ms) sem travar a interface
  */
-async function apiFetch(path: string, options?: RequestInit, timeoutMs = 2500): Promise<any | null> {
+async function apiFetch(path: string, options?: RequestInit, timeoutMs = 1200): Promise<any | null> {
   const isExternalHost =
     typeof window !== 'undefined' &&
     window.location.hostname !== 'localhost' &&
     !window.location.hostname.includes('run.app');
 
+  // No host atual ou local, tenta a rota relativa /api/... primeiro; em host externo, tenta o backend ativo
   const targets = isExternalHost
-    ? [`${BACKEND_URL}${path}`, path]
-    : [path, `${BACKEND_URL}${path}`];
+    ? [`${ACTIVE_BACKEND_URL}${path}`, path]
+    : [path, `${ACTIVE_BACKEND_URL}${path}`];
 
   for (const target of targets) {
     const controller = new AbortController();
