@@ -1,0 +1,35 @@
+{
+  "id": "tenant_drift_01",
+  "name": "Drift Park",
+  "city": "Pista Principal",
+  "pricing": {
+    "5": 15,
+    "10": 25,
+    "15": 35,
+    "20": 45,
+    "30": 60
+  },
+  "vehicles": [],
+  "rentals": [],
+  "queue": [],
+  "users": [
+    {
+      "id": "8vMouomTIqbZegeXq9DkT8bPPha2",
+      "name": "Michel Lima",
+      "email": "michellimasilva979@gmail.com",
+      "role": "admin",
+      "tenantId": "tenant_drift_01",
+      "createdAt": 1791813452613
+    },
+    {
+      "id": "8vMouomTIqbZegeXq9DkT8bPPha2",
+      "name": "Michel Lima",
+      "email": "michel.lima20000@gmail.com",
+      "role": "admin",
+      "tenantId": "tenant_drift_01",
+      "createdAt": 1791813452613,
+      "savedPassword": "123456"
+    }
+  ],
+  "updatedAt": 1791977845790
+}

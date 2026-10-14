@@ -14,9 +14,9 @@ const BACKEND_URL =
   (typeof import.meta !== 'undefined' && import.meta.env?.VITE_BACKEND_URL) || '';
 
 /**
- * Executa requisição HTTP otimizada e ultra-rápida (timeout de 1200ms) sem travar a interface
+ * Executa requisição HTTP otimizada e ultra-resiliente (timeout de 4000ms para redes móveis e múltiplos dispositivos)
  */
-async function apiFetch(path: string, options?: RequestInit, timeoutMs = 1200): Promise<any | null> {
+async function apiFetch(path: string, options?: RequestInit, timeoutMs = 4000): Promise<any | null> {
   const targets = BACKEND_URL ? [path, `${BACKEND_URL}${path}`] : [path];
 
   for (const target of targets) {

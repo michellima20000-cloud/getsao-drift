@@ -47,6 +47,8 @@ export interface Vehicle {
   totalRuns: number;
   activeRentalId?: string;
   imageUrl?: string;
+  adminEmail?: string;
+  createdBy?: string;
 }
 
 export interface Rental {
@@ -86,6 +88,8 @@ export interface Rental {
     cashAmount?: number;
     shiftName?: string;
   };
+  adminEmail?: string;
+  createdBy?: string;
 }
 
 export interface QueueItem {
@@ -98,6 +102,8 @@ export interface QueueItem {
   status: 'aguardando' | 'chamado' | 'cancelado';
   addedAt: number;
   notes?: string;
+  adminEmail?: string;
+  createdBy?: string;
 }
 
 export interface PriceTier {

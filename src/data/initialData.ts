@@ -16,6 +16,21 @@ export const INITIAL_TENANTS: Tenant[] = [
       30: 60.0,
     },
   },
+  {
+    id: 'tenant_admcledison_gmail_com',
+    name: 'DRIFT PARK',
+    city: 'Pista Principal',
+    document: '00.000.000/0001-00',
+    active: true,
+    colorTheme: '#00F0FF',
+    pricing: {
+      5: 15.0,
+      10: 25.0,
+      15: 35.0,
+      20: 45.0,
+      30: 60.0,
+    },
+  },
 ];
 
 // Dados 100% reais carregados diretamente da nuvem pelo UID/tenantId

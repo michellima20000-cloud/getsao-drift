@@ -105,16 +105,18 @@ export const analytics: any = null;
 
 // Initialize Firestore with IndexedDB Local Persistence
 // Permite cache local completo e reduz a latência de carregamento a zero milissegundos
+// ID do banco de dados ativo fornecido pelo usuário para o Drift Park Gestão
+export const ACTIVE_DATABASE_ID = "ai-studio-driftparkgestode-2200359e-b3be-4b5e-9c71-5f960e94bb6b";
+
 export const db = (() => {
-  const databaseId = "ai-studio-gympulse-298dbea"; // ID do seu banco de dados ativo
   try {
     return initializeFirestore(app, {
       localCache: persistentLocalCache({
         tabManager: persistentMultipleTabManager(),
       }),
-    }, databaseId);
+    }, ACTIVE_DATABASE_ID);
   } catch (initErr) {
-    const fallbackDb = getFirestore(app, databaseId);
+    const fallbackDb = getFirestore(app, ACTIVE_DATABASE_ID);
     if (typeof window !== 'undefined') {
       try {
         enableIndexedDbPersistence(fallbackDb).catch((persistErr: any) => {
@@ -130,17 +132,8 @@ export const db = (() => {
   }
 })();
 
-// Ativa enableIndexedDbPersistence também explicitamente caso o SDK use a instância existente
-if (typeof window !== 'undefined') {
-  try {
-    enableIndexedDbPersistence(db).catch((err: any) => {
-      // Ignora de forma silenciosa se já estiver ativo ou gerenciado por multi-tab
-      if (err?.code !== 'failed-precondition' && err?.code !== 'unimplemented') {
-        console.info('[Firestore] IndexedDB Cache verificado com sucesso.');
-      }
-    });
-  } catch {}
-}
+// Conexão canônica com o banco de dados ativo do Firestore com cache local multi-aba
+export const defaultDb = db;
 
 // Verificação não-bloqueante de conexão na inicialização
 if (typeof window !== 'undefined') {
@@ -234,6 +227,7 @@ export async function saveDocToCloud(
         }
       }
     }
+    // Gravação no Firestore concluída com chave O(1) de e-mail e UID
   } catch (fsErr) {
     console.warn(`[Firebase] Erro ao preparar gravação Firestore em ${collectionName}:`, fsErr);
   }
@@ -336,14 +330,13 @@ export async function testAndVerifyFirestore(): Promise<{
     ) {
       return {
         success: false,
-        message:
-          "Banco de dados 'ai-studio-gympulse-298dbea' não encontrado. Verifique as configurações no Firebase Console.",
+        message: `Banco de dados '${ACTIVE_DATABASE_ID}' não encontrado. Verifique as configurações no Firebase Console.`,
       };
     }
     markFirestoreAvailable();
     return {
       success: true,
-      message: 'Cloud Firebase (ai-studio-gympulse-298dbea) conectado e operacional!',
+      message: `Cloud Firebase (${ACTIVE_DATABASE_ID}) conectado e operacional!`,
     };
   }
 }
@@ -371,7 +364,8 @@ export async function getFirestoreUserProfile(uidOrEmail: string): Promise<any |
 
   const fetchInternal = async (): Promise<any | null> => {
     // 1. Busca direta simultânea O(1) por Document ID (e-mail e UID em paralelo)
-    const directPromises = [
+    // 1. Busca direta O(1) por Document ID (e-mail e UID em paralelo)
+    const directPromises: Promise<any>[] = [
       getDoc(doc(db, 'users', clean)).catch(() => null),
       getDoc(doc(db, 'usuarios', clean)).catch(() => null),
     ];
@@ -389,12 +383,17 @@ export async function getFirestoreUserProfile(uidOrEmail: string): Promise<any |
     }
 
     // 2. Busca paralela nas coleções users e usuarios pelo campo email
-    const [snap1, snap2] = await Promise.all([
+    const queryPromises: Promise<any>[] = [
       getDocs(query(collection(db, 'users'), where('email', '==', clean))).catch(() => null),
       getDocs(query(collection(db, 'usuarios'), where('email', '==', clean))).catch(() => null),
-    ]);
-    if (snap1 && !snap1.empty) return snap1.docs[0].data();
-    if (snap2 && !snap2.empty) return snap2.docs[0].data();
+    ];
+
+    const querySnaps = await Promise.all(queryPromises);
+    for (const snap of querySnaps) {
+      if (snap && !snap.empty) {
+        return snap.docs[0].data();
+      }
+    }
 
     // 3. Busca no Realtime Database se disponível
     if (rtdb) {
@@ -418,8 +417,8 @@ export async function getFirestoreUserProfile(uidOrEmail: string): Promise<any |
   };
 
   try {
-    // Timeout máximo de 400ms para evitar qualquer travamento da tela
-    const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 400));
+    // Timeout seguro de 3000ms garantindo resposta em redes móveis (3G/4G/5G) sem travamento
+    const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000));
     return await Promise.race([fetchInternal(), timeoutPromise]);
   } catch (err) {
     console.warn('Aviso ao consultar perfil no Firestore:', err);

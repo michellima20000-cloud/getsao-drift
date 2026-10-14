@@ -15,7 +15,68 @@
           "30": 60
         }
       },
-      "vehicles": [],
+      "vehicles": [
+        {
+          "id": "veh_tenant_clecio_drift_01",
+          "name": "Drift Storm #01",
+          "code": "#01",
+          "category": "DRIFT",
+          "status": "disponivel",
+          "batteryLevel": 100,
+          "totalRuns": 0,
+          "imageUrl": "https://images.unsplash.com/photo-1596707204928-87b6131c1955?auto=format&fit=crop&w=400&q=80",
+          "adminEmail": "admcledison@gmail.com",
+          "tenantId": "tenant_admcledison_gmail_com"
+        },
+        {
+          "id": "veh_tenant_clecio_drift_02",
+          "name": "Drift Storm #02",
+          "code": "#02",
+          "category": "DRIFT",
+          "status": "disponivel",
+          "batteryLevel": 95,
+          "totalRuns": 0,
+          "imageUrl": "https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?auto=format&fit=crop&w=400&q=80",
+          "adminEmail": "admcledison@gmail.com",
+          "tenantId": "tenant_admcledison_gmail_com"
+        },
+        {
+          "id": "veh_tenant_clecio_drift_03",
+          "name": "Drift Storm #03",
+          "code": "#03",
+          "category": "DRIFT",
+          "status": "disponivel",
+          "batteryLevel": 90,
+          "totalRuns": 0,
+          "imageUrl": "https://images.unsplash.com/photo-1558981403-c5f9899a28bc?auto=format&fit=crop&w=400&q=80",
+          "adminEmail": "admcledison@gmail.com",
+          "tenantId": "tenant_admcledison_gmail_com"
+        },
+        {
+          "id": "veh_tenant_clecio_drift_04",
+          "name": "Jeep Safari #01",
+          "code": "#04",
+          "category": "JEEP",
+          "status": "disponivel",
+          "batteryLevel": 100,
+          "totalRuns": 0,
+          "imageUrl": "https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=400&q=80",
+          "adminEmail": "admcledison@gmail.com",
+          "tenantId": "tenant_admcledison_gmail_com"
+        },
+        {
+          "id": "veh_tenant_clecio_drift_05",
+          "name": "Bate-Bate Nitro #01",
+          "code": "#05",
+          "category": "BATE_BATE",
+          "status": "disponivel",
+          "batteryLevel": 85,
+          "totalRuns": 0,
+          "imageUrl": "https://images.unsplash.com/photo-1579783902614-a3fb3927b675?auto=format&fit=crop&w=400&q=80",
+          "adminEmail": "admcledison@gmail.com",
+          "tenantId": "tenant_admcledison_gmail_com"
+        }
+      ],
       "rentals": [],
       "queue": [],
       "users": [
