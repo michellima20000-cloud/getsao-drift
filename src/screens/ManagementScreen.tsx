@@ -91,13 +91,22 @@ export const ManagementScreen: React.FC = () => {
   // 1. Administrador logado atual (apenas 1 card no topo)
   const adminUser = currentUser;
 
-  // 2. Operadores vinculados estritamente a este Administrador e à Pista
+  // 2. Operadores vinculados a este Administrador e à Pista
+  const isMasterAdmin =
+    currentUser?.email === 'michel.lima20000@gmail.com' ||
+    currentUser?.email === 'michellimasilva979@gmail.com';
+
   const tenantOperators = users.filter(
     (u) =>
-      (u.tenantId === currentUser?.tenantId || u.adminEmail === currentUser?.email) &&
       u.role === 'operador' &&
       u.id !== currentUser?.id &&
-      u.email.toLowerCase() !== (currentUser?.email || '').toLowerCase()
+      u.email.toLowerCase() !== (currentUser?.email || '').toLowerCase() &&
+      (
+        isMasterAdmin ||
+        u.tenantId === currentUser?.tenantId ||
+        u.adminEmail === currentUser?.email ||
+        (currentUser?.email && u.adminEmail && u.adminEmail.toLowerCase() === currentUser.email.toLowerCase())
+      )
   );
 
   // Deduplicação estrita para garantir zero repetições na UI

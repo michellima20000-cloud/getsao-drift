@@ -24,6 +24,7 @@ import {
   Banknote,
   ZoomIn,
   Maximize2,
+  RefreshCw,
 } from 'lucide-react';
 
 export const DashboardScreen: React.FC = () => {
@@ -43,6 +44,9 @@ export const DashboardScreen: React.FC = () => {
     playSound,
     isAlarmMuted,
     toggleAlarmMute,
+    isSyncing,
+    isFirestoreOnline,
+    syncWithCloudNow,
   } = useDriftPark();
 
   // Active & Paused races on track
@@ -125,13 +129,38 @@ export const DashboardScreen: React.FC = () => {
           </p>
         </div>
 
-        <button
-          onClick={() => setActiveTab('novo')}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#00B4D8] hover:bg-[#48CAE4] text-[#070D1E] text-xs font-bold shadow-[0_0_15px_rgba(0,180,216,0.4)] transition-all hover:scale-105"
-        >
-          <Play size={14} className="fill-current" />
-          <span>Alugar</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={syncWithCloudNow}
+            title={
+              isSyncing
+                ? 'Sincronizando com o Firebase...'
+                : 'Sincronizado com o Firebase. Clique para atualizar agora.'
+            }
+            className={`flex items-center gap-1 px-2.5 py-2 rounded-xl border text-xs font-semibold transition-all ${
+              isSyncing
+                ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50 animate-pulse'
+                : 'bg-[#141E38] hover:bg-[#1C284C] text-slate-300 hover:text-white border-slate-700/80 shadow-sm'
+            }`}
+          >
+            <RefreshCw
+              size={13}
+              className={`shrink-0 ${isSyncing ? 'animate-spin text-cyan-400' : 'text-emerald-400'}`}
+            />
+            <span className="hidden xs:inline text-[11px] font-medium">
+              {isSyncing ? 'Sincronizando...' : 'Sincronizar'}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('novo')}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#00B4D8] hover:bg-[#48CAE4] text-[#070D1E] text-xs font-bold shadow-[0_0_15px_rgba(0,180,216,0.4)] transition-all hover:scale-105"
+          >
+            <Play size={14} className="fill-current" />
+            <span>Alugar</span>
+          </button>
+        </div>
       </div>
 
       {/* 2. Frota Total Card (As specified in prompt: "FROTA TOTAL (X livres)") */}

@@ -69,7 +69,13 @@ initSeedData();
 function normalizeTenantId(tenantId: string): string {
   if (!tenantId) return 'tenant_drift_01';
   const norm = tenantId.toLowerCase().replace(/[^a-z0-9]/g, '');
-  if (norm.includes('admcledison')) {
+  if (
+    norm.includes('admcledison') ||
+    norm.includes('admcledson') ||
+    norm.includes('clecio') ||
+    norm.includes('1791633952871') ||
+    norm === 'tenant_admcledison_gmail_com'
+  ) {
     return 'tenant_admcledison_gmail_com';
   }
   return tenantId.replace(/[^a-zA-Z0-9_-]/g, '_');

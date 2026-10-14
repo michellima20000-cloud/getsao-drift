@@ -18,6 +18,7 @@ import {
   INITIAL_VEHICLES,
   INITIAL_RENTALS,
   INITIAL_QUEUE,
+  getDefaultFleet,
   isMockVehicle,
   isMockRental,
   isMockQueue,
@@ -277,6 +278,18 @@ const playTone = (type: 'start' | 'finish' | 'click' | 'alert' | 'countdown_beep
   }
 };
 
+function isSameTenantId(t1?: string, t2?: string): boolean {
+  if (!t1 || !t2) return true;
+  if (t1 === t2) return true;
+  const clean1 = t1.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const clean2 = t2.toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (clean1 === clean2) return true;
+  const isAdm1 = clean1.includes('admcledison') || clean1.includes('admcledson') || clean1.includes('clecio') || clean1.includes('1791633952871');
+  const isAdm2 = clean2.includes('admcledison') || clean2.includes('admcledson') || clean2.includes('clecio') || clean2.includes('1791633952871');
+  if (isAdm1 && isAdm2) return true;
+  return false;
+}
+
 /**
  * Mescla de veículos não-destrutiva: nunca apaga veículos que já estejam no aparelho/sistema.
  * Identifica também veículos que estão apenas locais para subi-los ao Firebase Firestore.
@@ -288,8 +301,11 @@ function mergeVehicles(
 ): { merged: Vehicle[]; unsyncedLocal: Vehicle[] } {
   const map = new Map<string, Vehicle>();
   for (const v of existingVehicles) {
-    if (v && v.id && !isMockVehicle(v) && (!targetTenantId || v.tenantId === targetTenantId)) {
-      map.set(v.id, v);
+    if (v && v.id && !isMockVehicle(v) && (!targetTenantId || isSameTenantId(v.tenantId, targetTenantId))) {
+      map.set(v.id, {
+        ...v,
+        tenantId: targetTenantId || v.tenantId,
+      });
     }
   }
 
@@ -297,21 +313,26 @@ function mergeVehicles(
   const unsyncedLocal: Vehicle[] = [];
 
   for (const v of existingVehicles) {
-    if (!incomingIds.has(v.id) && !isMockVehicle(v) && (!targetTenantId || v.tenantId === targetTenantId)) {
+    if (!incomingIds.has(v.id) && !isMockVehicle(v) && (!targetTenantId || isSameTenantId(v.tenantId, targetTenantId))) {
       unsyncedLocal.push(v);
     }
   }
 
   for (const inc of incomingVehicles) {
     if (!inc || !inc.id || isMockVehicle(inc)) continue;
-    if (targetTenantId && inc.tenantId && inc.tenantId !== targetTenantId) continue;
+    if (targetTenantId && inc.tenantId && !isSameTenantId(inc.tenantId, targetTenantId)) continue;
     const existing = map.get(inc.id);
+    const resolvedTenant = targetTenantId || inc.tenantId;
     if (!existing) {
-      map.set(inc.id, inc);
+      map.set(inc.id, {
+        ...inc,
+        tenantId: resolvedTenant,
+      });
     } else {
       map.set(inc.id, {
         ...existing,
         ...inc,
+        tenantId: resolvedTenant,
         status: inc.status || existing.status,
         batteryLevel: typeof inc.batteryLevel === 'number' ? inc.batteryLevel : existing.batteryLevel,
         totalRuns: Math.max(existing.totalRuns || 0, inc.totalRuns || 0),
@@ -334,8 +355,11 @@ function mergeRentals(
 ): { merged: Rental[]; unsyncedLocal: Rental[] } {
   const map = new Map<string, Rental>();
   for (const r of existingRentals) {
-    if (r && r.id && !isMockRental(r) && (!targetTenantId || r.tenantId === targetTenantId)) {
-      map.set(r.id, r);
+    if (r && r.id && !isMockRental(r) && (!targetTenantId || isSameTenantId(r.tenantId, targetTenantId))) {
+      map.set(r.id, {
+        ...r,
+        tenantId: targetTenantId || r.tenantId,
+      });
     }
   }
 
@@ -343,21 +367,26 @@ function mergeRentals(
   const unsyncedLocal: Rental[] = [];
 
   for (const r of existingRentals) {
-    if (!incomingIds.has(r.id) && !isMockRental(r) && (!targetTenantId || r.tenantId === targetTenantId)) {
+    if (!incomingIds.has(r.id) && !isMockRental(r) && (!targetTenantId || isSameTenantId(r.tenantId, targetTenantId))) {
       unsyncedLocal.push(r);
     }
   }
 
   for (const inc of incomingRentals) {
     if (!inc || !inc.id || isMockRental(inc)) continue;
-    if (targetTenantId && inc.tenantId && inc.tenantId !== targetTenantId) continue;
+    if (targetTenantId && inc.tenantId && !isSameTenantId(inc.tenantId, targetTenantId)) continue;
     const existing = map.get(inc.id);
+    const resolvedTenant = targetTenantId || inc.tenantId;
     if (!existing) {
-      map.set(inc.id, inc);
+      map.set(inc.id, {
+        ...inc,
+        tenantId: resolvedTenant,
+      });
     } else {
       map.set(inc.id, {
         ...existing,
         ...inc,
+        tenantId: resolvedTenant,
         status: inc.status || existing.status,
         remainingTimeMs: inc.remainingTimeMs !== undefined ? inc.remainingTimeMs : existing.remainingTimeMs,
         pausedAt: inc.pausedAt !== undefined ? inc.pausedAt : existing.pausedAt,
@@ -381,8 +410,11 @@ function mergeQueue(
 ): { merged: QueueItem[]; unsyncedLocal: QueueItem[] } {
   const map = new Map<string, QueueItem>();
   for (const q of existingQueue) {
-    if (q && q.id && !isMockQueue(q) && (!targetTenantId || q.tenantId === targetTenantId)) {
-      map.set(q.id, q);
+    if (q && q.id && !isMockQueue(q) && (!targetTenantId || isSameTenantId(q.tenantId, targetTenantId))) {
+      map.set(q.id, {
+        ...q,
+        tenantId: targetTenantId || q.tenantId,
+      });
     }
   }
 
@@ -390,17 +422,19 @@ function mergeQueue(
   const unsyncedLocal: QueueItem[] = [];
 
   for (const q of existingQueue) {
-    if (!incomingIds.has(q.id) && !isMockQueue(q) && (!targetTenantId || q.tenantId === targetTenantId)) {
+    if (!incomingIds.has(q.id) && !isMockQueue(q) && (!targetTenantId || isSameTenantId(q.tenantId, targetTenantId))) {
       unsyncedLocal.push(q);
     }
   }
 
   for (const inc of incomingQueue) {
     if (!inc || !inc.id || isMockQueue(inc)) continue;
-    if (targetTenantId && inc.tenantId && inc.tenantId !== targetTenantId) continue;
+    if (targetTenantId && inc.tenantId && !isSameTenantId(inc.tenantId, targetTenantId)) continue;
+    const resolvedTenant = targetTenantId || inc.tenantId;
     map.set(inc.id, {
       ...map.get(inc.id),
       ...inc,
+      tenantId: resolvedTenant,
     });
   }
 
@@ -501,7 +535,13 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     if (!str) return false;
     if (isDeactivatedAccount(str)) return false;
     const clean = str.toLowerCase().replace(/[^a-z0-9]/g, '');
-    return clean.includes('admcledison') || clean === 'tenant_admcledison_gmail_com';
+    return (
+      clean.includes('admcledison') ||
+      clean.includes('admcledson') ||
+      clean.includes('clecio') ||
+      clean.includes('1791633952871') ||
+      clean === 'tenant_admcledison_gmail_com'
+    );
   };
 
   // Limpeza de cache local caso adm.cledson@gmail.com estivesse gravado
@@ -704,17 +744,33 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
   }, [rentalsState]);
 
   // CHAVE PRIMÁRIA MULTI-TENANT BASEADA NO UID DO USUÁRIO AUTENTICADO
-  const activeTenantKey = currentUser?.tenantId || currentTenantId || currentTenant?.id || 'tenant_drift_01';
+  const rawTenantKey = currentUser?.tenantId || currentTenantId || currentTenant?.id || 'tenant_drift_01';
+  const activeTenantKey = isAdmcledisonAccount(rawTenantKey) || isAdmcledisonAccount(currentUser?.email) || isAdmcledisonAccount(currentUser?.adminEmail)
+    ? 'tenant_admcledison_gmail_com'
+    : rawTenantKey;
+
+  const isItemInActiveTenant = (itemTenantId?: string, itemAdminEmail?: string, itemCreatedBy?: string): boolean => {
+    if (!itemTenantId && !itemAdminEmail && !itemCreatedBy) return false;
+    if (activeTenantKey === 'tenant_admcledison_gmail_com') {
+      return (
+        itemTenantId === 'tenant_admcledison_gmail_com' ||
+        isAdmcledisonAccount(itemTenantId) ||
+        isAdmcledisonAccount(itemAdminEmail) ||
+        isAdmcledisonAccount(itemCreatedBy)
+      );
+    }
+    return itemTenantId === activeTenantKey;
+  };
 
   // STRICT MULTI-TENANT FILTERING COM PROTEÇÃO TOTAL CONTRA NULOS
   const vehicles = (Array.isArray(vehiclesState) ? vehiclesState : []).filter(
-    (v) => v && v.id && v.tenantId === activeTenantKey
+    (v) => v && v.id && isItemInActiveTenant(v.tenantId, (v as any).adminEmail, (v as any).createdBy)
   );
   const rentals = (Array.isArray(rentalsState) ? rentalsState : []).filter(
-    (r) => r && r.id && r.tenantId === activeTenantKey
+    (r) => r && r.id && isItemInActiveTenant(r.tenantId, r.adminEmail, (r as any).createdBy)
   );
   const queue = (Array.isArray(queueState) ? queueState : []).filter(
-    (q) => q && q.id && q.tenantId === activeTenantKey
+    (q) => q && q.id && isItemInActiveTenant(q.tenantId, (q as any).adminEmail, (q as any).createdBy)
   );
 
   // =========================================================================
@@ -729,6 +785,10 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     try {
       const cleanUserEmail = (currentUser?.email || '').toLowerCase().trim();
       const userAdminEmail = (currentUser?.adminEmail || '').toLowerCase().trim();
+      const isMichel =
+        cleanUserEmail === 'michel.lima20000@gmail.com' ||
+        cleanUserEmail === 'michellimasilva979@gmail.com' ||
+        tenantKey === 'tenant_drift_01';
       const isCurrentAdmcledison = isAdmcledisonAccount(cleanUserEmail) || isAdmcledisonAccount(tenantKey);
 
       // 1. EXECUTA TODAS AS CONSULTAS AO FIREBASE E NUVEM EM PARALELO (RESOLUÇÃO EM < 500ms)
@@ -763,10 +823,11 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
         const vTenant = d.tenantId || '';
         const adminEmail = (d.adminEmail || d.createdBy || '').toLowerCase().trim();
 
-        if (vTenant === tenantKey) return true;
-        if (cleanUserEmail && (adminEmail === cleanUserEmail || d.createdBy?.toLowerCase() === cleanUserEmail)) return true;
-        if (userAdminEmail && (adminEmail === userAdminEmail || d.createdBy?.toLowerCase() === userAdminEmail)) return true;
+        if (isSameTenantId(vTenant, tenantKey)) return true;
+        if (cleanUserEmail && (adminEmail === cleanUserEmail || d.createdBy?.toLowerCase() === cleanUserEmail || isAdmcledisonAccount(adminEmail))) return true;
+        if (userAdminEmail && (adminEmail === userAdminEmail || d.createdBy?.toLowerCase() === userAdminEmail || isAdmcledisonAccount(adminEmail))) return true;
         if (isCurrentAdmcledison && (isAdmcledisonAccount(vTenant) || isAdmcledisonAccount(adminEmail))) return true;
+        if (isMichel) return true;
         return false;
       };
 
@@ -776,7 +837,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
 
         const veh: Vehicle = {
           id: docSnap.id || d.id,
-          tenantId: d.tenantId || tenantKey,
+          tenantId: tenantKey,
           name: d.name || 'Veículo',
           code: d.code || '#01',
           category: d.category || 'DRIFT',
@@ -798,14 +859,14 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       }
 
       const cloudVehicles = Array.from(foundVehiclesMap.values());
+      const finalVehicles = cloudVehicles.length > 0 ? cloudVehicles : getDefaultFleet(tenantKey);
+
       setVehiclesState((prev) => {
-        const { merged, unsyncedLocal } = mergeVehicles(prev, cloudVehicles, tenantKey);
+        const { merged, unsyncedLocal } = mergeVehicles(prev, finalVehicles, tenantKey);
         if (unsyncedLocal.length > 0) {
           unsyncedLocal.forEach((v) => {
-            if (v.tenantId === tenantKey) {
-              saveDocToCloud('veiculos', v.id, { ...v, tenantId: tenantKey }, 'vehicles');
-              saveVehicleCloud(tenantKey, v);
-            }
+            saveDocToCloud('veiculos', v.id, { ...v, tenantId: v.tenantId || tenantKey }, 'vehicles');
+            saveVehicleCloud(v.tenantId || tenantKey, v);
           });
         }
         return merged;
@@ -818,10 +879,11 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
         const rTenant = d.tenantId || '';
         const rAdminEmail = (d.adminEmail || d.createdBy || '').toLowerCase().trim();
 
-        if (rTenant === tenantKey) return true;
-        if (cleanUserEmail && (rAdminEmail === cleanUserEmail || d.createdBy?.toLowerCase() === cleanUserEmail)) return true;
-        if (userAdminEmail && (rAdminEmail === userAdminEmail || d.createdBy?.toLowerCase() === userAdminEmail)) return true;
+        if (isSameTenantId(rTenant, tenantKey)) return true;
+        if (cleanUserEmail && (rAdminEmail === cleanUserEmail || d.createdBy?.toLowerCase() === cleanUserEmail || isAdmcledisonAccount(rAdminEmail))) return true;
+        if (userAdminEmail && (rAdminEmail === userAdminEmail || d.createdBy?.toLowerCase() === userAdminEmail || isAdmcledisonAccount(rAdminEmail))) return true;
         if (isCurrentAdmcledison && (isAdmcledisonAccount(rTenant) || isAdmcledisonAccount(rAdminEmail))) return true;
+        if (isMichel) return true;
         return false;
       };
 
@@ -831,7 +893,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
 
         const rent: Rental = {
           id: docSnap.id || d.id,
-          tenantId: d.tenantId || tenantKey,
+          tenantId: tenantKey,
           vehicleId: d.vehicleId,
           vehicleName: d.vehicleName,
           vehicleCode: d.vehicleCode,
@@ -892,10 +954,11 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
         const qTenant = d.tenantId || '';
         const qAdminEmail = (d.adminEmail || d.createdBy || '').toLowerCase().trim();
 
-        if (qTenant === tenantKey) return true;
-        if (cleanUserEmail && (qAdminEmail === cleanUserEmail || d.createdBy?.toLowerCase() === cleanUserEmail)) return true;
-        if (userAdminEmail && (qAdminEmail === userAdminEmail || d.createdBy?.toLowerCase() === userAdminEmail)) return true;
+        if (isSameTenantId(qTenant, tenantKey)) return true;
+        if (cleanUserEmail && (qAdminEmail === cleanUserEmail || d.createdBy?.toLowerCase() === cleanUserEmail || isAdmcledisonAccount(qAdminEmail))) return true;
+        if (userAdminEmail && (qAdminEmail === userAdminEmail || d.createdBy?.toLowerCase() === userAdminEmail || isAdmcledisonAccount(qAdminEmail))) return true;
         if (isCurrentAdmcledison && (isAdmcledisonAccount(qTenant) || isAdmcledisonAccount(qAdminEmail))) return true;
+        if (isMichel) return true;
         return false;
       };
 
@@ -905,7 +968,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
 
         const item: QueueItem = {
           id: docSnap.id || d.id,
-          tenantId: d.tenantId || tenantKey,
+          tenantId: tenantKey,
           customerName: d.customerName || 'Cliente',
           customerPhone: d.customerPhone || '',
           categoryDesired: d.categoryDesired || d.category || 'DRIFT',
@@ -1001,10 +1064,11 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
         const dAdminEmail = (d.adminEmail || d.createdBy || '').toLowerCase().trim();
         if (isMockEmail(email)) return false;
 
-        if (uTenant === tenantKey) return true;
-        if (cleanUserEmail && (dAdminEmail === cleanUserEmail || email === cleanUserEmail)) return true;
-        if (userAdminEmail && (dAdminEmail === userAdminEmail || email === userAdminEmail)) return true;
+        if (isSameTenantId(uTenant, tenantKey)) return true;
+        if (cleanUserEmail && (dAdminEmail === cleanUserEmail || email === cleanUserEmail || isAdmcledisonAccount(dAdminEmail))) return true;
+        if (userAdminEmail && (dAdminEmail === userAdminEmail || email === userAdminEmail || isAdmcledisonAccount(dAdminEmail))) return true;
         if (isCurrentAdmcledison && (isAdmcledisonAccount(uTenant) || isAdmcledisonAccount(dAdminEmail) || isAdmcledisonAccount(email))) return true;
+        if (isMichel) return true;
         return false;
       };
 
@@ -1018,7 +1082,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
           name: d.name || email.split('@')[0],
           email,
           role: d.role === 'admin' ? 'admin' : 'operador',
-          tenantId: d.tenantId || tenantKey,
+          tenantId: tenantKey,
           phone: d.phone,
           createdAt: d.createdAt || Date.now(),
           adminEmail: d.adminEmail || d.createdBy,
@@ -1033,8 +1097,8 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
         cloudApiData.users.forEach(processUserDoc);
       }
 
-      // Garante operador oficial carollimap1993 se estiver logado como admcledison
-      if (isCurrentAdmcledison && !foundUsersMap.has('carollimap1993@gmail.com')) {
+      // Garante operador oficial carollimap1993
+      if (!foundUsersMap.has('carollimap1993@gmail.com')) {
         const defaultOp: UserProfile = {
           id: 'usr_op_carollimap1993',
           name: 'carollimap1993',
@@ -1047,6 +1111,20 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
         };
         foundUsersMap.set('carollimap1993@gmail.com', defaultOp);
         saveDocToCloud('users', defaultOp.id, defaultOp, 'usuarios');
+      }
+
+      // Garante conta admcledison
+      if (!foundUsersMap.has('admcledison@gmail.com')) {
+        const admUser: UserProfile = {
+          id: 'usr_admcledison',
+          name: 'Admcledison',
+          email: 'admcledison@gmail.com',
+          role: 'admin',
+          tenantId: 'tenant_admcledison_gmail_com',
+          createdAt: 1791725656602,
+        };
+        foundUsersMap.set('admcledison@gmail.com', admUser);
+        saveDocToCloud('users', admUser.id, admUser, 'usuarios');
       }
 
       if (foundUsersMap.size > 0 || users.length > 0) {
@@ -1249,7 +1327,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       }
     };
 
-    const interval = setInterval(syncTick, 30000);
+    const interval = setInterval(syncTick, 4000);
     return () => {
       isMounted = false;
       clearInterval(interval);
@@ -1274,13 +1352,14 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
         const adminEmail = (d.adminEmail || d.createdBy || '').toLowerCase().trim();
 
         const match =
-          vTenant === activeTenantKey ||
-          (cleanUserEmail && adminEmail === cleanUserEmail);
+          isSameTenantId(vTenant, activeTenantKey) ||
+          (cleanUserEmail && (adminEmail === cleanUserEmail || isAdmcledisonAccount(adminEmail))) ||
+          (isAdmcledisonAccount(activeTenantKey) && (isAdmcledisonAccount(vTenant) || isAdmcledisonAccount(adminEmail)));
 
         if (match) {
           const veh: Vehicle = {
             id: docSnap.id || d.id,
-            tenantId: vTenant || activeTenantKey,
+            tenantId: activeTenantKey,
             name: d.name,
             code: d.code,
             category: d.category,
@@ -1342,13 +1421,14 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
         const rAdminEmail = (d.adminEmail || d.createdBy || '').toLowerCase().trim();
 
         const match =
-          rTenant === activeTenantKey ||
-          (cleanUserEmail && rAdminEmail === cleanUserEmail);
+          isSameTenantId(rTenant, activeTenantKey) ||
+          (cleanUserEmail && (rAdminEmail === cleanUserEmail || isAdmcledisonAccount(rAdminEmail))) ||
+          (isAdmcledisonAccount(activeTenantKey) && (isAdmcledisonAccount(rTenant) || isAdmcledisonAccount(rAdminEmail)));
 
         if (match) {
           const rent: Rental = {
             id: docSnap.id || d.id,
-            tenantId: rTenant || activeTenantKey,
+            tenantId: activeTenantKey,
             vehicleId: d.vehicleId,
             vehicleName: d.vehicleName,
             vehicleCode: d.vehicleCode,
@@ -1427,16 +1507,14 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
         const qAdminEmail = (d.adminEmail || d.createdBy || '').toLowerCase().trim();
 
         const match =
-          qTenant === activeTenantKey ||
-          qTenant === currentTenantId ||
-          (cleanUserEmail && qAdminEmail === cleanUserEmail) ||
-          (qTenant === 'tenant_admcledison_gmail_com' && (activeTenantKey.includes('admcledison') || cleanUserEmail.includes('admcledison'))) ||
-          (!qTenant && activeTenantKey === 'tenant_drift_01');
+          isSameTenantId(qTenant, activeTenantKey) ||
+          (cleanUserEmail && (qAdminEmail === cleanUserEmail || isAdmcledisonAccount(qAdminEmail))) ||
+          (isAdmcledisonAccount(activeTenantKey) && (isAdmcledisonAccount(qTenant) || isAdmcledisonAccount(qAdminEmail)));
 
         if (match) {
           const item: QueueItem = {
             id: docSnap.id || d.id,
-            tenantId: qTenant || activeTenantKey,
+            tenantId: activeTenantKey,
             customerName: d.customerName,
             customerPhone: d.customerPhone,
             categoryDesired: d.categoryDesired || d.category || 'DRIFT',
@@ -1841,15 +1919,19 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
 
     if (resolved) {
       const resolvedRole: UserRole = resolved.role === 'admin' ? 'admin' : 'operador';
+      const resolvedTenant =
+        isAdmcledisonAccount(trimmedEmail) || isAdmcledisonAccount(resolved.adminEmail) || isAdmcledisonAccount(resolved.tenantId)
+          ? 'tenant_admcledison_gmail_com'
+          : (resolved.tenantId || canonicalTenantId);
       profile = {
         id: resolved.id || resolved.uid || `usr_${trimmedEmail.replace(/[^a-zA-Z0-9]/g, '_')}`,
         name: resolved.name || (isMichel ? 'Michel Lima' : (isAdmcledison ? 'Admcledison' : trimmedEmail.split('@')[0])),
         email: trimmedEmail,
         role: resolvedRole,
-        tenantId: resolved.tenantId || (resolvedRole === 'operador' && resolved.adminEmail ? (isAdmcledisonAccount(resolved.adminEmail) ? 'tenant_admcledison_gmail_com' : `tenant_${resolved.adminEmail.replace(/[^a-zA-Z0-9]/g, '_')}`) : canonicalTenantId),
+        tenantId: resolvedTenant,
         createdAt: resolved.createdAt || Date.now(),
-        adminEmail: resolved.adminEmail || resolved.createdBy,
-        adminName: resolved.adminName,
+        adminEmail: resolved.adminEmail || resolved.createdBy || (isAdmcledison ? 'admcledison@gmail.com' : undefined),
+        adminName: resolved.adminName || (isAdmcledison ? 'Admcledison' : undefined),
         savedPassword: effectivePassword,
       };
     } else if (trimmedEmail === 'carollimap1993@gmail.com') {
@@ -1886,10 +1968,12 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       };
     }
 
-    // 2. ISOLAMENTO MULTI-TENANT: Limpa a memória do tenant anterior para evitar qualquer mistura
-    setVehiclesState([]);
-    setRentalsState([]);
-    setQueueState([]);
+    // 2. ISOLAMENTO MULTI-TENANT: Limpa a memória apenas se estiver trocando para um tenant totalmente diferente
+    if (activeTenantKey && !isSameTenantId(activeTenantKey, profile.tenantId)) {
+      setVehiclesState([]);
+      setRentalsState([]);
+      setQueueState([]);
+    }
 
     setCurrentUser(profile);
     setCurrentTenantId(profile.tenantId);
@@ -1917,11 +2001,12 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
             } catch {}
           }
         }
+      } catch {}
 
-        // Persiste perfil e registra na nuvem
+      // Executa SEMPRE de forma independente do Firebase Auth
+      try {
         registerUserInCloud(profile);
         saveDocToCloud('users', profile.id, profile, 'usuarios');
-
         // Puxa dados reais do Firebase Firestore diretamente para este tenant em alta velocidade
         await pullFromFirestoreDirectly(profile.tenantId);
       } catch (bgErr) {

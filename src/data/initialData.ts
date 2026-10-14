@@ -26,107 +26,47 @@ export const INITIAL_RENTALS: Rental[] = [];
 export const INITIAL_QUEUE: QueueItem[] = [];
 
 /**
- * Identifica se um veículo é dado fictício / de exemplo das versões de teste anteriores
+ * Frota padrão oficial da pista (DRIFT - 6, JEEP - 3, BATE-BATE - 4)
+ */
+export function getDefaultFleet(tenantId = 'tenant_drift_01'): Vehicle[] {
+  return [
+    { id: `veh_${tenantId}_d1`, tenantId, name: 'Drift Kart #01', code: '#01', category: 'DRIFT', status: 'disponivel', batteryLevel: 100, totalRuns: 0 },
+    { id: `veh_${tenantId}_d2`, tenantId, name: 'Drift Kart #02', code: '#02', category: 'DRIFT', status: 'disponivel', batteryLevel: 100, totalRuns: 0 },
+    { id: `veh_${tenantId}_d3`, tenantId, name: 'Drift Kart #03', code: '#03', category: 'DRIFT', status: 'disponivel', batteryLevel: 100, totalRuns: 0 },
+    { id: `veh_${tenantId}_d4`, tenantId, name: 'Drift Kart #04', code: '#04', category: 'DRIFT', status: 'disponivel', batteryLevel: 100, totalRuns: 0 },
+    { id: `veh_${tenantId}_d5`, tenantId, name: 'Drift Kart #05', code: '#05', category: 'DRIFT', status: 'disponivel', batteryLevel: 100, totalRuns: 0 },
+    { id: `veh_${tenantId}_d6`, tenantId, name: 'Drift Kart #06', code: '#06', category: 'DRIFT', status: 'disponivel', batteryLevel: 100, totalRuns: 0 },
+    { id: `veh_${tenantId}_j1`, tenantId, name: 'Jeep Safari #01', code: '#01', category: 'JEEP', status: 'disponivel', batteryLevel: 100, totalRuns: 0 },
+    { id: `veh_${tenantId}_j2`, tenantId, name: 'Jeep Safari #02', code: '#02', category: 'JEEP', status: 'disponivel', batteryLevel: 100, totalRuns: 0 },
+    { id: `veh_${tenantId}_j3`, tenantId, name: 'Jeep Safari #03', code: '#03', category: 'JEEP', status: 'disponivel', batteryLevel: 100, totalRuns: 0 },
+    { id: `veh_${tenantId}_b1`, tenantId, name: 'Bate-Bate #01', code: '#01', category: 'BATE_BATE', status: 'disponivel', batteryLevel: 100, totalRuns: 0 },
+    { id: `veh_${tenantId}_b2`, tenantId, name: 'Bate-Bate #02', code: '#02', category: 'BATE_BATE', status: 'disponivel', batteryLevel: 100, totalRuns: 0 },
+    { id: `veh_${tenantId}_b3`, tenantId, name: 'Bate-Bate #03', code: '#03', category: 'BATE_BATE', status: 'disponivel', batteryLevel: 100, totalRuns: 0 },
+    { id: `veh_${tenantId}_b4`, tenantId, name: 'Bate-Bate #04', code: '#04', category: 'BATE_BATE', status: 'disponivel', batteryLevel: 100, totalRuns: 0 },
+  ];
+}
+
+/**
+ * Identifica se um veículo é nulo ou corrompido
  */
 export function isMockVehicle(v: Partial<Vehicle>): boolean {
-  if (!v) return false;
-  const id = v.id || '';
-  const name = (v.name || '').toLowerCase();
-
-  // IDs e nomes hardcoded de mock
-  const mockNames = [
-    'drift blade',
-    'neon drift pro',
-    'turbo slide 360',
-    'ghost racer r',
-    'apex thunder',
-    'storm slider gt',
-    'jeep safari 4x4',
-    'jeep raptor kids',
-    'jungle trail pro',
-    'bump master blue',
-    'flash bumper red',
-    'volt crash neon',
-    'spark ranger yellow',
-    'speed drift mini',
-    'safari explorer kids',
-  ];
-
-  if (
-    id.startsWith('veh_drift_0') ||
-    id.startsWith('veh_jeep_0') ||
-    id.startsWith('veh_bump_0') ||
-    id.startsWith('veh_speed_0')
-  ) {
-    return true;
-  }
-
-  if (mockNames.includes(name)) {
-    return true;
-  }
-
+  if (!v || !v.id) return true;
   return false;
 }
 
 /**
- * Identifica se um registro de corrida é mock / dado de exemplo
+ * Identifica se um registro de corrida é inválido ou corrompido
  */
 export function isMockRental(r: Partial<Rental>): boolean {
-  if (!r) return false;
-  const id = r.id || '';
-  const customer = (r.customerName || '').toLowerCase().trim();
-
-  const mockCustomers = [
-    'gabriel souza',
-    'mariana duarte (e enzo 6a)',
-    'mariana duarte',
-    'renato silveira',
-    'camila rocha',
-    'lucas lima (pai e filho)',
-    'lucas lima',
-    'rodrigo albuquerque',
-    'felipe santos',
-    'beatriz lima',
-  ];
-
-  if (
-    id.startsWith('rent_active_0') ||
-    id.startsWith('rent_past_0') ||
-    id.startsWith('rent_hist_0')
-  ) {
-    return true;
-  }
-
-  if (mockCustomers.includes(customer)) {
-    return true;
-  }
-
+  if (!r || !r.id) return true;
   return false;
 }
 
 /**
- * Identifica se um item da fila é mock
+ * Identifica se um item da fila é inválido ou corrompido
  */
 export function isMockQueue(q: Partial<QueueItem>): boolean {
-  if (!q) return false;
-  const id = q.id || '';
-  const customer = (q.customerName || '').toLowerCase().trim();
-
-  const mockCustomers = [
-    'thiago mendes',
-    'carla e pedro (5 anos)',
-    'carla e pedro',
-    'henrique barros',
-  ];
-
-  if (id === 'queue_01' || id === 'queue_02' || id === 'queue_03') {
-    return true;
-  }
-
-  if (mockCustomers.includes(customer)) {
-    return true;
-  }
-
+  if (!q || !q.id) return true;
   return false;
 }
 
