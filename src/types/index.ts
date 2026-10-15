@@ -48,6 +48,7 @@ export interface Vehicle {
   activeRentalId?: string;
   imageUrl?: string;
   adminEmail?: string;
+  adminUid?: string;
   createdBy?: string;
 }
 
@@ -89,6 +90,7 @@ export interface Rental {
     shiftName?: string;
   };
   adminEmail?: string;
+  adminUid?: string;
   createdBy?: string;
 }
 
@@ -103,6 +105,7 @@ export interface QueueItem {
   addedAt: number;
   notes?: string;
   adminEmail?: string;
+  adminUid?: string;
   createdBy?: string;
 }
 

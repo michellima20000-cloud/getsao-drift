@@ -27,6 +27,8 @@ import {
 import {
   auth,
   db,
+  setPersistence,
+  browserLocalPersistence,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signOut,
@@ -52,6 +54,9 @@ import {
   sanitizeForFirestore,
   rtdb,
   testAndVerifyFirestore,
+  getIsFirestoreQuotaExceeded,
+  subscribeFirestoreQuota,
+  FIRESTORE_UPGRADE_URL,
   type FirebaseUser,
 } from '../services/firebase';
 import {
@@ -86,6 +91,9 @@ interface DriftParkContextType {
   setPrefilledQueueItem: (item: QueueItem | null) => void;
   isFirestoreOnline: boolean;
   verifyFirestoreConnection: () => Promise<{ success: boolean; message: string }>;
+  isQuotaExceeded: boolean;
+  firestoreUpgradeUrl: string;
+  dismissQuotaWarning: () => void;
   isAlarmMuted: boolean;
   toggleAlarmMute: () => void;
   isSyncing: boolean;
@@ -674,6 +682,18 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
   const [isAlarmMuted, setIsAlarmMuted] = useState(false);
   const toggleAlarmMute = () => setIsAlarmMuted((prev) => !prev);
 
+  const [isQuotaExceeded, setIsQuotaExceeded] = useState<boolean>(() => getIsFirestoreQuotaExceeded());
+
+  useEffect(() => {
+    return subscribeFirestoreQuota((exceeded) => {
+      setIsQuotaExceeded(exceeded);
+    });
+  }, []);
+
+  const dismissQuotaWarning = () => {
+    setIsQuotaExceeded(false);
+  };
+
   const verifyFirestoreConnection = async () => {
     const res = await testAndVerifyFirestore();
     setIsFirestoreOnline(res.success);
@@ -900,7 +920,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
 
       setVehiclesState((prev) => {
         const { merged, unsyncedLocal } = mergeVehicles(prev, finalVehicles, tenantKey);
-        if (unsyncedLocal.length > 0) {
+        if (unsyncedLocal.length > 0 && !getIsFirestoreQuotaExceeded()) {
           unsyncedLocal.forEach((v) => {
             saveDocToCloud('veiculos', v.id, { ...v, tenantId: v.tenantId || tenantKey }, 'vehicles');
             saveVehicleCloud(v.tenantId || tenantKey, v);
@@ -995,7 +1015,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       );
       setRentalsState((prev) => {
         const { merged, unsyncedLocal } = mergeRentals(prev, cloudRentals, tenantKey);
-        if (unsyncedLocal.length > 0) {
+        if (unsyncedLocal.length > 0 && !getIsFirestoreQuotaExceeded()) {
           unsyncedLocal.forEach((r) => {
             if (r.tenantId === tenantKey) {
               saveDocToCloud('corridas', r.id, { ...r, tenantId: tenantKey }, 'rentals');
@@ -1052,7 +1072,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       );
       setQueueState((prev) => {
         const { merged, unsyncedLocal } = mergeQueue(prev, cloudQueue, tenantKey);
-        if (unsyncedLocal.length > 0) {
+        if (unsyncedLocal.length > 0 && !getIsFirestoreQuotaExceeded()) {
           unsyncedLocal.forEach((q) => {
             if (q.tenantId === tenantKey) {
               saveDocToCloud('fila', q.id, { ...q, tenantId: tenantKey }, 'queue');
@@ -1220,7 +1240,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       if (Array.isArray(cData.vehicles) && cData.vehicles.length > 0) {
         setVehiclesState((prev) => {
           const { merged, unsyncedLocal } = mergeVehicles(prev, cData.vehicles);
-          if (unsyncedLocal.length > 0) {
+          if (unsyncedLocal.length > 0 && !getIsFirestoreQuotaExceeded()) {
             unsyncedLocal.forEach((v: any) => {
               saveDocToCloud('veiculos', v.id, { ...v, tenantId: v.tenantId || activeTenantKey }, 'vehicles');
               saveVehicleCloud(v.tenantId || activeTenantKey, v);
@@ -1232,7 +1252,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       if (Array.isArray(cData.rentals) && cData.rentals.length > 0) {
         setRentalsState((prev) => {
           const { merged, unsyncedLocal } = mergeRentals(prev, cData.rentals);
-          if (unsyncedLocal.length > 0) {
+          if (unsyncedLocal.length > 0 && !getIsFirestoreQuotaExceeded()) {
             unsyncedLocal.forEach((r: any) => {
               saveDocToCloud('corridas', r.id, { ...r, tenantId: r.tenantId || activeTenantKey }, 'rentals');
               saveRentalCloud(r.tenantId || activeTenantKey, r);
@@ -1244,7 +1264,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       if (Array.isArray(cData.queue) && cData.queue.length > 0) {
         setQueueState((prev) => {
           const { merged, unsyncedLocal } = mergeQueue(prev, cData.queue);
-          if (unsyncedLocal.length > 0) {
+          if (unsyncedLocal.length > 0 && !getIsFirestoreQuotaExceeded()) {
             unsyncedLocal.forEach((q: any) => {
               saveDocToCloud('fila', q.id, { ...q, tenantId: q.tenantId || activeTenantKey }, 'queue');
               addToQueueCloud(q.tenantId || activeTenantKey, q);
@@ -1263,9 +1283,27 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
   }, []);
 
   // =========================================================================
-  // 2. SINCRONIZAÇÃO EM TEMPO REAL: AUTH STATE DO FIREBASE
+  // 2. SINCRONIZAÇÃO EM TEMPO REAL: AUTH STATE DO FIREBASE COM PERSISTÊNCIA LOCAL
   // =========================================================================
   useEffect(() => {
+    // Força o Firebase a lembrar do usuário e do histórico localmente
+    const savedEmail = safeGetItem('driftpark_saved_email') || 'adm_cledison@outlook.com';
+    const savedPassword = safeGetItem('driftpark_saved_password') || '123456';
+
+    setPersistence(auth, browserLocalPersistence)
+      .then(() => {
+        if (!auth.currentUser) {
+          return signInWithEmailAndPassword(auth, savedEmail, savedPassword).catch((err) => {
+            if (err?.code === 'auth/user-not-found' || err?.code === 'auth/invalid-credential') {
+              return createUserWithEmailAndPassword(auth, savedEmail, savedPassword).catch(() => null);
+            }
+          });
+        }
+      })
+      .catch((error) => {
+        console.error("Erro na persistência:", error?.message);
+      });
+
     const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         const uid = firebaseUser.uid;
@@ -1363,7 +1401,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
         if (Array.isArray(cData.vehicles) && cData.vehicles.length > 0) {
           setVehiclesState((prev) => {
             const { merged, unsyncedLocal } = mergeVehicles(prev, cData.vehicles);
-            if (unsyncedLocal.length > 0) {
+            if (unsyncedLocal.length > 0 && !getIsFirestoreQuotaExceeded()) {
               unsyncedLocal.forEach((v: any) => {
                 saveDocToCloud('veiculos', v.id, { ...v, tenantId: v.tenantId || activeTenantKey }, 'vehicles');
                 saveVehicleCloud(v.tenantId || activeTenantKey, v);
@@ -1375,7 +1413,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
         if (Array.isArray(cData.rentals) && cData.rentals.length > 0) {
           setRentalsState((prev) => {
             const { merged, unsyncedLocal } = mergeRentals(prev, cData.rentals);
-            if (unsyncedLocal.length > 0) {
+            if (unsyncedLocal.length > 0 && !getIsFirestoreQuotaExceeded()) {
               unsyncedLocal.forEach((r: any) => {
                 saveDocToCloud('corridas', r.id, { ...r, tenantId: r.tenantId || activeTenantKey }, 'rentals');
                 saveRentalCloud(r.tenantId || activeTenantKey, r);
@@ -1391,7 +1429,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       }
     };
 
-    const interval = setInterval(syncTick, 4000);
+    const interval = setInterval(syncTick, 30000);
     return () => {
       isMounted = false;
       clearInterval(interval);
@@ -1441,15 +1479,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
 
       if (cloudVehicles.length > 0) {
         setVehiclesState((prev) => {
-          const { merged, unsyncedLocal } = mergeVehicles(prev, cloudVehicles, activeTenantKey);
-          if (unsyncedLocal.length > 0) {
-            unsyncedLocal.forEach((v) => {
-              if (v.tenantId === activeTenantKey) {
-                saveDocToCloud('veiculos', v.id, { ...v, tenantId: activeTenantKey }, 'vehicles');
-                saveVehicleCloud(activeTenantKey, v);
-              }
-            });
-          }
+          const { merged } = mergeVehicles(prev, cloudVehicles, activeTenantKey);
           return merged;
         });
       }
@@ -1527,15 +1557,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
 
       if (cloudRentals.length > 0) {
         setRentalsState((prev) => {
-          const { merged, unsyncedLocal } = mergeRentals(prev, cloudRentals, activeTenantKey);
-          if (unsyncedLocal.length > 0) {
-            unsyncedLocal.forEach((r) => {
-              if (r.tenantId === activeTenantKey) {
-                saveDocToCloud('corridas', r.id, { ...r, tenantId: activeTenantKey }, 'rentals');
-                saveRentalCloud(activeTenantKey, r);
-              }
-            });
-          }
+          const { merged } = mergeRentals(prev, cloudRentals, activeTenantKey);
           return merged;
         });
       }
@@ -1595,13 +1617,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
 
       if (cloudQueue.length > 0) {
         setQueueState((prev) => {
-          const { merged, unsyncedLocal } = mergeQueue(prev, cloudQueue);
-          if (unsyncedLocal.length > 0) {
-            unsyncedLocal.forEach((q) => {
-              saveDocToCloud('fila', q.id, { ...q, tenantId: q.tenantId || activeTenantKey }, 'queue');
-              addToQueueCloud(q.tenantId || activeTenantKey, q);
-            });
-          }
+          const { merged } = mergeQueue(prev, cloudQueue);
           return merged;
         });
       }
@@ -1653,7 +1669,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   // Garante que o documento do Admin exista na coleção 'users' e 'usuarios'
   useEffect(() => {
-    if (currentUser?.id && !isMockEmail(currentUser.email) && isFirestoreOnline && getIsFirestoreAvailable()) {
+    if (currentUser?.id && !isMockEmail(currentUser.email) && isFirestoreOnline && getIsFirestoreAvailable() && !getIsFirestoreQuotaExceeded()) {
       try {
         const userPayload = {
           id: currentUser.id,
@@ -1663,8 +1679,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
           tenantId: currentUser.tenantId,
           createdAt: currentUser.createdAt || Date.now(),
         };
-        setDoc(doc(db, 'users', currentUser.id), userPayload, { merge: true }).catch(() => {});
-        setDoc(doc(db, 'usuarios', currentUser.id), userPayload, { merge: true }).catch(() => {});
+        saveDocToCloud('users', currentUser.id, userPayload, 'usuarios');
       } catch {}
     }
   }, [currentUser?.id, currentUser?.tenantId, isFirestoreOnline]);
@@ -1776,46 +1791,45 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
           pricing: currentTenant?.pricing,
         }).catch(() => {});
 
-        // Sincroniza também no Firestore em background sem bloquear o navegador
-        Promise.allSettled([
-          ...clientVehicles.map((v) =>
-            setDoc(doc(db, 'veiculos', v.id), { ...v, tenantId: activeTenantKey }, { merge: true })
-          ),
-          ...clientRentals.map((r) =>
-            setDoc(doc(db, 'corridas', r.id), { ...r, tenantId: activeTenantKey }, { merge: true })
-          ),
-          ...clientOps.map((op) => {
-            const opPayload = {
-              id: op.id,
-              name: op.name,
-              email: op.email.toLowerCase().trim(),
-              role: 'operador',
-              tenantId: activeTenantKey,
-              adminEmail: currentUser?.email || op.adminEmail,
-              adminName: currentUser?.name || op.adminName,
-              createdBy: currentUser?.email || op.createdBy,
-              phone: op.phone || null,
-              createdAt: op.createdAt || Date.now(),
-            };
-            return setDoc(doc(db, 'users', op.id), opPayload, { merge: true });
-          }),
-          ...clientQueue.map((q) =>
-            setDoc(doc(db, 'fila', q.id), { ...q, tenantId: activeTenantKey }, { merge: true })
-          ),
-        ]).catch(() => {});
-
-        if (currentTenant && currentTenant.pricing) {
-          setDoc(
-            doc(db, 'tenants', activeTenantKey),
-            {
-              id: activeTenantKey,
-              name: currentTenant.name || 'DRIFT PARK',
-              city: currentTenant.city || 'Pista Principal',
-              pricing: currentTenant.pricing,
-              updatedAt: Date.now(),
-            },
-            { merge: true }
-          ).catch(() => {});
+        // Sincroniza também no Firestore em background sem bloquear o navegador apenas se cota permitir
+        if (!getIsFirestoreQuotaExceeded()) {
+          Promise.allSettled([
+            ...clientVehicles.map((v) =>
+              saveDocToCloud('veiculos', v.id, { ...v, tenantId: activeTenantKey }, 'vehicles')
+            ),
+            ...clientRentals.map((r) =>
+              saveDocToCloud('corridas', r.id, { ...r, tenantId: activeTenantKey }, 'rentals')
+            ),
+            ...clientOps.map((op) => {
+              const opPayload = {
+                id: op.id,
+                name: op.name,
+                email: op.email.toLowerCase().trim(),
+                role: 'operador' as const,
+                tenantId: activeTenantKey,
+                adminEmail: currentUser?.email || op.adminEmail,
+                adminName: currentUser?.name || op.adminName,
+                createdBy: currentUser?.email || op.createdBy,
+                phone: op.phone || null,
+                createdAt: op.createdAt || Date.now(),
+              };
+              return saveDocToCloud('users', op.id, opPayload, 'usuarios');
+            }),
+            ...clientQueue.map((q) =>
+              saveDocToCloud('fila', q.id, { ...q, tenantId: activeTenantKey }, 'queue')
+            ),
+            ...(currentTenant && currentTenant.pricing
+              ? [
+                  saveDocToCloud('tenants', activeTenantKey, {
+                    id: activeTenantKey,
+                    name: currentTenant.name || 'DRIFT PARK',
+                    city: currentTenant.city || 'Pista Principal',
+                    pricing: currentTenant.pricing,
+                    updatedAt: Date.now(),
+                  }),
+                ]
+              : []),
+          ]).catch(() => {});
         }
 
         safeSetItem('driftpark_last_cloud_sync', String(Date.now()));
@@ -2057,6 +2071,13 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     // 3. SINCRONIZAÇÃO EM SEGUNDO PLANO (PUXA DIRETAMENTE DO FIREBASE SEM TRAVAR A TELA)
     (async () => {
       try {
+        // Força o Firebase a lembrar do usuário e do histórico localmente
+        try {
+          await setPersistence(auth, browserLocalPersistence);
+        } catch (persErr: any) {
+          console.error("Erro na persistência:", persErr?.message);
+        }
+
         // Autentica ou cria credencial no Firebase Auth silenciosamente
         try {
           await signInWithEmailAndPassword(auth, trimmedEmail, effectivePassword);
@@ -2983,6 +3004,9 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
         setPrefilledQueueItem,
         isFirestoreOnline,
         verifyFirestoreConnection,
+        isQuotaExceeded,
+        firestoreUpgradeUrl: FIRESTORE_UPGRADE_URL,
+        dismissQuotaWarning,
         isSyncing,
         syncWithCloudNow,
         isAlarmMuted,

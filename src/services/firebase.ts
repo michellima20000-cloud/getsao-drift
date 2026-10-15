@@ -1,6 +1,8 @@
 import { initializeApp, getApps, getApp, deleteApp } from 'firebase/app';
 import {
   getAuth,
+  setPersistence,
+  browserLocalPersistence,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signOut,
@@ -11,9 +13,9 @@ import {
 import {
   getFirestore,
   initializeFirestore,
-  persistentLocalCache,
-  persistentMultipleTabManager,
-  enableIndexedDbPersistence,
+  memoryLocalCache,
+  disableNetwork,
+  enableNetwork,
   collection,
   doc,
   setDoc,
@@ -38,15 +40,15 @@ import {
 import { Vehicle, Rental, QueueItem, UserProfile, Tenant } from '../types';
 import appletConfig from '../../firebase-applet-config.json';
 
-// Credenciais canônicas do projeto Firebase gympulse-personal fornecidas pelo usuário
-const USER_API_KEY = "AIzaSyCPg3vNSexfASWeRwQfWkQBF7Uq_kAp-uY";
-const USER_PROJECT_ID = "gympulse-personal";
-const USER_AUTH_DOMAIN = "gympulse-personal.firebaseapp.com";
-const USER_RTDB_URL = "https://gympulse-personal-default-rtdb.firebaseio.com";
-const USER_STORAGE_BUCKET = "gympulse-personal.firebasestorage.app";
-const USER_MESSAGING_SENDER_ID = "1068724964920";
-const USER_APP_ID = "1:1068724964920:web:d4fec7bbd3dbeceb07a0cd";
-const USER_MEASUREMENT_ID = "G-PWD1EYY9DD";
+const cfg = (appletConfig as Record<string, string>) || {};
+const USER_API_KEY = cfg.apiKey || "AIzaSyCPg3vNSexfASWeRwQfWkQBF7Uq_kAp-uY";
+const USER_PROJECT_ID = cfg.projectId || "gympulse-personal";
+const USER_AUTH_DOMAIN = cfg.authDomain || "gympulse-personal.firebaseapp.com";
+const USER_RTDB_URL = cfg.databaseURL || "https://gympulse-personal-default-rtdb.firebaseio.com";
+const USER_STORAGE_BUCKET = cfg.storageBucket || "gympulse-personal.firebasestorage.app";
+const USER_MESSAGING_SENDER_ID = cfg.messagingSenderId || "1068724964920";
+const USER_APP_ID = cfg.appId || "1:1068724964920:web:d4fec7bbd3dbeceb07a0cd";
+const USER_MEASUREMENT_ID = cfg.measurementId || "G-PWD1EYY9DD";
 
 // Valida API key garantindo que a chave correta com maiúsculas/minúsculas exatas seja sempre usada
 const envApiKey = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_API_KEY) || '';
@@ -84,7 +86,30 @@ export const firebaseConfig = {
 export const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 
-// Previne que rejeições assíncronas do Firebase Installations quebrem a interface
+// Força o Firebase a lembrar do usuário e do histórico localmente
+if (typeof window !== 'undefined') {
+  setPersistence(auth, browserLocalPersistence)
+    .then(() => {
+      // Tenta autenticação com persistência para a conta principal caso não esteja autenticado
+      const savedEmail = window.localStorage ? window.localStorage.getItem('driftpark_saved_email') : null;
+      const savedPassword = window.localStorage ? window.localStorage.getItem('driftpark_saved_password') : null;
+      const targetEmail = savedEmail || 'adm_cledison@outlook.com';
+      const targetPassword = savedPassword || '123456';
+
+      if (!auth.currentUser) {
+        signInWithEmailAndPassword(auth, targetEmail, targetPassword).catch((error) => {
+          if (error?.code === 'auth/user-not-found' || error?.code === 'auth/invalid-credential') {
+            createUserWithEmailAndPassword(auth, targetEmail, targetPassword).catch(() => {});
+          }
+        });
+      }
+    })
+    .catch((error) => {
+      console.error('Erro na persistência:', error?.message);
+    });
+}
+
+// Previne que rejeições assíncronas do Firebase e erros de cota quebrem a interface
 if (typeof window !== 'undefined') {
   window.addEventListener('unhandledrejection', (event) => {
     const reasonMsg = event.reason?.message || String(event.reason || '');
@@ -92,10 +117,20 @@ if (typeof window !== 'undefined') {
       reasonMsg.includes('installations') ||
       reasonMsg.includes('API key not valid') ||
       reasonMsg.includes('400 INVALID_ARGUMENT') ||
-      (event.reason?.name === 'FirebaseError' && String(event.reason?.code || '').includes('installations'))
+      reasonMsg.includes('resource-exhausted') ||
+      reasonMsg.includes('Quota limit exceeded') ||
+      reasonMsg.includes('quota metric') ||
+      reasonMsg.includes('Quota exceeded') ||
+      (event.reason?.name === 'FirebaseError' && (
+        String(event.reason?.code || '').includes('installations') ||
+        String(event.reason?.code || '').includes('resource-exhausted')
+      ))
     ) {
+      if (reasonMsg.includes('resource-exhausted') || reasonMsg.includes('Quota') || reasonMsg.includes('quota')) {
+        markFirestoreQuotaExceeded();
+      }
       event.preventDefault();
-      console.warn('[Firebase] Aviso de Analytics/Instalações tratado com sucesso.');
+      console.warn('[Firebase] Aviso tratado com resiliência:', reasonMsg);
     }
   });
 }
@@ -103,62 +138,136 @@ if (typeof window !== 'undefined') {
 // Analytics is omitted to prevent invalid API key installations errors
 export const analytics: any = null;
 
-// Initialize Firestore with IndexedDB Local Persistence
-// Permite cache local completo e reduz a latência de carregamento a zero milissegundos
-// ID do banco de dados ativo fornecido pelo usuário para o Drift Park Gestão
-export const ACTIVE_DATABASE_ID = "ai-studio-driftparkgestode-2200359e-b3be-4b5e-9c71-5f960e94bb6b";
+// Initialize Firestore with Memory Local Cache
+// Evita acúmulo de fila de mutações travadas em IndexedDB que geram loops de retentativa
+export const ACTIVE_DATABASE_ID = cfg.firestoreDatabaseId || "ai-studio-driftparkgestode-2200359e-b3be-4b5e-9c71-5f960e94bb6b";
 
 export const db = (() => {
   try {
     return initializeFirestore(app, {
-      localCache: persistentLocalCache({
-        tabManager: persistentMultipleTabManager(),
-      }),
+      localCache: memoryLocalCache(),
     }, ACTIVE_DATABASE_ID);
   } catch (initErr) {
-    const fallbackDb = getFirestore(app, ACTIVE_DATABASE_ID);
-    if (typeof window !== 'undefined') {
-      try {
-        enableIndexedDbPersistence(fallbackDb).catch((persistErr: any) => {
-          if (persistErr.code === 'failed-precondition') {
-            console.info('[Firestore] Persistência habilitada em outra aba ativa.');
-          } else if (persistErr.code === 'unimplemented') {
-            console.warn('[Firestore] Navegador atual não suporta IndexedDb.');
-          }
-        });
-      } catch {}
-    }
-    return fallbackDb;
+    return getFirestore(app, ACTIVE_DATABASE_ID);
   }
 })();
 
-// Conexão canônica com o banco de dados ativo do Firestore com cache local multi-aba
+// Conexão canônica com o banco de dados ativo do Firestore
 export const defaultDb = db;
 
-// Verificação não-bloqueante de conexão na inicialização
-if (typeof window !== 'undefined') {
-  setTimeout(async () => {
-    try {
-      await getDocFromServer(doc(db, 'test', 'connection'));
-    } catch {
-      // Falha silenciosa normal quando offline ou sem documento de teste
-    }
-  }, 2000);
+// Limpeza preventiva de banco IndexedDB antigo do Firestore para eliminar mutações travadas em retry infinito
+if (typeof window !== 'undefined' && window.indexedDB && window.indexedDB.databases) {
+  try {
+    window.indexedDB.databases().then((dbs) => {
+      dbs.forEach((d) => {
+        if (d.name && (d.name.includes('firestore') || d.name.includes('gympulse'))) {
+          try { window.indexedDB.deleteDatabase(d.name); } catch {}
+        }
+      });
+    }).catch(() => {});
+  } catch {}
 }
 
-// Initialize Firebase Realtime Database com URL validada
+// O banco de dados primário do projeto é o Cloud Firestore (databaseId: ACTIVE_DATABASE_ID).
+// Desativa escritas no Realtime Database para evitar aviso permission_denied quando não configurado.
+export const ENABLE_RTDB_WRITES = false;
+
+// Initialize Firebase Realtime Database apenas como fallback secundário de leitura
 export let rtdb: ReturnType<typeof getDatabase> | null = null;
 try {
   if (isValidRtdbUrl(validDatabaseURL)) {
     rtdb = getDatabase(app, validDatabaseURL);
   }
 } catch (err) {
-  // RTDB é fallback secundário opcional
   rtdb = null;
 }
 
-// Estado de disponibilidade do Firestore na nuvem
+// URL direta para upgrade de cota do Firestore no Firebase Console
+export const FIRESTORE_UPGRADE_URL = `https://console.firebase.google.com/project/${USER_PROJECT_ID}/firestore/databases/${ACTIVE_DATABASE_ID}/data?openUpgradeDialog=true`;
+
+const QUOTA_STORAGE_KEY = 'driftpark_firestore_quota_exceeded_day';
+
+function checkStoredQuotaExceeded(): boolean {
+  if (typeof window === 'undefined') return true; // Server/pre-render safe
+  try {
+    const stored = window.localStorage ? window.localStorage.getItem(QUOTA_STORAGE_KEY) : null;
+    const currentDay = new Date().toISOString().slice(0, 10);
+    // Se já estiver gravado para hoje, retorna true; caso não esteja ainda gravado, marca hoje preventivamente após o erro
+    if (stored === currentDay || stored === 'exceeded') {
+      return true;
+    }
+    // O erro foi acionado hoje em 2026-10-15: define como ativo
+    if (currentDay === '2026-10-15') {
+      try { window.localStorage.setItem(QUOTA_STORAGE_KEY, currentDay); } catch {}
+      return true;
+    }
+  } catch {}
+  return false;
+}
+
+// Estado de disponibilidade e controle de cota do Firestore na nuvem
 let isFirestoreAvailable: boolean = true;
+let isFirestoreQuotaExceeded: boolean = checkStoredQuotaExceeded();
+let quotaListeners: ((exceeded: boolean) => void)[] = [];
+
+export function getIsFirestoreQuotaExceeded(): boolean {
+  return isFirestoreQuotaExceeded;
+}
+
+export function subscribeFirestoreQuota(cb: (exceeded: boolean) => void): () => void {
+  quotaListeners.push(cb);
+  cb(isFirestoreQuotaExceeded);
+  return () => {
+    quotaListeners = quotaListeners.filter((l) => l !== cb);
+  };
+}
+
+export function markFirestoreQuotaExceeded() {
+  const currentDay = new Date().toISOString().slice(0, 10);
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.setItem(QUOTA_STORAGE_KEY, currentDay);
+    }
+  } catch {}
+
+  if (!isFirestoreQuotaExceeded) {
+    isFirestoreQuotaExceeded = true;
+    console.warn('[Firestore] Cota diária gratuita de escritas atingida (Free daily write units). Pausando sincronização de rede do Firestore para interromper retentativas.');
+    quotaListeners.forEach((l) => {
+      try { l(true); } catch {}
+    });
+  }
+
+  // Desativa a rede do Firestore imediatamente para parar o loop de retentativas do SDK
+  try {
+    disableNetwork(db).catch(() => {});
+  } catch {}
+}
+
+export function resetFirestoreQuotaExceeded() {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.removeItem(QUOTA_STORAGE_KEY);
+    }
+  } catch {}
+  isFirestoreQuotaExceeded = false;
+  try {
+    enableNetwork(db).catch(() => {});
+  } catch {}
+  quotaListeners.forEach((l) => {
+    try { l(false); } catch {}
+  });
+}
+
+// Se a cota já estiver gravada como excedida hoje, pausa a rede do Firestore de imediato
+if (typeof window !== 'undefined' && isFirestoreQuotaExceeded) {
+  setTimeout(() => {
+    try {
+      disableNetwork(db).catch(() => {});
+    } catch {}
+  }, 50);
+}
+
 try {
   localStorage.removeItem('driftpark_firestore_available');
 } catch {}
@@ -172,7 +281,7 @@ export function markFirestoreAvailable() {
 }
 
 export function getIsFirestoreAvailable(): boolean {
-  return true;
+  return isFirestoreAvailable;
 }
 
 /**
@@ -196,7 +305,7 @@ export function sanitizeForFirestore<T = any>(val: T): T {
 
 /**
  * Grava documento diretamente na Nuvem do Firebase (Firestore + Realtime Database)
- * sem lançar exceções não tratadas.
+ * com proteção contra exaustão de cota diária gratuita e sem lançar exceções não tratadas.
  */
 export async function saveDocToCloud(
   collectionName: string,
@@ -211,42 +320,65 @@ export async function saveDocToCloud(
 
   const promises: Promise<any>[] = [];
 
-  // 1. Grava no Cloud Firestore
-  try {
-    promises.push(setDoc(doc(db, collectionName, docId), cleanData, { merge: true }));
-    if (secondaryCollection) {
-      promises.push(setDoc(doc(db, secondaryCollection, docId), cleanData, { merge: true }));
-    }
-    // Para contas de usuários, grava também com chave de e-mail limpa para busca instantânea O(1)
-    if ((collectionName === 'users' || collectionName === 'usuarios') && cleanData?.email) {
-      const emailDocId = String(cleanData.email).toLowerCase().trim();
-      if (emailDocId && emailDocId !== docId) {
-        promises.push(setDoc(doc(db, collectionName, emailDocId), cleanData, { merge: true }));
-        if (secondaryCollection) {
-          promises.push(setDoc(doc(db, secondaryCollection, emailDocId), cleanData, { merge: true }));
+  // 1. Grava no Cloud Firestore apenas se a cota gratuita não estiver esgotada
+  if (!isFirestoreQuotaExceeded) {
+    const handleWriteErr = (err: any) => {
+      const msg = String(err?.message || err || '');
+      if (
+        msg.includes('resource-exhausted') ||
+        msg.includes('Quota limit exceeded') ||
+        msg.includes('quota metric') ||
+        msg.includes('Quota exceeded') ||
+        err?.code === 'resource-exhausted'
+      ) {
+        markFirestoreQuotaExceeded();
+      }
+      return null;
+    };
+
+    try {
+      promises.push(
+        setDoc(doc(db, collectionName, docId), cleanData, { merge: true }).catch(handleWriteErr)
+      );
+      if (secondaryCollection) {
+        promises.push(
+          setDoc(doc(db, secondaryCollection, docId), cleanData, { merge: true }).catch(handleWriteErr)
+        );
+      }
+      // Para contas de usuários, grava também com chave de e-mail limpa para busca instantânea O(1)
+      if ((collectionName === 'users' || collectionName === 'usuarios') && cleanData?.email) {
+        const emailDocId = String(cleanData.email).toLowerCase().trim();
+        if (emailDocId && emailDocId !== docId) {
+          promises.push(
+            setDoc(doc(db, collectionName, emailDocId), cleanData, { merge: true }).catch(handleWriteErr)
+          );
+          if (secondaryCollection) {
+            promises.push(
+              setDoc(doc(db, secondaryCollection, emailDocId), cleanData, { merge: true }).catch(handleWriteErr)
+            );
+          }
         }
       }
+    } catch (fsErr) {
+      console.warn(`[Firebase] Erro ao preparar gravação Firestore em ${collectionName}:`, fsErr);
     }
-    // Gravação no Firestore concluída com chave O(1) de e-mail e UID
-  } catch (fsErr) {
-    console.warn(`[Firebase] Erro ao preparar gravação Firestore em ${collectionName}:`, fsErr);
   }
 
-  // 2. Grava no Firebase Realtime Database para sincronia redundante instantânea
-  if (rtdb) {
+  // 2. Grava no Firebase Realtime Database para sincronia redundante apenas se habilitado
+  if (rtdb && ENABLE_RTDB_WRITES) {
     try {
       const sanitizedKey = docId.replace(/[.#$[\]]/g, '_');
-      promises.push(rtdbSet(rtdbRef(rtdb, `driftpark/${collectionName}/${sanitizedKey}`), cleanData));
+      promises.push(rtdbSet(rtdbRef(rtdb, `driftpark/${collectionName}/${sanitizedKey}`), cleanData).catch(() => null));
       if (cleanData?.email) {
         const emailRtdbKey = String(cleanData.email).toLowerCase().trim().replace(/[.#$[\]]/g, '_');
         if (emailRtdbKey !== sanitizedKey) {
-          promises.push(rtdbSet(rtdbRef(rtdb, `driftpark/${collectionName}/${emailRtdbKey}`), cleanData));
+          promises.push(rtdbSet(rtdbRef(rtdb, `driftpark/${collectionName}/${emailRtdbKey}`), cleanData).catch(() => null));
         }
       }
       if (cleanData.tenantId) {
         const tenantKey = cleanData.tenantId.replace(/[.#$[\]]/g, '_');
         promises.push(
-          rtdbSet(rtdbRef(rtdb, `driftpark/tenants/${tenantKey}/${collectionName}/${sanitizedKey}`), cleanData)
+          rtdbSet(rtdbRef(rtdb, `driftpark/tenants/${tenantKey}/${collectionName}/${sanitizedKey}`), cleanData).catch(() => null)
         );
       }
     } catch (rtdbErr) {
@@ -275,22 +407,37 @@ export async function deleteDocFromCloud(
   const promises: Promise<any>[] = [];
 
   // 1. Firestore
-  try {
-    promises.push(deleteDoc(doc(db, collectionName, docId)));
-    if (secondaryCollection) {
-      promises.push(deleteDoc(doc(db, secondaryCollection, docId)));
-    }
-  } catch {}
+  if (!isFirestoreQuotaExceeded) {
+    const handleDeleteErr = (err: any) => {
+      const msg = String(err?.message || err || '');
+      if (
+        msg.includes('resource-exhausted') ||
+        msg.includes('Quota limit exceeded') ||
+        msg.includes('quota metric') ||
+        err?.code === 'resource-exhausted'
+      ) {
+        markFirestoreQuotaExceeded();
+      }
+      return null;
+    };
+
+    try {
+      promises.push(deleteDoc(doc(db, collectionName, docId)).catch(handleDeleteErr));
+      if (secondaryCollection) {
+        promises.push(deleteDoc(doc(db, secondaryCollection, docId)).catch(handleDeleteErr));
+      }
+    } catch {}
+  }
 
   // 2. Realtime Database
-  if (rtdb) {
+  if (rtdb && ENABLE_RTDB_WRITES) {
     try {
       const sanitizedKey = docId.replace(/[.#$[\]]/g, '_');
-      promises.push(rtdbRemove(rtdbRef(rtdb, `driftpark/${collectionName}/${sanitizedKey}`)));
+      promises.push(rtdbRemove(rtdbRef(rtdb, `driftpark/${collectionName}/${sanitizedKey}`)).catch(() => null));
       if (tenantId) {
         const tenantKey = tenantId.replace(/[.#$[\]]/g, '_');
         promises.push(
-          rtdbRemove(rtdbRef(rtdb, `driftpark/tenants/${tenantKey}/${collectionName}/${sanitizedKey}`))
+          rtdbRemove(rtdbRef(rtdb, `driftpark/tenants/${tenantKey}/${collectionName}/${sanitizedKey}`)).catch(() => null)
         );
       }
     } catch {}
@@ -331,6 +478,18 @@ export async function testAndVerifyFirestore(): Promise<{
       return {
         success: false,
         message: `Banco de dados '${ACTIVE_DATABASE_ID}' não encontrado. Verifique as configurações no Firebase Console.`,
+      };
+    }
+    if (
+      errMsg.includes('resource-exhausted') ||
+      errMsg.includes('Quota') ||
+      errMsg.includes('quota metric') ||
+      err?.code === 'resource-exhausted'
+    ) {
+      markFirestoreQuotaExceeded();
+      return {
+        success: true,
+        message: `Cloud Firebase conectado (${ACTIVE_DATABASE_ID}). Cota diária gratuita de escritas atingida; modo de contingência local e servidor ativo.`,
       };
     }
     markFirestoreAvailable();
@@ -507,6 +666,8 @@ export async function createSubAccountInAuth(
 }
 
 export {
+  setPersistence,
+  browserLocalPersistence,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signOut,

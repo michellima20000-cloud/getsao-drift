@@ -5,6 +5,9 @@ import {
   ChevronDown,
   LogOut,
   RefreshCw,
+  AlertTriangle,
+  ExternalLink,
+  X,
 } from 'lucide-react';
 
 export const TopHeader: React.FC = () => {
@@ -13,54 +16,91 @@ export const TopHeader: React.FC = () => {
     logout,
     isSyncing,
     isFirestoreOnline,
+    isQuotaExceeded,
+    firestoreUpgradeUrl,
+    dismissQuotaWarning,
     syncWithCloudNow,
   } = useDriftPark();
 
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
 
   return (
-    <header className="relative z-30 bg-[#0B132B]/95 backdrop-blur-md border-b border-[#1C2541] px-4 py-2.5">
-      <div className="flex items-center justify-between gap-2 max-w-lg mx-auto">
-        {/* Left: Brand Logo & Title (Fixed, no dropdown selector) */}
-        <div className="flex items-center gap-2.5 px-2 py-1 select-none">
-          <SpeedometerLogo size={30} />
-          <div className="leading-tight">
-            <div className="text-xs font-black tracking-wider text-white font-display">
-              DRIFT PARK
-            </div>
-            <div className="text-[9px] text-cyan-400 font-semibold tracking-wide">
-              Gestão de Pista
-            </div>
+    <>
+      {isQuotaExceeded && (
+        <div className="bg-amber-950/80 border-b border-amber-500/40 px-3 py-1.5 text-[11px] text-amber-200 flex items-center justify-between gap-2 z-40">
+          <div className="flex items-center gap-1.5 flex-1 min-w-0">
+            <AlertTriangle size={13} className="text-amber-400 shrink-0" />
+            <span className="truncate">
+              <strong className="text-white">Cota do Firestore atingida:</strong> Operando com salvamento local resiliente e servidor.
+            </span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <a
+              href={firestoreUpgradeUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-2 py-0.5 rounded bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-[10px] flex items-center gap-1 transition-colors"
+            >
+              Console Firebase
+              <ExternalLink size={9} />
+            </a>
+            <button
+              onClick={dismissQuotaWarning}
+              className="text-amber-400 hover:text-white p-0.5 rounded cursor-pointer"
+              title="Dispensar aviso"
+            >
+              <X size={12} />
+            </button>
           </div>
         </div>
+      )}
 
-        {/* Right Tools: Cloud Sync & User Menu */}
-        <div className="flex items-center gap-2">
-          {/* Cloud Sync Status & Instant Refresh */}
-          <button
-            type="button"
-            onClick={syncWithCloudNow}
-            title={
-              isSyncing
-                ? 'Sincronizando dados com o Firebase na Nuvem...'
-                : 'Firebase Conectado na Nuvem. Clique para sincronizar agora.'
-            }
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-bold transition-all ${
-              isSyncing
-                ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/40 animate-pulse'
-                : isFirestoreOnline
-                ? 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
-                : 'bg-amber-500/10 text-amber-300 border-amber-500/30'
-            }`}
-          >
-            <RefreshCw
-              size={11}
-              className={`shrink-0 ${isSyncing ? 'animate-spin text-cyan-400' : 'text-emerald-400'}`}
-            />
-            <span className="hidden xs:inline text-[10px]">
-              {isSyncing ? 'Sincronizando...' : 'Nuvem 100%'}
-            </span>
-          </button>
+      <header className="relative z-30 bg-[#0B132B]/95 backdrop-blur-md border-b border-[#1C2541] px-4 py-2.5">
+        <div className="flex items-center justify-between gap-2 max-w-lg mx-auto">
+          {/* Left: Brand Logo & Title (Fixed, no dropdown selector) */}
+          <div className="flex items-center gap-2.5 px-2 py-1 select-none">
+            <SpeedometerLogo size={30} />
+            <div className="leading-tight">
+              <div className="text-xs font-black tracking-wider text-white font-display">
+                DRIFT PARK
+              </div>
+              <div className="text-[9px] text-cyan-400 font-semibold tracking-wide">
+                Gestão de Pista
+              </div>
+            </div>
+          </div>
+
+          {/* Right Tools: Cloud Sync & User Menu */}
+          <div className="flex items-center gap-2">
+            {/* Cloud Sync Status & Instant Refresh */}
+            <button
+              type="button"
+              onClick={syncWithCloudNow}
+              title={
+                isSyncing
+                  ? 'Sincronizando dados com o Firebase na Nuvem...'
+                  : isQuotaExceeded
+                  ? 'Cota gratuita do Firestore atingida. Salvamento local e servidor ativos. Clique para sincronizar.'
+                  : 'Firebase Conectado na Nuvem. Clique para sincronizar agora.'
+              }
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-bold transition-all cursor-pointer ${
+                isSyncing
+                  ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/40 animate-pulse'
+                  : isQuotaExceeded
+                  ? 'bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border-amber-500/30'
+                  : isFirestoreOnline
+                  ? 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                  : 'bg-amber-500/10 text-amber-300 border-amber-500/30'
+              }`}
+            >
+              <RefreshCw
+                size={11}
+                className={`shrink-0 ${isSyncing ? 'animate-spin text-cyan-400' : isQuotaExceeded ? 'text-amber-400' : 'text-emerald-400'}`}
+              />
+              <span className="hidden xs:inline text-[10px]">
+                {isSyncing ? 'Sincronizando...' : isQuotaExceeded ? 'Local + Servidor' : 'Nuvem 100%'}
+              </span>
+            </button>
 
           {/* User Profile / Role menu */}
           <div className="relative">
@@ -121,5 +161,6 @@ export const TopHeader: React.FC = () => {
         </div>
       </div>
     </header>
-  );
+  </>
+);
 };
