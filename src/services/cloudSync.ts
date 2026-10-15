@@ -195,14 +195,22 @@ export async function findUserInCloudByEmail(email: string): Promise<UserProfile
   const cleanEmail = email.trim().toLowerCase();
 
   // Atalho imediato para a conta do Administrador Oficial e Operadores criados
-  if (cleanEmail === 'admcledison@gmail.com') {
+  if (
+    cleanEmail === 'adm_cledison@outlook.com' ||
+    cleanEmail === 'admcledison@gmail.com' ||
+    cleanEmail === 'adm_cledison@gmail.com' ||
+    cleanEmail === 'admcledson@gmail.com'
+  ) {
     return {
-      id: 'usr_admcledison',
-      email: 'admcledison@gmail.com',
+      id: 'x9LtAZ0RAMTyOPmZelhVoyTDAVx2',
+      email: 'adm_cledison@outlook.com',
       name: 'Admcledison',
       role: 'admin',
       tenantId: 'tenant_admcledison_gmail_com',
-      createdAt: 1791725656602,
+      adminEmail: 'adm_cledison@outlook.com',
+      adminName: 'Admcledison',
+      createdAt: 1791926468433,
+      savedPassword: '123456',
     };
   }
 
@@ -213,8 +221,8 @@ export async function findUserInCloudByEmail(email: string): Promise<UserProfile
       name: 'carollimap1993',
       role: 'operador',
       tenantId: 'tenant_admcledison_gmail_com',
-      adminEmail: 'admcledison@gmail.com',
-      adminName: 'admcledison',
+      adminEmail: 'adm_cledison@outlook.com',
+      adminName: 'Admcledison',
       createdAt: 1791804703979,
     };
   }

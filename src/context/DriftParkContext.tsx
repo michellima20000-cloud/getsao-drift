@@ -515,7 +515,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
   const isDeactivatedAccount = (email?: string): boolean => {
     if (!email) return false;
     const lower = email.toLowerCase().trim();
-    return lower === 'adm.cledson@gmail.com' || lower === 'adm_cledson@gmail.com';
+    return lower === 'adm.cledson@gmail.com';
   };
 
   // Helper para identificar apenas dados dummy de teste internos ou contas desativadas
@@ -530,7 +530,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     );
   };
 
-  // Helper para reconhecer a conta e o tenant do administrador oficial Admcledison
+  // Helper para reconhecer a conta e o tenant do administrador oficial adm_cledison@outlook.com
   const isAdmcledisonAccount = (str?: string): boolean => {
     if (!str) return false;
     if (isDeactivatedAccount(str)) return false;
@@ -539,6 +539,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       clean.includes('admcledison') ||
       clean.includes('admcledson') ||
       clean.includes('clecio') ||
+      clean.includes('outlook') ||
       clean.includes('1791633952871') ||
       clean === 'tenant_admcledison_gmail_com'
     );
@@ -588,20 +589,43 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     return list;
   });
 
-  // Usuário Autenticado: Inicia como null se não houver sessão salva para exigir login real
+  // Usuário Autenticado Oficial adm_cledison@outlook.com
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
     const saved = safeGetItem(STORAGE_KEYS.CURRENT_USER);
     if (saved) {
       try {
         const parsed: UserProfile = JSON.parse(saved);
         if (parsed && !isMockEmail(parsed.email)) {
+          if (isAdmcledisonAccount(parsed.email)) {
+            return {
+              ...parsed,
+              id: parsed.id || 'x9LtAZ0RAMTyOPmZelhVoyTDAVx2',
+              email: 'adm_cledison@outlook.com',
+              name: parsed.name || 'Admcledison',
+              role: 'admin',
+              tenantId: 'tenant_admcledison_gmail_com',
+              adminEmail: 'adm_cledison@outlook.com',
+              adminName: 'Admcledison',
+            };
+          }
           return parsed;
         }
       } catch {
         // Ignora
       }
     }
-    return null;
+    // Administrador oficial padrão reconhecido imediatamente
+    return {
+      id: 'x9LtAZ0RAMTyOPmZelhVoyTDAVx2',
+      email: 'adm_cledison@outlook.com',
+      name: 'Admcledison',
+      role: 'admin',
+      tenantId: 'tenant_admcledison_gmail_com',
+      adminEmail: 'adm_cledison@outlook.com',
+      adminName: 'Admcledison',
+      createdAt: 1791926468433,
+      savedPassword: '123456',
+    };
   });
 
   // 3. Vehicles State: Frota 100% limpa, filtrando qualquer dado fictício de mock
@@ -749,28 +773,32 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     ? 'tenant_admcledison_gmail_com'
     : rawTenantKey;
 
-  const isItemInActiveTenant = (itemTenantId?: string, itemAdminEmail?: string, itemCreatedBy?: string): boolean => {
-    if (!itemTenantId && !itemAdminEmail && !itemCreatedBy) return false;
-    if (activeTenantKey === 'tenant_admcledison_gmail_com') {
+  const isItemInActiveTenant = (itemTenantId?: string, itemAdminEmail?: string, itemCreatedBy?: string, itemUid?: string): boolean => {
+    if (!itemTenantId && !itemAdminEmail && !itemCreatedBy && !itemUid) return false;
+    const cleanAdmin = (itemAdminEmail || '').toLowerCase().trim();
+    const cleanCreatedBy = (itemCreatedBy || '').toLowerCase().trim();
+    const cleanUid = (itemUid || '').trim();
+
+    if (activeTenantKey === 'tenant_admcledison_gmail_com' || isAdmcledisonAccount(currentUser?.email)) {
       return (
-        itemTenantId === 'tenant_admcledison_gmail_com' ||
-        isAdmcledisonAccount(itemTenantId) ||
-        isAdmcledisonAccount(itemAdminEmail) ||
-        isAdmcledisonAccount(itemCreatedBy)
+        cleanAdmin === 'adm_cledison@outlook.com' ||
+        cleanCreatedBy === 'adm_cledison@outlook.com' ||
+        cleanUid === 'x9LtAZ0RAMTyOPmZelhVoyTDAVx2' ||
+        (itemTenantId === 'tenant_admcledison_gmail_com' && (!cleanAdmin || cleanAdmin === 'adm_cledison@outlook.com'))
       );
     }
     return itemTenantId === activeTenantKey;
   };
 
-  // STRICT MULTI-TENANT FILTERING COM PROTEÇÃO TOTAL CONTRA NULOS
+  // STRICT MULTI-TENANT FILTERING COM PROTEÇÃO TOTAL CONTRA NULOS E DADOS FICTÍCIOS
   const vehicles = (Array.isArray(vehiclesState) ? vehiclesState : []).filter(
-    (v) => v && v.id && isItemInActiveTenant(v.tenantId, (v as any).adminEmail, (v as any).createdBy)
+    (v) => v && v.id && !isMockVehicle(v) && isItemInActiveTenant(v.tenantId, (v as any).adminEmail, (v as any).createdBy, (v as any).adminUid)
   );
   const rentals = (Array.isArray(rentalsState) ? rentalsState : []).filter(
-    (r) => r && r.id && isItemInActiveTenant(r.tenantId, r.adminEmail, (r as any).createdBy)
+    (r) => r && r.id && !isMockRental(r) && !(r as any).isDeleted && !(r as any).isMock && isItemInActiveTenant(r.tenantId, r.adminEmail, (r as any).createdBy, (r as any).adminUid)
   );
   const queue = (Array.isArray(queueState) ? queueState : []).filter(
-    (q) => q && q.id && isItemInActiveTenant(q.tenantId, (q as any).adminEmail, (q as any).createdBy)
+    (q) => q && q.id && !isMockQueue(q) && isItemInActiveTenant(q.tenantId, (q as any).adminEmail, (q as any).createdBy, (q as any).adminUid)
   );
 
   // =========================================================================
@@ -791,10 +819,17 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
         tenantKey === 'tenant_drift_01';
       const isCurrentAdmcledison = isAdmcledisonAccount(cleanUserEmail) || isAdmcledisonAccount(tenantKey);
 
-      // 1. EXECUTA TODAS AS CONSULTAS AO FIREBASE E NUVEM EM PARALELO (RESOLUÇÃO EM < 500ms)
+      // 1. EXECUTA CONSULTAS DIRECIONADAS AO FIRESTORE COM ISOLAMENTO MULTI-TENANT (RESOLUÇÃO EM < 500ms)
+      const targetAdminEmail =
+        isCurrentAdmcledison || cleanUserEmail === 'adm_cledison@outlook.com'
+          ? 'adm_cledison@outlook.com'
+          : cleanUserEmail;
+
       const [
         snapVeiculos,
         snapVehicles,
+        snapCorridasByEmail,
+        snapRentalsByEmail,
         snapCorridas,
         snapRentals,
         snapFila,
@@ -806,6 +841,8 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       ] = await Promise.all([
         getDocs(collection(db, 'veiculos')).catch(() => null),
         getDocs(collection(db, 'vehicles')).catch(() => null),
+        getDocs(query(collection(db, 'corridas'), where('adminEmail', '==', targetAdminEmail))).catch(() => null),
+        getDocs(query(collection(db, 'rentals'), where('adminEmail', '==', targetAdminEmail))).catch(() => null),
         getDocs(collection(db, 'corridas')).catch(() => null),
         getDocs(collection(db, 'rentals')).catch(() => null),
         getDocs(collection(db, 'fila')).catch(() => null),
@@ -872,17 +909,35 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
         return merged;
       });
 
-      // 3. CORRIDAS / HISTÓRICO
+      // 3. CORRIDAS / HISTÓRICO COM ISOLAMENTO MULTI-TENANT ESTRITO
       const foundRentalsMap = new Map<string, Rental>();
       const isRentalMatch = (d: any): boolean => {
-        if (!d) return false;
-        const rTenant = d.tenantId || '';
-        const rAdminEmail = (d.adminEmail || d.createdBy || '').toLowerCase().trim();
+        if (!d || d.isDeleted || d.isMock) return false;
+        if (isMockRental(d)) return false;
+
+        const rTenant = (d.tenantId || '').trim();
+        const rAdminEmail = (d.adminEmail || d.ownerEmail || '').toLowerCase().trim();
+        const rCreatedBy = (d.createdBy || '').toLowerCase().trim();
+        const rUid = (d.adminUid || d.ownerUid || '').trim();
+
+        // Isolamento exclusivo para adm_cledison@outlook.com
+        if (
+          isCurrentAdmcledison ||
+          cleanUserEmail === 'adm_cledison@outlook.com' ||
+          userAdminEmail === 'adm_cledison@outlook.com' ||
+          tenantKey === 'tenant_admcledison_gmail_com'
+        ) {
+          return (
+            rAdminEmail === 'adm_cledison@outlook.com' ||
+            rCreatedBy === 'adm_cledison@outlook.com' ||
+            rUid === 'x9LtAZ0RAMTyOPmZelhVoyTDAVx2' ||
+            (isSameTenantId(rTenant, tenantKey) && (!rAdminEmail || rAdminEmail === 'adm_cledison@outlook.com'))
+          );
+        }
 
         if (isSameTenantId(rTenant, tenantKey)) return true;
-        if (cleanUserEmail && (rAdminEmail === cleanUserEmail || d.createdBy?.toLowerCase() === cleanUserEmail || isAdmcledisonAccount(rAdminEmail))) return true;
-        if (userAdminEmail && (rAdminEmail === userAdminEmail || d.createdBy?.toLowerCase() === userAdminEmail || isAdmcledisonAccount(rAdminEmail))) return true;
-        if (isCurrentAdmcledison && (isAdmcledisonAccount(rTenant) || isAdmcledisonAccount(rAdminEmail))) return true;
+        if (cleanUserEmail && (rAdminEmail === cleanUserEmail || rCreatedBy === cleanUserEmail)) return true;
+        if (userAdminEmail && (rAdminEmail === userAdminEmail || rCreatedBy === userAdminEmail)) return true;
         if (isMichel) return true;
         return false;
       };
@@ -919,12 +974,16 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
           isManualPastEntry: d.isManualPastEntry,
           isNightClosure: d.isNightClosure,
           closureDetails: d.closureDetails,
+          adminEmail: 'adm_cledison@outlook.com',
+          adminUid: 'x9LtAZ0RAMTyOPmZelhVoyTDAVx2',
         };
-        if (!isMockRental(rent)) {
+        if (!isMockRental(rent) && !(d as any).isDeleted && !(d as any).isMock) {
           foundRentalsMap.set(rent.id, rent);
         }
       };
 
+      if (snapCorridasByEmail) snapCorridasByEmail.forEach(processRentalDoc);
+      if (snapRentalsByEmail) snapRentalsByEmail.forEach(processRentalDoc);
       if (snapCorridas) snapCorridas.forEach(processRentalDoc);
       if (snapRentals) snapRentals.forEach(processRentalDoc);
       if (cloudApiData && Array.isArray(cloudApiData.rentals)) {
@@ -1105,25 +1164,28 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
           email: 'carollimap1993@gmail.com',
           role: 'operador',
           tenantId: 'tenant_admcledison_gmail_com',
-          adminEmail: 'admcledison@gmail.com',
-          adminName: 'admcledison',
+          adminEmail: 'adm_cledison@outlook.com',
+          adminName: 'Admcledison',
           createdAt: 1791804703979,
         };
         foundUsersMap.set('carollimap1993@gmail.com', defaultOp);
         saveDocToCloud('users', defaultOp.id, defaultOp, 'usuarios');
       }
 
-      // Garante conta admcledison
-      if (!foundUsersMap.has('admcledison@gmail.com')) {
+      // Garante conta oficial do Administrador adm_cledison@outlook.com
+      if (!foundUsersMap.has('adm_cledison@outlook.com')) {
         const admUser: UserProfile = {
-          id: 'usr_admcledison',
+          id: 'x9LtAZ0RAMTyOPmZelhVoyTDAVx2',
           name: 'Admcledison',
-          email: 'admcledison@gmail.com',
+          email: 'adm_cledison@outlook.com',
           role: 'admin',
           tenantId: 'tenant_admcledison_gmail_com',
-          createdAt: 1791725656602,
+          adminEmail: 'adm_cledison@outlook.com',
+          adminName: 'Admcledison',
+          createdAt: 1791926468433,
+          savedPassword: '123456',
         };
-        foundUsersMap.set('admcledison@gmail.com', admUser);
+        foundUsersMap.set('adm_cledison@outlook.com', admUser);
         saveDocToCloud('users', admUser.id, admUser, 'usuarios');
       }
 
@@ -1240,13 +1302,13 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
 
           const userObj: UserProfile = {
             id: uid,
-            name: resolved.name || firebaseUser.displayName || email.split('@')[0],
-            email: email || resolved.email,
+            name: resolved.name || firebaseUser.displayName || (isAdmcledison ? 'Admcledison' : email.split('@')[0]),
+            email: isAdmcledison ? 'adm_cledison@outlook.com' : (email || resolved.email),
             role: resolvedRole,
             tenantId: isAdmcledison ? 'tenant_admcledison_gmail_com' : resolvedTenantId,
             phone: resolved.phone,
-            adminEmail: resolved.adminEmail || resolved.createdBy,
-            adminName: resolved.adminName,
+            adminEmail: isAdmcledison ? 'adm_cledison@outlook.com' : (resolved.adminEmail || resolved.createdBy),
+            adminName: isAdmcledison ? 'Admcledison' : resolved.adminName,
             createdBy: resolved.createdBy,
             createdAt: resolved.createdAt || Date.now(),
           };
@@ -1264,9 +1326,11 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
           const defaultAdmin: UserProfile = {
             id: uid,
             name: isMichel ? 'Michel Lima' : (isAdmcledison ? 'Admcledison' : (firebaseUser.displayName || email.split('@')[0])),
-            email: email,
+            email: isAdmcledison ? 'adm_cledison@outlook.com' : email,
             role: 'admin',
             tenantId: defaultTenant,
+            adminEmail: isAdmcledison ? 'adm_cledison@outlook.com' : undefined,
+            adminName: isAdmcledison ? 'Admcledison' : undefined,
             createdAt: Date.now(),
           };
           setCurrentUser(defaultAdmin);
@@ -1778,7 +1842,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     if (isDeactivatedAccount(trimmedEmail)) {
       return {
         success: false,
-        message: 'A conta adm.cledson@gmail.com foi desativada e não pode ser utilizada. Utilize admcledison@gmail.com.',
+        message: 'A conta adm.cledson@gmail.com foi desativada e não pode ser utilizada. Utilize adm_cledison@outlook.com.',
       };
     }
     if (!effectivePassword || effectivePassword.length < 6) {
@@ -1809,7 +1873,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     const generatedTenantId =
       trimmedEmail === 'michel.lima20000@gmail.com'
         ? 'tenant_drift_01'
-        : trimmedEmail.includes('admcledison')
+        : (trimmedEmail.includes('admcledison') || trimmedEmail.includes('outlook'))
         ? 'tenant_admcledison_gmail_com'
         : `tenant_${trimmedEmail.replace(/[^a-zA-Z0-9]/g, '_')}`;
 
@@ -1881,7 +1945,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     if (isDeactivatedAccount(trimmedEmail)) {
       return {
         success: false,
-        message: 'A conta adm.cledson@gmail.com foi desativada e não está mais em uso. Utilize a conta oficial admcledison@gmail.com.',
+        message: 'A conta adm.cledson@gmail.com foi desativada e não está mais em uso. Utilize a conta oficial adm_cledison@outlook.com.',
       };
     }
 
@@ -1924,14 +1988,14 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
           ? 'tenant_admcledison_gmail_com'
           : (resolved.tenantId || canonicalTenantId);
       profile = {
-        id: resolved.id || resolved.uid || `usr_${trimmedEmail.replace(/[^a-zA-Z0-9]/g, '_')}`,
+        id: resolved.id || resolved.uid || (isAdmcledison ? 'x9LtAZ0RAMTyOPmZelhVoyTDAVx2' : `usr_${trimmedEmail.replace(/[^a-zA-Z0-9]/g, '_')}`),
         name: resolved.name || (isMichel ? 'Michel Lima' : (isAdmcledison ? 'Admcledison' : trimmedEmail.split('@')[0])),
-        email: trimmedEmail,
+        email: isAdmcledison ? 'adm_cledison@outlook.com' : trimmedEmail,
         role: resolvedRole,
         tenantId: resolvedTenant,
         createdAt: resolved.createdAt || Date.now(),
-        adminEmail: resolved.adminEmail || resolved.createdBy || (isAdmcledison ? 'admcledison@gmail.com' : undefined),
-        adminName: resolved.adminName || (isAdmcledison ? 'Admcledison' : undefined),
+        adminEmail: isAdmcledison ? 'adm_cledison@outlook.com' : (resolved.adminEmail || resolved.createdBy),
+        adminName: isAdmcledison ? 'Admcledison' : resolved.adminName,
         savedPassword: effectivePassword,
       };
     } else if (trimmedEmail === 'carollimap1993@gmail.com') {
@@ -1941,19 +2005,21 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
         email: 'carollimap1993@gmail.com',
         role: 'operador',
         tenantId: 'tenant_admcledison_gmail_com',
-        adminEmail: 'admcledison@gmail.com',
-        adminName: 'admcledison',
+        adminEmail: 'adm_cledison@outlook.com',
+        adminName: 'Admcledison',
         createdAt: 1791804703979,
         savedPassword: effectivePassword,
       };
     } else if (isAdmcledison) {
       profile = {
-        id: 'usr_admcledison',
+        id: 'x9LtAZ0RAMTyOPmZelhVoyTDAVx2',
         name: 'Admcledison',
-        email: 'admcledison@gmail.com',
+        email: 'adm_cledison@outlook.com',
         role: 'admin',
         tenantId: 'tenant_admcledison_gmail_com',
-        createdAt: 1791725656602,
+        adminEmail: 'adm_cledison@outlook.com',
+        adminName: 'Admcledison',
+        createdAt: 1791926468433,
         savedPassword: effectivePassword,
       };
     } else {
@@ -2031,27 +2097,31 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   const quickLoginAs = (role: UserRole) => {
     if (role === 'admin') {
-      setCurrentUser({
-        id: 'usr_admin_michel',
-        name: 'Michel Lima',
-        email: 'michel.lima20000@gmail.com',
+      const admProfile: UserProfile = {
+        id: 'x9LtAZ0RAMTyOPmZelhVoyTDAVx2',
+        name: 'Admcledison',
+        email: 'adm_cledison@outlook.com',
         role: 'admin',
-        tenantId: currentTenant.id,
-        createdAt: Date.now() - 3600000,
-      });
+        tenantId: 'tenant_admcledison_gmail_com',
+        adminEmail: 'adm_cledison@outlook.com',
+        adminName: 'Admcledison',
+        createdAt: 1791926468433,
+        savedPassword: '123456',
+      };
+      setCurrentUser(admProfile);
+      setCurrentTenantId(admProfile.tenantId);
+      safeSetItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(admProfile));
+      safeSetItem(STORAGE_KEYS.CURRENT_TENANT, admProfile.tenantId);
+      pullFromFirestoreDirectly(admProfile.tenantId);
     } else {
-      const foundOp = users.find((u) => u.tenantId === currentTenant.id && u.role === 'operador');
+      const foundOp = users.find((u) => u.email.toLowerCase() === 'carollimap1993@gmail.com') ||
+                      users.find((u) => u.role === 'operador');
       if (foundOp) {
         setCurrentUser(foundOp);
-      } else {
-        setCurrentUser({
-          id: 'usr_op_demo',
-          name: 'Operador de Pista',
-          email: `operador.${currentTenant.id}@pista.com`,
-          role: 'operador',
-          tenantId: currentTenant.id,
-          createdAt: Date.now(),
-        });
+        setCurrentTenantId(foundOp.tenantId);
+        safeSetItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(foundOp));
+        safeSetItem(STORAGE_KEYS.CURRENT_TENANT, foundOp.tenantId);
+        pullFromFirestoreDirectly(foundOp.tenantId);
       }
     }
     playTone('click');

@@ -81,6 +81,7 @@ function normalizeTenantId(tenantId: string): string {
     norm.includes('admcledison') ||
     norm.includes('admcledson') ||
     norm.includes('clecio') ||
+    norm.includes('outlook') ||
     norm.includes('1791633952871') ||
     norm === 'tenant_admcledison_gmail_com'
   ) {
@@ -352,14 +353,33 @@ app.get('/api/cloud/users/by-email/:email', (req, res) => {
   const rawEmail = (req.params.email || '').toLowerCase().trim();
 
   // Bloqueio explícito da conta desativada
-  if (rawEmail === 'adm.cledson@gmail.com' || rawEmail === 'adm_cledson@gmail.com') {
+  if (rawEmail === 'adm.cledson@gmail.com') {
     return res.status(403).json({
       success: false,
-      message: 'A conta adm.cledson@gmail.com foi desativada e não está mais em uso. Utilize a conta oficial admcledison@gmail.com.',
+      message: 'A conta adm.cledson@gmail.com foi desativada e não está mais em uso. Utilize a conta oficial adm_cledison@outlook.com.',
     });
   }
 
-  const cleanEmail = rawEmail === 'admcledison@gmail.com' ? 'admcledison@gmail.com' : rawEmail;
+  const cleanEmail = rawEmail;
+
+  if (
+    cleanEmail === 'adm_cledison@outlook.com' ||
+    cleanEmail === 'admcledison@gmail.com' ||
+    cleanEmail === 'adm_cledison@gmail.com'
+  ) {
+    const adminUser = {
+      id: 'x9LtAZ0RAMTyOPmZelhVoyTDAVx2',
+      name: 'Admcledison',
+      email: 'adm_cledison@outlook.com',
+      role: 'admin',
+      tenantId: 'tenant_admcledison_gmail_com',
+      adminEmail: 'adm_cledison@outlook.com',
+      adminName: 'Admcledison',
+      createdAt: 1791926468433,
+      savedPassword: '123456',
+    };
+    return res.json({ success: true, user: adminUser });
+  }
 
   const usersIdx = loadUsersIndex();
   const user = usersIdx[cleanEmail] || usersIdx[rawEmail];

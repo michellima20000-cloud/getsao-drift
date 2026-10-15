@@ -62,18 +62,49 @@ export function getDefaultFleet(tenantId = 'tenant_drift_01'): Vehicle[] {
 }
 
 /**
- * Identifica se um veículo é nulo ou corrompido
+ * Identifica se um veículo é nulo, corrompido ou duplicata fantasma
  */
 export function isMockVehicle(v: Partial<Vehicle>): boolean {
   if (!v || !v.id) return true;
+  const vid = v.id.toLowerCase();
+  if (
+    vid.includes('1791552623302') ||
+    vid.includes('1791633952871') ||
+    vid.includes('tenant_clecio_drift') ||
+    vid.includes('admcledison_gmail_com_0')
+  ) {
+    return true;
+  }
   return false;
 }
 
 /**
- * Identifica se um registro de corrida é inválido ou corrompido
+ * Identifica se um registro de corrida é inválido ou mock fictício antigo
  */
 export function isMockRental(r: Partial<Rental>): boolean {
   if (!r || !r.id) return true;
+  if ((r as any).isDeleted || (r as any).isMock) return true;
+  const rid = (r.id || '').toLowerCase().trim();
+  const cName = (r.customerName || '').toLowerCase().trim();
+  const opName = (r.operatorName || '').toLowerCase().trim();
+  if (
+    rid.startsWith('rent_hist_') ||
+    rid === 'rent_active_01' ||
+    rid.includes('test_cycle') ||
+    cName === 'gabriel souza' ||
+    cName === 'rodrigo alves' ||
+    cName === 'lucas ferraz' ||
+    cName === 'beatriz martins' ||
+    cName === 'juliana e théo' ||
+    cName === 'matheus costa' ||
+    cName === 'felipe nogueira' ||
+    cName === 'renato silveira' ||
+    cName === 'camila rocha' ||
+    opName === 'carlos operador' ||
+    opName === 'lucas silva'
+  ) {
+    return true;
+  }
   return false;
 }
 
