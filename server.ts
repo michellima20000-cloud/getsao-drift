@@ -52,14 +52,6 @@ function initSeedData() {
               updatedAt: raw.updatedAt || Date.now(),
             };
             fs.writeFileSync(tFile, JSON.stringify(normalized, null, 2), 'utf-8');
-          } else {
-            try {
-              const currentT = JSON.parse(fs.readFileSync(tFile, 'utf-8'));
-              if ((!currentT.vehicles || currentT.vehicles.length === 0) && raw.vehicles && raw.vehicles.length > 0) {
-                currentT.vehicles = raw.vehicles;
-                fs.writeFileSync(tFile, JSON.stringify(currentT, null, 2), 'utf-8');
-              }
-            } catch {}
           }
         }
       }
@@ -101,19 +93,7 @@ function loadTenantData(tenantId: string) {
   if (fs.existsSync(filePath)) {
     try {
       const content = fs.readFileSync(filePath, 'utf-8');
-      const parsed = JSON.parse(content);
-      if ((!parsed.vehicles || parsed.vehicles.length === 0)) {
-        const seedFile = path.join(__dirname, 'data', 'cloud-store.json');
-        if (fs.existsSync(seedFile)) {
-          const seed = JSON.parse(fs.readFileSync(seedFile, 'utf-8'));
-          const seedTenant = seed.tenants?.[tenantId] || seed.tenants?.[safeId];
-          if (seedTenant?.vehicles && seedTenant.vehicles.length > 0) {
-            parsed.vehicles = seedTenant.vehicles;
-            fs.writeFileSync(filePath, JSON.stringify(parsed, null, 2), 'utf-8');
-          }
-        }
-      }
-      return parsed;
+      return JSON.parse(content);
     } catch {}
   }
   // Se ainda não existir no arquivo individual, tenta recuperar do seed
@@ -203,38 +183,27 @@ app.post('/api/cloud/tenants/:tenantId/sync', (req, res) => {
 
   const current = loadTenantData(tenantId);
 
-  // Mescla veículos existentes com novos
+  // Atualiza frota autoritativa enviada pelo cliente (sem ressuscitar excluídos)
   if (Array.isArray(vehicles)) {
-    const vMap = new Map();
-    (current.vehicles || []).forEach((v: any) => vMap.set(v.id, v));
-    vehicles.forEach((v: any) => {
-      if (v && v.id) vMap.set(v.id, { ...v, tenantId });
-    });
-    current.vehicles = Array.from(vMap.values());
+    current.vehicles = vehicles
+      .filter((v: any) => v && v.id)
+      .map((v: any) => ({ ...v, tenantId }));
   }
 
-  // Mescla corridas
+  // Atualiza corridas autoritativas
   if (Array.isArray(rentals)) {
-    const rMap = new Map();
-    (current.rentals || []).forEach((r: any) => rMap.set(r.id, r));
-    rentals.forEach((r: any) => {
-      if (r && r.id) rMap.set(r.id, { ...r, tenantId });
-    });
-    current.rentals = Array.from(rMap.values()).sort(
-      (a: any, b: any) => (b.createdAt || 0) - (a.createdAt || 0)
-    );
+    current.rentals = rentals
+      .filter((r: any) => r && r.id)
+      .map((r: any) => ({ ...r, tenantId }))
+      .sort((a: any, b: any) => (b.createdAt || 0) - (a.createdAt || 0));
   }
 
-  // Mescla fila
+  // Atualiza fila de espera
   if (Array.isArray(queue)) {
-    const qMap = new Map();
-    (current.queue || []).forEach((q: any) => qMap.set(q.id, q));
-    queue.forEach((q: any) => {
-      if (q && q.id) qMap.set(q.id, { ...q, tenantId });
-    });
-    current.queue = Array.from(qMap.values()).sort(
-      (a: any, b: any) => (a.addedAt || 0) - (b.addedAt || 0)
-    );
+    current.queue = queue
+      .filter((q: any) => q && q.id)
+      .map((q: any) => ({ ...q, tenantId }))
+      .sort((a: any, b: any) => (a.addedAt || 0) - (b.addedAt || 0));
   }
 
   // Mescla usuários / operadores da equipe
@@ -379,6 +348,24 @@ app.get('/api/cloud/users/by-email/:email', (req, res) => {
       savedPassword: '123456',
     };
     return res.json({ success: true, user: adminUser });
+  }
+
+  if (
+    cleanEmail === 'michel.lima20000@gmail.com' ||
+    cleanEmail === 'michellimasilva979@gmail.com'
+  ) {
+    const michelUser = {
+      id: '8vMouomTIqbZegeXq9DkT8bPPha2',
+      name: 'Michel Lima',
+      email: cleanEmail,
+      role: 'admin',
+      tenantId: 'tenant_drift_01',
+      adminEmail: cleanEmail,
+      adminName: 'Michel Lima',
+      createdAt: 1791813452613,
+      savedPassword: '123456',
+    };
+    return res.json({ success: true, user: michelUser });
   }
 
   const usersIdx = loadUsersIndex();

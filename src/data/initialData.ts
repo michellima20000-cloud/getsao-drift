@@ -41,37 +41,44 @@ export const INITIAL_RENTALS: Rental[] = [];
 export const INITIAL_QUEUE: QueueItem[] = [];
 
 /**
- * Frota padrão oficial da pista (DRIFT - 6, JEEP - 3, BATE-BATE - 4)
+ * Em ambiente 100% em produção, a frota inicial é limpa e gerenciada exclusivamente pelo usuário
  */
-export function getDefaultFleet(tenantId = 'tenant_drift_01'): Vehicle[] {
-  return [
-    { id: `veh_${tenantId}_d1`, tenantId, name: 'Drift Kart #01', code: '#01', category: 'DRIFT', status: 'disponivel', batteryLevel: 100, totalRuns: 0 },
-    { id: `veh_${tenantId}_d2`, tenantId, name: 'Drift Kart #02', code: '#02', category: 'DRIFT', status: 'disponivel', batteryLevel: 100, totalRuns: 0 },
-    { id: `veh_${tenantId}_d3`, tenantId, name: 'Drift Kart #03', code: '#03', category: 'DRIFT', status: 'disponivel', batteryLevel: 100, totalRuns: 0 },
-    { id: `veh_${tenantId}_d4`, tenantId, name: 'Drift Kart #04', code: '#04', category: 'DRIFT', status: 'disponivel', batteryLevel: 100, totalRuns: 0 },
-    { id: `veh_${tenantId}_d5`, tenantId, name: 'Drift Kart #05', code: '#05', category: 'DRIFT', status: 'disponivel', batteryLevel: 100, totalRuns: 0 },
-    { id: `veh_${tenantId}_d6`, tenantId, name: 'Drift Kart #06', code: '#06', category: 'DRIFT', status: 'disponivel', batteryLevel: 100, totalRuns: 0 },
-    { id: `veh_${tenantId}_j1`, tenantId, name: 'Jeep Safari #01', code: '#01', category: 'JEEP', status: 'disponivel', batteryLevel: 100, totalRuns: 0 },
-    { id: `veh_${tenantId}_j2`, tenantId, name: 'Jeep Safari #02', code: '#02', category: 'JEEP', status: 'disponivel', batteryLevel: 100, totalRuns: 0 },
-    { id: `veh_${tenantId}_j3`, tenantId, name: 'Jeep Safari #03', code: '#03', category: 'JEEP', status: 'disponivel', batteryLevel: 100, totalRuns: 0 },
-    { id: `veh_${tenantId}_b1`, tenantId, name: 'Bate-Bate #01', code: '#01', category: 'BATE_BATE', status: 'disponivel', batteryLevel: 100, totalRuns: 0 },
-    { id: `veh_${tenantId}_b2`, tenantId, name: 'Bate-Bate #02', code: '#02', category: 'BATE_BATE', status: 'disponivel', batteryLevel: 100, totalRuns: 0 },
-    { id: `veh_${tenantId}_b3`, tenantId, name: 'Bate-Bate #03', code: '#03', category: 'BATE_BATE', status: 'disponivel', batteryLevel: 100, totalRuns: 0 },
-    { id: `veh_${tenantId}_b4`, tenantId, name: 'Bate-Bate #04', code: '#04', category: 'BATE_BATE', status: 'disponivel', batteryLevel: 100, totalRuns: 0 },
-  ];
+export function getDefaultFleet(_tenantId = 'tenant_drift_01'): Vehicle[] {
+  return [];
 }
 
 /**
- * Identifica se um veículo é nulo, corrompido ou duplicata fantasma
+ * Identifica se um veículo é nulo, mock de teste, modelo de template ou duplicata fantasma
  */
 export function isMockVehicle(v: Partial<Vehicle>): boolean {
   if (!v || !v.id) return true;
-  const vid = v.id.toLowerCase();
+  const vid = (v.id || '').toLowerCase().trim();
+  const vname = (v.name || '').toLowerCase().trim();
   if (
     vid.includes('1791552623302') ||
     vid.includes('1791633952871') ||
     vid.includes('tenant_clecio_drift') ||
-    vid.includes('admcledison_gmail_com_0')
+    vid.includes('admcledison_gmail_com_0') ||
+    vid.startsWith('veh_tenant_drift_01_') ||
+    vid.startsWith('veh_tenant_admcledison_') ||
+    vid.startsWith('veh_drift_') ||
+    vid.startsWith('veh_jeep_') ||
+    vid.startsWith('veh_bump_') ||
+    vname.startsWith('drift blade') ||
+    vname.startsWith('neon drift') ||
+    vname.startsWith('turbo slide') ||
+    vname.startsWith('ghost racer') ||
+    vname.startsWith('apex thunder') ||
+    vname.startsWith('storm slider') ||
+    vname.startsWith('jeep safari') ||
+    vname.startsWith('jeep raptor') ||
+    vname.startsWith('jungle trail') ||
+    vname.startsWith('bump master') ||
+    vname.startsWith('flash bumper') ||
+    vname.startsWith('volt crash') ||
+    vname.startsWith('spark ranger') ||
+    vname.startsWith('drift kart #') ||
+    vname.startsWith('bate-bate #')
   ) {
     return true;
   }

@@ -1,5 +1,35 @@
 {
   "tenants": {
+    "tenant_drift_01": {
+      "tenant": {
+        "id": "tenant_drift_01",
+        "name": "Drift Park - Pista Principal",
+        "city": "Pista Principal",
+        "document": "12.345.678/0001-90",
+        "active": true,
+        "pricing": {
+          "5": 15,
+          "10": 25,
+          "15": 35,
+          "20": 45,
+          "30": 60
+        }
+      },
+      "vehicles": [],
+      "rentals": [],
+      "queue": [],
+      "users": [
+        {
+          "id": "8vMouomTIqbZegeXq9DkT8bPPha2",
+          "name": "Michel Lima",
+          "email": "michel.lima20000@gmail.com",
+          "role": "admin",
+          "tenantId": "tenant_drift_01",
+          "createdAt": 1791813452613
+        }
+      ],
+      "updatedAt": 1792147000000
+    },
     "tenant_admcledison_gmail_com": {
       "tenant": {
         "id": "tenant_admcledison_gmail_com",
@@ -15,111 +45,46 @@
           "30": 60
         }
       },
-      "vehicles": [
-        {
-          "id": "veh_tenant_clecio_drift_01",
-          "name": "Drift Storm #01",
-          "code": "#01",
-          "category": "DRIFT",
-          "status": "disponivel",
-          "batteryLevel": 100,
-          "totalRuns": 0,
-          "imageUrl": "https://images.unsplash.com/photo-1596707204928-87b6131c1955?auto=format&fit=crop&w=400&q=80",
-          "adminEmail": "admcledison@gmail.com",
-          "tenantId": "tenant_admcledison_gmail_com"
-        },
-        {
-          "id": "veh_tenant_clecio_drift_02",
-          "name": "Drift Storm #02",
-          "code": "#02",
-          "category": "DRIFT",
-          "status": "disponivel",
-          "batteryLevel": 95,
-          "totalRuns": 0,
-          "imageUrl": "https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?auto=format&fit=crop&w=400&q=80",
-          "adminEmail": "admcledison@gmail.com",
-          "tenantId": "tenant_admcledison_gmail_com"
-        },
-        {
-          "id": "veh_tenant_clecio_drift_03",
-          "name": "Drift Storm #03",
-          "code": "#03",
-          "category": "DRIFT",
-          "status": "disponivel",
-          "batteryLevel": 90,
-          "totalRuns": 0,
-          "imageUrl": "https://images.unsplash.com/photo-1558981403-c5f9899a28bc?auto=format&fit=crop&w=400&q=80",
-          "adminEmail": "admcledison@gmail.com",
-          "tenantId": "tenant_admcledison_gmail_com"
-        },
-        {
-          "id": "veh_tenant_clecio_drift_04",
-          "name": "Jeep Safari #01",
-          "code": "#04",
-          "category": "JEEP",
-          "status": "disponivel",
-          "batteryLevel": 100,
-          "totalRuns": 0,
-          "imageUrl": "https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=400&q=80",
-          "adminEmail": "admcledison@gmail.com",
-          "tenantId": "tenant_admcledison_gmail_com"
-        },
-        {
-          "id": "veh_tenant_clecio_drift_05",
-          "name": "Bate-Bate Nitro #01",
-          "code": "#05",
-          "category": "BATE_BATE",
-          "status": "disponivel",
-          "batteryLevel": 85,
-          "totalRuns": 0,
-          "imageUrl": "https://images.unsplash.com/photo-1579783902614-a3fb3927b675?auto=format&fit=crop&w=400&q=80",
-          "adminEmail": "admcledison@gmail.com",
-          "tenantId": "tenant_admcledison_gmail_com"
-        }
-      ],
+      "vehicles": [],
       "rentals": [],
       "queue": [],
       "users": [
         {
-          "id": "usr_admcledison",
-          "email": "admcledison@gmail.com",
-          "name": "admcledison",
+          "id": "x9LtAZ0RAMTyOPmZelhVoyTDAVx2",
+          "email": "adm_cledison@outlook.com",
+          "name": "Admcledison",
           "role": "admin",
           "tenantId": "tenant_admcledison_gmail_com",
-          "createdAt": 1791804530878
-        },
-        {
-          "id": "usr_op_carollimap1993",
-          "name": "carollimap1993",
-          "email": "carollimap1993@gmail.com",
-          "role": "operador",
-          "tenantId": "tenant_admcledison_gmail_com",
-          "adminEmail": "admcledison@gmail.com",
-          "adminName": "admcledison",
-          "createdAt": 1791804703979
+          "createdAt": 1791926468433
         }
       ],
-      "updatedAt": 1791804416553
+      "updatedAt": 1792147000000
     }
   },
   "users": {
-    "admcledison@gmail.com": {
-      "id": "usr_admcledison",
-      "email": "admcledison@gmail.com",
+    "michel.lima20000@gmail.com": {
+      "id": "8vMouomTIqbZegeXq9DkT8bPPha2",
+      "email": "michel.lima20000@gmail.com",
+      "name": "Michel Lima",
+      "role": "admin",
+      "tenantId": "tenant_drift_01",
+      "createdAt": 1791813452613
+    },
+    "michellimasilva979@gmail.com": {
+      "id": "8vMouomTIqbZegeXq9DkT8bPPha2",
+      "email": "michellimasilva979@gmail.com",
+      "name": "Michel Lima",
+      "role": "admin",
+      "tenantId": "tenant_drift_01",
+      "createdAt": 1791813452613
+    },
+    "adm_cledison@outlook.com": {
+      "id": "x9LtAZ0RAMTyOPmZelhVoyTDAVx2",
+      "email": "adm_cledison@outlook.com",
       "name": "Admcledison",
       "role": "admin",
       "tenantId": "tenant_admcledison_gmail_com",
-      "createdAt": 1791725656602
-    },
-    "carollimap1993@gmail.com": {
-      "id": "usr_op_carollimap1993",
-      "email": "carollimap1993@gmail.com",
-      "name": "carollimap1993",
-      "role": "operador",
-      "tenantId": "tenant_admcledison_gmail_com",
-      "adminEmail": "admcledison@gmail.com",
-      "adminName": "admcledison",
-      "createdAt": 1791804703979
+      "createdAt": 1791926468433
     }
   }
 }

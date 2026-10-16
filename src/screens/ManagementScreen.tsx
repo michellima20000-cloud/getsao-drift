@@ -91,23 +91,26 @@ export const ManagementScreen: React.FC = () => {
   // 1. Administrador logado atual (apenas 1 card no topo)
   const adminUser = currentUser;
 
-  // 2. Operadores vinculados a este Administrador e à Pista
-  const isMasterAdmin =
-    currentUser?.email === 'michel.lima20000@gmail.com' ||
-    currentUser?.email === 'michellimasilva979@gmail.com';
+  const userEmail = (currentUser?.email || '').toLowerCase().trim();
+  const userTenant = currentUser?.tenantId || '';
 
-  const tenantOperators = users.filter(
-    (u) =>
-      u.role === 'operador' &&
-      u.id !== currentUser?.id &&
-      u.email.toLowerCase() !== (currentUser?.email || '').toLowerCase() &&
-      (
-        isMasterAdmin ||
-        u.tenantId === currentUser?.tenantId ||
-        u.adminEmail === currentUser?.email ||
-        (currentUser?.email && u.adminEmail && u.adminEmail.toLowerCase() === currentUser.email.toLowerCase())
-      )
-  );
+  const tenantOperators = users.filter((u) => {
+    if (!u || u.role !== 'operador') return false;
+    if (u.id === currentUser?.id) return false;
+    const opEmail = (u.email || '').toLowerCase().trim();
+    if (opEmail === userEmail) return false;
+
+    const opAdminEmail = (u.adminEmail || u.createdBy || '').toLowerCase().trim();
+    const opTenant = (u.tenantId || '').trim();
+
+    // Must match either current admin's email or current tenant
+    if (userEmail && opAdminEmail === userEmail) return true;
+    if (userTenant && opTenant === userTenant) {
+      // Ensure it does not belong to a different admin
+      if (!opAdminEmail || opAdminEmail === userEmail) return true;
+    }
+    return false;
+  });
 
   // Deduplicação estrita para garantir zero repetições na UI
   const uniqueOperators = Array.from(

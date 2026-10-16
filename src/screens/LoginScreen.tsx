@@ -12,12 +12,12 @@ export const LoginScreen: React.FC = () => {
     if (saved.toLowerCase().includes('adm.cledson') || saved.toLowerCase().includes('adm_cledson@gmail')) {
       safeRemoveItem('driftpark_saved_email');
       safeRemoveItem('driftpark_saved_password');
-      return 'adm_cledison@outlook.com';
+      return '';
     }
-    return saved || 'adm_cledison@outlook.com';
+    return saved;
   });
   const [password, setPassword] = useState(() => {
-    return safeGetItem('driftpark_saved_password') || '123456';
+    return safeGetItem('driftpark_saved_password') || '';
   });
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(() => {
