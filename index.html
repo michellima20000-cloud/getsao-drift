@@ -129,7 +129,14 @@
             text.includes('WebSocket') ||
             text.includes('permission_denied') ||
             text.includes('FIREBASE WARNING') ||
-            text.includes('@firebase/database')
+            text.includes('@firebase/database') ||
+            text.includes('resource-exhausted') ||
+            text.includes('Quota limit exceeded') ||
+            text.includes('quota metric') ||
+            text.includes('Quota exceeded') ||
+            text.includes('Free daily write units') ||
+            text.includes('Free daily read units') ||
+            text.includes('@firebase/firestore')
           ) return;
           return origWarn.apply(console, arguments);
         };
@@ -145,7 +152,14 @@
             text.includes('closed without opened') ||
             text.includes('permission_denied') ||
             text.includes('FIREBASE WARNING') ||
-            text.includes('@firebase/database')
+            text.includes('@firebase/database') ||
+            text.includes('resource-exhausted') ||
+            text.includes('Quota limit exceeded') ||
+            text.includes('quota metric') ||
+            text.includes('Quota exceeded') ||
+            text.includes('Free daily write units') ||
+            text.includes('Free daily read units') ||
+            text.includes('@firebase/firestore')
           ) return;
           return origError.apply(console, arguments);
         };

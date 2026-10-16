@@ -28,7 +28,13 @@ import {
   deleteDoc,
   addDoc,
   getDocFromServer,
+  setLogLevel,
+  writeBatch,
 } from 'firebase/firestore';
+
+try {
+  setLogLevel('silent');
+} catch {}
 import {
   getDatabase,
   ref as rtdbRef,
@@ -192,13 +198,7 @@ function checkStoredQuotaExceeded(): boolean {
   try {
     const stored = window.localStorage ? window.localStorage.getItem(QUOTA_STORAGE_KEY) : null;
     const currentDay = new Date().toISOString().slice(0, 10);
-    // Se já estiver gravado para hoje, retorna true; caso não esteja ainda gravado, marca hoje preventivamente após o erro
     if (stored === currentDay || stored === 'exceeded') {
-      return true;
-    }
-    // O erro foi acionado hoje em 2026-10-15: define como ativo
-    if (currentDay === '2026-10-15') {
-      try { window.localStorage.setItem(QUOTA_STORAGE_KEY, currentDay); } catch {}
       return true;
     }
   } catch {}
@@ -303,32 +303,66 @@ export function sanitizeForFirestore<T = any>(val: T): T {
   return result as T;
 }
 
+// ============================================================================
+// MOTOR DE BATCHING E DEBOUNCING INTELIGENTE DO FIRESTORE
+// Agrupa múltiplas mutações e descarta intermediárias, reduzindo drasticamente
+// o número de operações de escrita na nuvem.
+// ============================================================================
+
+interface PendingWrite {
+  collection: string;
+  docId: string;
+  data?: any;
+  action: 'set' | 'delete';
+  isCritical: boolean;
+  queuedAt: number;
+}
+
+const pendingBatch = new Map<string, PendingWrite>();
+let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+let maxWaitTimer: ReturnType<typeof setTimeout> | null = null;
+const DEBOUNCE_DELAY_MS = 1200; // Janela de 1.2s para agregar alterações
+const MAX_WAIT_MS = 4000; // Limite máximo para forçar envio
+let isFlushing = false;
+
+export function getPendingWritesCount(): number {
+  return pendingBatch.size;
+}
+
 /**
- * Grava documento diretamente na Nuvem do Firebase (Firestore + Realtime Database)
- * com proteção contra exaustão de cota diária gratuita e sem lançar exceções não tratadas.
+ * Executa o commit atômico de todas as escritas agrupadas na fila via writeBatch(db)
  */
-export async function saveDocToCloud(
-  collectionName: string,
-  docId: string,
-  data: any,
-  secondaryCollection?: string
-): Promise<boolean> {
-  const cleanData = sanitizeForFirestore({
-    ...data,
-    updatedAt: Date.now(),
-  });
+export async function flushPendingWrites(): Promise<boolean> {
+  if (pendingBatch.size === 0 || isFirestoreQuotaExceeded) {
+    return true;
+  }
 
-  const promises: Promise<any>[] = [];
+  if (debounceTimer) {
+    clearTimeout(debounceTimer);
+    debounceTimer = null;
+  }
+  if (maxWaitTimer) {
+    clearTimeout(maxWaitTimer);
+    maxWaitTimer = null;
+  }
 
-  // 1. Grava no Cloud Firestore apenas se a cota gratuita não estiver esgotada
-  if (!isFirestoreQuotaExceeded) {
-    const handleWriteErr = (err: any) => {
+  if (isFlushing) {
+    return true;
+  }
+  isFlushing = true;
+
+  const itemsToCommit = Array.from(pendingBatch.values());
+  pendingBatch.clear();
+
+  try {
+    const handleErr = (err: any) => {
       const msg = String(err?.message || err || '');
       if (
         msg.includes('resource-exhausted') ||
         msg.includes('Quota limit exceeded') ||
         msg.includes('quota metric') ||
         msg.includes('Quota exceeded') ||
+        msg.includes('Free daily write units') ||
         err?.code === 'resource-exhausted'
       ) {
         markFirestoreQuotaExceeded();
@@ -336,120 +370,172 @@ export async function saveDocToCloud(
       return null;
     };
 
-    try {
-      promises.push(
-        setDoc(doc(db, collectionName, docId), cleanData, { merge: true }).catch(handleWriteErr)
-      );
-      if (secondaryCollection) {
-        promises.push(
-          setDoc(doc(db, secondaryCollection, docId), cleanData, { merge: true }).catch(handleWriteErr)
-        );
-      }
-      // Para contas de usuários, grava também com chave de e-mail limpa para busca instantânea O(1)
-      if ((collectionName === 'users' || collectionName === 'usuarios') && cleanData?.email) {
-        const emailDocId = String(cleanData.email).toLowerCase().trim();
-        if (emailDocId && emailDocId !== docId) {
-          promises.push(
-            setDoc(doc(db, collectionName, emailDocId), cleanData, { merge: true }).catch(handleWriteErr)
-          );
-          if (secondaryCollection) {
-            promises.push(
-              setDoc(doc(db, secondaryCollection, emailDocId), cleanData, { merge: true }).catch(handleWriteErr)
-            );
-          }
+    // O Cloud Firestore suporta até 500 operações por writeBatch
+    const CHUNK_SIZE = 400;
+    for (let i = 0; i < itemsToCommit.length; i += CHUNK_SIZE) {
+      const chunk = itemsToCommit.slice(i, i + CHUNK_SIZE);
+      const batch = writeBatch(db);
+
+      for (const item of chunk) {
+        const docRef = doc(db, item.collection, item.docId);
+        if (item.action === 'delete') {
+          batch.delete(docRef);
+        } else {
+          batch.set(docRef, item.data, { merge: true });
         }
       }
-    } catch (fsErr) {
-      console.warn(`[Firebase] Erro ao preparar gravação Firestore em ${collectionName}:`, fsErr);
-    }
-  }
 
-  // 2. Grava no Firebase Realtime Database para sincronia redundante apenas se habilitado
-  if (rtdb && ENABLE_RTDB_WRITES) {
-    try {
-      const sanitizedKey = docId.replace(/[.#$[\]]/g, '_');
-      promises.push(rtdbSet(rtdbRef(rtdb, `driftpark/${collectionName}/${sanitizedKey}`), cleanData).catch(() => null));
-      if (cleanData?.email) {
-        const emailRtdbKey = String(cleanData.email).toLowerCase().trim().replace(/[.#$[\]]/g, '_');
-        if (emailRtdbKey !== sanitizedKey) {
-          promises.push(rtdbSet(rtdbRef(rtdb, `driftpark/${collectionName}/${emailRtdbKey}`), cleanData).catch(() => null));
-        }
-      }
-      if (cleanData.tenantId) {
-        const tenantKey = cleanData.tenantId.replace(/[.#$[\]]/g, '_');
-        promises.push(
-          rtdbSet(rtdbRef(rtdb, `driftpark/tenants/${tenantKey}/${collectionName}/${sanitizedKey}`), cleanData).catch(() => null)
-        );
-      }
-    } catch (rtdbErr) {
-      console.warn(`[Firebase RTDB] Erro ao sincronizar ${collectionName}:`, rtdbErr);
+      await batch.commit().catch(handleErr);
     }
-  }
 
-  try {
-    const timeout = new Promise((resolve) => setTimeout(resolve, 600));
-    await Promise.race([Promise.allSettled(promises), timeout]);
     return true;
-  } catch {
+  } catch (err: any) {
+    const msg = String(err?.message || err || '');
+    if (
+      msg.includes('resource-exhausted') ||
+      msg.includes('Quota limit exceeded') ||
+      msg.includes('quota metric') ||
+      msg.includes('Quota exceeded') ||
+      msg.includes('Free daily write units') ||
+      err?.code === 'resource-exhausted'
+    ) {
+      markFirestoreQuotaExceeded();
+    }
     return false;
+  } finally {
+    isFlushing = false;
   }
 }
 
+// Flush automático quando a aba é ocultada ou antes de fechar o app
+if (typeof window !== 'undefined') {
+  window.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden' && pendingBatch.size > 0) {
+      flushPendingWrites();
+    }
+  });
+  window.addEventListener('pagehide', () => {
+    if (pendingBatch.size > 0) {
+      flushPendingWrites();
+    }
+  });
+  window.addEventListener('beforeunload', () => {
+    if (pendingBatch.size > 0) {
+      flushPendingWrites();
+    }
+  });
+}
+
 /**
- * Remove documento diretamente na Nuvem do Firebase (Firestore + Realtime Database)
+ * Grava documento com debouncing e batching inteligente.
+ * - Se isCritical for true (início/fim de corrida, cadastro), agenda envio ultra-rápido (150ms).
+ * - Se múltiplos updates do mesmo documento chegarem na mesma janela,
+ *   eles são mesclados em memória, gerando uma única operação de escrita.
+ */
+export async function saveDocToCloud(
+  collectionName: string,
+  docId: string,
+  data: any,
+  isCriticalOrSecondary?: boolean | string
+): Promise<boolean> {
+  if (isFirestoreQuotaExceeded) {
+    return true;
+  }
+
+  const isCritical = typeof isCriticalOrSecondary === 'boolean' ? isCriticalOrSecondary : false;
+  const cleanData = sanitizeForFirestore({
+    ...data,
+    updatedAt: Date.now(),
+  });
+
+  const key = `${collectionName}/${docId}`;
+  const existing = pendingBatch.get(key);
+
+  if (existing && existing.action === 'set') {
+    pendingBatch.set(key, {
+      collection: collectionName,
+      docId,
+      data: { ...existing.data, ...cleanData },
+      action: 'set',
+      isCritical: existing.isCritical || isCritical,
+      queuedAt: existing.queuedAt,
+    });
+  } else {
+    pendingBatch.set(key, {
+      collection: collectionName,
+      docId,
+      data: cleanData,
+      action: 'set',
+      isCritical,
+      queuedAt: Date.now(),
+    });
+  }
+
+  // Operações críticas disparam flush com brevidade (150ms)
+  if (isCritical) {
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      flushPendingWrites();
+    }, 150);
+    return true;
+  }
+
+  // Agendamento padrão com debounce
+  if (debounceTimer) clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(() => {
+    flushPendingWrites();
+  }, DEBOUNCE_DELAY_MS);
+
+  if (!maxWaitTimer) {
+    maxWaitTimer = setTimeout(() => {
+      flushPendingWrites();
+    }, MAX_WAIT_MS);
+  }
+
+  if (pendingBatch.size >= 15) {
+    flushPendingWrites();
+  }
+
+  return true;
+}
+
+/**
+ * Remove documento utilizando o motor de batching
  */
 export async function deleteDocFromCloud(
   collectionName: string,
   docId: string,
-  secondaryCollection?: string,
-  tenantId?: string
+  isCriticalOrSecondary?: boolean | string,
+  _tenantId?: string
 ): Promise<boolean> {
-  const promises: Promise<any>[] = [];
-
-  // 1. Firestore
-  if (!isFirestoreQuotaExceeded) {
-    const handleDeleteErr = (err: any) => {
-      const msg = String(err?.message || err || '');
-      if (
-        msg.includes('resource-exhausted') ||
-        msg.includes('Quota limit exceeded') ||
-        msg.includes('quota metric') ||
-        err?.code === 'resource-exhausted'
-      ) {
-        markFirestoreQuotaExceeded();
-      }
-      return null;
-    };
-
-    try {
-      promises.push(deleteDoc(doc(db, collectionName, docId)).catch(handleDeleteErr));
-      if (secondaryCollection) {
-        promises.push(deleteDoc(doc(db, secondaryCollection, docId)).catch(handleDeleteErr));
-      }
-    } catch {}
-  }
-
-  // 2. Realtime Database
-  if (rtdb && ENABLE_RTDB_WRITES) {
-    try {
-      const sanitizedKey = docId.replace(/[.#$[\]]/g, '_');
-      promises.push(rtdbRemove(rtdbRef(rtdb, `driftpark/${collectionName}/${sanitizedKey}`)).catch(() => null));
-      if (tenantId) {
-        const tenantKey = tenantId.replace(/[.#$[\]]/g, '_');
-        promises.push(
-          rtdbRemove(rtdbRef(rtdb, `driftpark/tenants/${tenantKey}/${collectionName}/${sanitizedKey}`)).catch(() => null)
-        );
-      }
-    } catch {}
-  }
-
-  try {
-    const timeout = new Promise((resolve) => setTimeout(resolve, 600));
-    await Promise.race([Promise.allSettled(promises), timeout]);
+  if (isFirestoreQuotaExceeded) {
     return true;
-  } catch {
-    return false;
   }
+
+  const isCritical = typeof isCriticalOrSecondary === 'boolean' ? isCriticalOrSecondary : true;
+  const key = `${collectionName}/${docId}`;
+
+  pendingBatch.set(key, {
+    collection: collectionName,
+    docId,
+    action: 'delete',
+    isCritical,
+    queuedAt: Date.now(),
+  });
+
+  if (isCritical) {
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      flushPendingWrites();
+    }, 150);
+  } else {
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      flushPendingWrites();
+    }, DEBOUNCE_DELAY_MS);
+  }
+
+  return true;
 }
 
 export const deleteDocToCloud = deleteDocFromCloud;

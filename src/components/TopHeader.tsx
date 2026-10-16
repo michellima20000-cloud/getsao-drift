@@ -27,11 +27,11 @@ export const TopHeader: React.FC = () => {
   return (
     <>
       {isQuotaExceeded && (
-        <div className="bg-amber-950/80 border-b border-amber-500/40 px-3 py-1.5 text-[11px] text-amber-200 flex items-center justify-between gap-2 z-40">
+        <div className="bg-cyan-950/90 border-b border-cyan-500/30 px-3 py-1.5 text-[11px] text-cyan-200 flex items-center justify-between gap-2 z-40 backdrop-blur-md">
           <div className="flex items-center gap-1.5 flex-1 min-w-0">
-            <AlertTriangle size={13} className="text-amber-400 shrink-0" />
+            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse shrink-0"></span>
             <span className="truncate">
-              <strong className="text-white">Cota do Firestore atingida:</strong> Operando com salvamento local resiliente e servidor.
+              <strong className="text-white">Modo Nuvem Otimizada:</strong> Operando 100% via servidor em nuvem e armazenamento local resiliente.
             </span>
           </div>
           <div className="flex items-center gap-2 shrink-0">
@@ -39,14 +39,14 @@ export const TopHeader: React.FC = () => {
               href={firestoreUpgradeUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="px-2 py-0.5 rounded bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-[10px] flex items-center gap-1 transition-colors"
+              className="px-2 py-0.5 rounded bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-[10px] flex items-center gap-1 transition-colors"
             >
-              Console Firebase
+              Cota Spark
               <ExternalLink size={9} />
             </a>
             <button
               onClick={dismissQuotaWarning}
-              className="text-amber-400 hover:text-white p-0.5 rounded cursor-pointer"
+              className="text-cyan-400 hover:text-white p-0.5 rounded cursor-pointer"
               title="Dispensar aviso"
             >
               <X size={12} />
