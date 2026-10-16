@@ -214,19 +214,6 @@ export async function findUserInCloudByEmail(email: string): Promise<UserProfile
     };
   }
 
-  if (cleanEmail === 'carollimap1993@gmail.com') {
-    return {
-      id: 'usr_op_carollimap1993',
-      email: 'carollimap1993@gmail.com',
-      name: 'carollimap1993',
-      role: 'operador',
-      tenantId: 'tenant_admcledison_gmail_com',
-      adminEmail: 'adm_cledison@outlook.com',
-      adminName: 'Admcledison',
-      createdAt: 1791804703979,
-    };
-  }
-
   if (cleanEmail === 'michel.lima20000@gmail.com' || cleanEmail === 'michellimasilva979@gmail.com') {
     return {
       id: '8vMouomTIqbZegeXq9DkT8bPPha2',
@@ -259,5 +246,21 @@ export async function registerUserInCloud(user: UserProfile): Promise<void> {
     });
   } catch (err) {
     console.warn('Aviso ao registrar usuário na nuvem:', err);
+  }
+}
+
+export async function deleteOperatorCloud(
+  tenantId: string,
+  userId: string,
+  email: string
+): Promise<void> {
+  if (!tenantId) return;
+  try {
+    await apiFetch(`/api/cloud/tenants/${encodeURIComponent(tenantId)}/user/delete`, {
+      method: 'POST',
+      body: JSON.stringify({ userId, email }),
+    });
+  } catch (err) {
+    console.warn('Aviso ao excluir operador na nuvem:', err);
   }
 }

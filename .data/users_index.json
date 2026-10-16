@@ -8,16 +8,6 @@
     "createdAt": 1791725656602,
     "savedPassword": "123456"
   },
-  "carollimap1993@gmail.com": {
-    "id": "usr_op_carollimap1993",
-    "name": "carollimap1993",
-    "email": "carollimap1993@gmail.com",
-    "role": "operador",
-    "tenantId": "tenant_admcledison_gmail_com",
-    "adminEmail": "admcledison@gmail.com",
-    "adminName": "admcledison",
-    "createdAt": 1791804703979
-  },
   "michel.lima20000@gmail.com": {
     "id": "8vMouomTIqbZegeXq9DkT8bPPha2",
     "name": "Michel Lima",
@@ -34,16 +24,6 @@
     "role": "admin",
     "tenantId": "tenant_drift_01",
     "createdAt": 1791813452613
-  },
-  "usr_op_carollimap1993": {
-    "id": "usr_op_carollimap1993",
-    "name": "carollimap1993",
-    "email": "carollimap1993@gmail.com",
-    "role": "operador",
-    "tenantId": "tenant_admcledison_gmail_com",
-    "adminEmail": "admcledison@gmail.com",
-    "adminName": "admcledison",
-    "createdAt": 1791804703979
   },
   "usr_admcledison": {
     "id": "usr_admcledison",

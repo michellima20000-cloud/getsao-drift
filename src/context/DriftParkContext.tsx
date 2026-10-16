@@ -74,6 +74,7 @@ import {
   updatePricingCloud,
   findUserInCloudByEmail,
   registerUserInCloud,
+  deleteOperatorCloud,
 } from '../services/cloudSync';
 import { safeSetItem, safeGetItem, safeRemoveItem } from '../utils/safeStorage';
 
@@ -451,8 +452,48 @@ function mergeQueue(
   return { merged, unsyncedLocal };
 }
 
+const DELETED_OPERATORS_STORAGE_KEY = 'driftpark_deleted_operators_v1';
+
+export function getDeletedOperators(): string[] {
+  try {
+    const raw = safeGetItem(DELETED_OPERATORS_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function markOperatorDeleted(emailOrId: string) {
+  try {
+    const clean = (emailOrId || '').toLowerCase().trim();
+    if (!clean) return;
+    const list = getDeletedOperators();
+    if (!list.includes(clean)) {
+      list.push(clean);
+      safeSetItem(DELETED_OPERATORS_STORAGE_KEY, JSON.stringify(list));
+    }
+  } catch {}
+}
+
+export function unmarkOperatorDeleted(emailOrId: string) {
+  try {
+    const clean = (emailOrId || '').toLowerCase().trim();
+    if (!clean) return;
+    const list = getDeletedOperators();
+    const filtered = list.filter((item) => item !== clean);
+    safeSetItem(DELETED_OPERATORS_STORAGE_KEY, JSON.stringify(filtered));
+  } catch {}
+}
+
+export function isOperatorDeleted(email?: string, id?: string): boolean {
+  const list = getDeletedOperators();
+  if (email && list.includes(email.toLowerCase().trim())) return true;
+  if (id && list.includes(id.toLowerCase().trim())) return true;
+  return false;
+}
+
 /**
- * Mescla de operadores da equipe não-destrutiva.
+ * Mescla de operadores da equipe não-destrutiva, respeitando operadores excluídos.
  */
 function mergeUsers(
   existingUsers: UserProfile[],
@@ -460,7 +501,7 @@ function mergeUsers(
 ): { merged: UserProfile[]; unsyncedLocal: UserProfile[] } {
   const map = new Map<string, UserProfile>();
   for (const u of existingUsers) {
-    if (u && u.email && !isMockEmail(u.email)) {
+    if (u && u.email && !isMockEmail(u.email) && !isOperatorDeleted(u.email, u.id)) {
       map.set(u.email.toLowerCase().trim(), u);
     }
   }
@@ -470,13 +511,13 @@ function mergeUsers(
 
   for (const u of existingUsers) {
     const em = (u.email || '').toLowerCase().trim();
-    if (!incomingEmails.has(em) && !isMockEmail(em)) {
+    if (!incomingEmails.has(em) && !isMockEmail(em) && !isOperatorDeleted(u.email, u.id)) {
       unsyncedLocal.push(u);
     }
   }
 
   for (const inc of incomingUsers) {
-    if (!inc || !inc.email || isMockEmail(inc.email)) continue;
+    if (!inc || !inc.email || isMockEmail(inc.email) || isOperatorDeleted(inc.email, inc.id)) continue;
     const em = inc.email.toLowerCase().trim();
     const existing = map.get(em);
     map.set(em, {
@@ -488,6 +529,7 @@ function mergeUsers(
 
   return { merged: Array.from(map.values()), unsyncedLocal };
 }
+
 
 export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   // 1. Tenants State
@@ -574,7 +616,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     if (saved) {
       try {
         const parsed: UserProfile[] = JSON.parse(saved);
-        list = parsed.filter((u) => !isMockEmail(u.email));
+        list = parsed.filter((u) => !isMockEmail(u.email) && !isOperatorDeleted(u.email, u.id));
       } catch {}
     }
 
@@ -586,7 +628,13 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
           if (key && (key.startsWith('driftpark_operators_') || key.startsWith('driftpark_admin_operators_'))) {
             const ops: UserProfile[] = JSON.parse(safeGetItem(key) || '[]');
             for (const op of ops) {
-              if (op && op.email && !isMockEmail(op.email) && !list.some((u) => u.email.toLowerCase() === op.email.toLowerCase())) {
+              if (
+                op &&
+                op.email &&
+                !isMockEmail(op.email) &&
+                !isOperatorDeleted(op.email, op.id) &&
+                !list.some((u) => u.email.toLowerCase() === op.email.toLowerCase())
+              ) {
                 list.push(op);
               }
             }
@@ -1105,6 +1153,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
         const email = (d.email || '').toLowerCase().trim();
         const dAdminEmail = (d.adminEmail || d.createdBy || '').toLowerCase().trim();
         if (isMockEmail(email)) return false;
+        if (isOperatorDeleted(email, d.id)) return false;
 
         if (isSameTenantId(uTenant, tenantKey)) return true;
         if (cleanUserEmail && (dAdminEmail === cleanUserEmail || email === cleanUserEmail || isAdmcledisonAccount(dAdminEmail))) return true;
@@ -1136,21 +1185,6 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       if (snapUsers) snapUsers.forEach(processUserDoc);
       if (cloudApiData && Array.isArray(cloudApiData.users)) {
         cloudApiData.users.forEach(processUserDoc);
-      }
-
-      // Garante operador oficial carollimap1993
-      if (!foundUsersMap.has('carollimap1993@gmail.com')) {
-        const defaultOp: UserProfile = {
-          id: 'usr_op_carollimap1993',
-          name: 'carollimap1993',
-          email: 'carollimap1993@gmail.com',
-          role: 'operador',
-          tenantId: 'tenant_admcledison_gmail_com',
-          adminEmail: 'adm_cledison@outlook.com',
-          adminName: 'Admcledison',
-          createdAt: 1791804703979,
-        };
-        foundUsersMap.set('carollimap1993@gmail.com', defaultOp);
       }
 
       // Garante conta oficial do Administrador adm_cledison@outlook.com
@@ -2144,6 +2178,9 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       );
     } catch {}
 
+    unmarkOperatorDeleted(cleanEmail);
+    if (uid) unmarkOperatorDeleted(uid);
+
     playTone('start');
     return { success: true, message: 'Operador cadastrado e vinculado ao administrador com sucesso!' };
   };
@@ -2151,18 +2188,43 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
   const deleteOperator = async (operatorId: string): Promise<boolean> => {
     if (!currentUser || currentUser.role !== 'admin') return false;
     try {
-      deleteDocToCloud('users', operatorId, 'usuarios', currentUser.tenantId);
-      setUsers((prev) => prev.filter((u) => u.id !== operatorId));
+      // Identifica o operador por ID ou por e-mail
+      const targetOp = users.find(
+        (u) => u.id === operatorId || (u.email && u.email.toLowerCase() === operatorId.toLowerCase())
+      );
+      const opId = targetOp?.id || operatorId;
+      const opEmail = (targetOp?.email || '').toLowerCase().trim();
 
+      // Marca na lista de exclusão permanente para não ressuscitar em nenhuma sincronização
+      if (opEmail) markOperatorDeleted(opEmail);
+      if (opId) markOperatorDeleted(opId);
+
+      // Remove de imediato do estado local do React
+      setUsers((prev) =>
+        prev.filter((u) => u.id !== opId && (u.email || '').toLowerCase().trim() !== opEmail)
+      );
+
+      // Atualiza o cache geral de usuários no LocalStorage
+      try {
+        const curGeneral = JSON.parse(safeGetItem(STORAGE_KEYS.USERS) || '[]');
+        if (Array.isArray(curGeneral)) {
+          const updatedGeneral = curGeneral.filter(
+            (u: any) => u.id !== opId && (u.email || '').toLowerCase().trim() !== opEmail
+          );
+          safeSetItem(STORAGE_KEYS.USERS, JSON.stringify(updatedGeneral));
+        }
+      } catch {}
+
+      // Atualiza os caches específicos de operadores do tenant e do admin
       if (currentUser?.tenantId) {
         try {
           const curOps = JSON.parse(
             safeGetItem(`driftpark_operators_${currentUser.tenantId}`) || '[]'
           );
-          safeSetItem(
-            `driftpark_operators_${currentUser.tenantId}`,
-            JSON.stringify(curOps.filter((u: any) => u.id !== operatorId))
+          const filtered = curOps.filter(
+            (u: any) => u.id !== opId && (u.email || '').toLowerCase().trim() !== opEmail
           );
+          safeSetItem(`driftpark_operators_${currentUser.tenantId}`, JSON.stringify(filtered));
         } catch {}
       }
       if (currentUser?.email) {
@@ -2170,11 +2232,25 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
           const adminOps = JSON.parse(
             safeGetItem(`driftpark_admin_operators_${currentUser.email}`) || '[]'
           );
-          safeSetItem(
-            `driftpark_admin_operators_${currentUser.email}`,
-            JSON.stringify(adminOps.filter((u: any) => u.id !== operatorId))
+          const filtered = adminOps.filter(
+            (u: any) => u.id !== opId && (u.email || '').toLowerCase().trim() !== opEmail
           );
+          safeSetItem(`driftpark_admin_operators_${currentUser.email}`, JSON.stringify(filtered));
         } catch {}
+      }
+
+      // Remove de todas as coleções no Cloud Firestore (users e usuarios, por id e por e-mail)
+      deleteDocToCloud('users', opId, true, currentUser.tenantId);
+      deleteDocToCloud('usuarios', opId, true, currentUser.tenantId);
+      if (opEmail && opEmail !== opId) {
+        deleteDocToCloud('users', opEmail, true, currentUser.tenantId);
+        deleteDocToCloud('usuarios', opEmail, true, currentUser.tenantId);
+      }
+      flushPendingWrites().catch(() => {});
+
+      // Remove do banco de dados na API em nuvem do servidor (server.ts)
+      if (currentUser?.tenantId) {
+        deleteOperatorCloud(currentUser.tenantId, opId, opEmail).catch(() => {});
       }
 
       playTone('alert');

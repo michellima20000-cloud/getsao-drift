@@ -206,12 +206,14 @@ app.post('/api/cloud/tenants/:tenantId/sync', (req, res) => {
       .sort((a: any, b: any) => (a.addedAt || 0) - (b.addedAt || 0));
   }
 
-  // Mescla usuários / operadores da equipe
+  // Atualiza usuários / operadores da equipe com autoridade (preserva admins cadastrados)
   if (Array.isArray(users)) {
+    const existingAdmins = (current.users || []).filter((u: any) => u && u.role === 'admin');
     const uMap = new Map();
-    (current.users || []).forEach((u: any) => {
-      if (u && u.email) uMap.set(u.email.toLowerCase(), u);
+    existingAdmins.forEach((adm: any) => {
+      if (adm.email) uMap.set(adm.email.toLowerCase().trim(), adm);
     });
+
     const usersIdx = loadUsersIndex();
     users.forEach((u: any) => {
       if (u && u.email) {
@@ -317,6 +319,82 @@ app.post('/api/cloud/tenants/:tenantId/pricing', (req, res) => {
   res.json({ success: true, pricing: current.pricing });
 });
 
+// Operações de Usuários / Operadores no Tenant (Exclusão e Atualização)
+app.post('/api/cloud/tenants/:tenantId/user', (req, res) => {
+  const { tenantId } = req.params;
+  const { action, user, userId, email } = req.body;
+  if (!tenantId) return res.status(400).json({ error: 'tenantId obrigatório' });
+
+  const current = loadTenantData(tenantId);
+  current.users = current.users || [];
+  const cleanEmail = (email || user?.email || '').toLowerCase().trim();
+  const cleanId = userId || user?.id;
+
+  if (action === 'delete') {
+    current.users = current.users.filter((u: any) => {
+      const uEmail = (u.email || '').toLowerCase().trim();
+      const uId = u.id || '';
+      if (cleanId && uId === cleanId) return false;
+      if (cleanEmail && uEmail === cleanEmail) return false;
+      return true;
+    });
+
+    const usersIdx = loadUsersIndex();
+    if (cleanEmail && usersIdx[cleanEmail]) delete usersIdx[cleanEmail];
+    if (cleanId && usersIdx[cleanId]) delete usersIdx[cleanId];
+    saveUsersIndex(usersIdx);
+  } else if (action === 'save' && user) {
+    const idx = current.users.findIndex((u: any) => {
+      const uEmail = (u.email || '').toLowerCase().trim();
+      const uId = u.id || '';
+      return (cleanId && uId === cleanId) || (cleanEmail && uEmail === cleanEmail);
+    });
+    const item = { ...user, tenantId };
+    if (idx >= 0) {
+      current.users[idx] = { ...current.users[idx], ...item };
+    } else {
+      current.users.push(item);
+    }
+
+    const usersIdx = loadUsersIndex();
+    if (cleanEmail) usersIdx[cleanEmail] = item;
+    if (cleanId) usersIdx[cleanId] = item;
+    saveUsersIndex(usersIdx);
+  }
+
+  current.updatedAt = Date.now();
+  saveTenantData(tenantId, current);
+  res.json({ success: true, users: current.users });
+});
+
+app.post('/api/cloud/tenants/:tenantId/user/delete', (req, res) => {
+  const { tenantId } = req.params;
+  const { userId, email } = req.body;
+  if (!tenantId) return res.status(400).json({ error: 'tenantId obrigatório' });
+
+  const current = loadTenantData(tenantId);
+  current.users = current.users || [];
+  const cleanEmail = (email || '').toLowerCase().trim();
+  const cleanId = userId || '';
+
+  current.users = current.users.filter((u: any) => {
+    const uEmail = (u.email || '').toLowerCase().trim();
+    const uId = u.id || '';
+    if (cleanId && uId === cleanId) return false;
+    if (cleanEmail && uEmail === cleanEmail) return false;
+    return true;
+  });
+
+  const usersIdx = loadUsersIndex();
+  if (cleanEmail && usersIdx[cleanEmail]) delete usersIdx[cleanEmail];
+  if (cleanId && usersIdx[cleanId]) delete usersIdx[cleanId];
+  saveUsersIndex(usersIdx);
+
+  current.updatedAt = Date.now();
+  saveTenantData(tenantId, current);
+  res.json({ success: true, users: current.users });
+});
+
 // Cadastro e Resolução de Usuários / Operadores na Nuvem
 app.get('/api/cloud/users/by-email/:email', (req, res) => {
   const rawEmail = (req.params.email || '').toLowerCase().trim();
@@ -405,22 +483,6 @@ app.get('/api/cloud/users/by-email/:email', (req, res) => {
     usersIdx[cleanEmail] = adm;
     saveUsersIndex(usersIdx);
     return res.json({ success: true, user: adm });
-  }
-
-  if (cleanEmail === 'carollimap1993@gmail.com') {
-    const op = {
-      id: 'usr_op_carollimap1993',
-      name: 'carollimap1993',
-      email: 'carollimap1993@gmail.com',
-      role: 'operador',
-      tenantId: 'tenant_admcledison_gmail_com',
-      adminEmail: 'admcledison@gmail.com',
-      adminName: 'admcledison',
-      createdAt: 1791804703979
-    };
-    usersIdx[cleanEmail] = op;
-    saveUsersIndex(usersIdx);
-    return res.json({ success: true, user: op });
   }
 
   res.json({ success: false, message: 'Usuário não localizado' });
