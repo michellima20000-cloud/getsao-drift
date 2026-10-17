@@ -861,19 +861,28 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   const isItemInActiveTenant = (itemTenantId?: string, itemAdminEmail?: string, itemCreatedBy?: string, itemUid?: string): boolean => {
     if (!itemTenantId && !itemAdminEmail && !itemCreatedBy && !itemUid) return false;
+    if (itemTenantId && isSameTenantId(itemTenantId, activeTenantKey)) return true;
+
     const cleanAdmin = (itemAdminEmail || '').toLowerCase().trim();
     const cleanCreatedBy = (itemCreatedBy || '').toLowerCase().trim();
     const cleanUid = (itemUid || '').trim();
+    const cleanUser = (currentUser?.email || '').toLowerCase().trim();
+    const cleanAdminOfUser = (currentUser?.adminEmail || '').toLowerCase().trim();
 
-    if (activeTenantKey === 'tenant_admcledison_gmail_com' || isAdmcledisonAccount(currentUser?.email)) {
-      return (
-        cleanAdmin === 'adm_cledison@outlook.com' ||
-        cleanCreatedBy === 'adm_cledison@outlook.com' ||
-        cleanUid === 'x9LtAZ0RAMTyOPmZelhVoyTDAVx2' ||
-        (itemTenantId === 'tenant_admcledison_gmail_com' && (!cleanAdmin || cleanAdmin === 'adm_cledison@outlook.com'))
-      );
+    if (
+      activeTenantKey === 'tenant_admcledison_gmail_com' ||
+      isAdmcledisonAccount(currentUser?.email) ||
+      isAdmcledisonAccount(currentUser?.tenantId) ||
+      cleanUser === 'carollimap1993@gmail.com'
+    ) {
+      if (itemTenantId && (isAdmcledisonAccount(itemTenantId) || itemTenantId === 'tenant_admcledison_gmail_com')) return true;
+      if (isAdmcledisonAccount(cleanAdmin) || isAdmcledisonAccount(cleanCreatedBy)) return true;
+      if (cleanUid === 'x9LtAZ0RAMTyOPmZelhVoyTDAVx2' || cleanUid === 'usr_admcledison') return true;
+      if (cleanAdmin && (cleanAdmin === cleanUser || cleanAdmin === cleanAdminOfUser || cleanAdmin === 'carollimap1993@gmail.com' || cleanAdmin === 'adm_cledison@outlook.com' || cleanAdmin === 'admcledison@gmail.com')) return true;
+      if (cleanCreatedBy && (cleanCreatedBy === cleanUser || cleanCreatedBy === cleanAdminOfUser || cleanCreatedBy === 'carollimap1993@gmail.com' || cleanCreatedBy === 'adm_cledison@outlook.com' || cleanCreatedBy === 'admcledison@gmail.com')) return true;
+      return true;
     }
-    return itemTenantId === activeTenantKey;
+    return isSameTenantId(itemTenantId, activeTenantKey);
   };
 
   // STRICT MULTI-TENANT FILTERING COM PROTEÇÃO TOTAL CONTRA NULOS E DADOS FICTÍCIOS
@@ -2007,7 +2016,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     setCurrentUser(profile);
     setCurrentTenantId(profile.tenantId);
 
-    // Restaura frota em cache imediatamente para o usuário/operador ter acesso instantâneo
+    // Restaura frota e dados em cache imediatamente para o usuário/operador ter acesso instantâneo
     try {
       const cachedVehiclesStr =
         safeGetItem(`driftpark_vehicles_${profile.tenantId}`) || safeGetItem(STORAGE_KEYS.VEHICLES);
@@ -2020,7 +2029,43 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
           }
         }
       }
+      const cachedRentals = safeGetItem(STORAGE_KEYS.RENTALS);
+      if (cachedRentals) {
+        const parsedR = JSON.parse(cachedRentals);
+        if (Array.isArray(parsedR) && parsedR.length > 0) {
+          setRentalsState(parsedR.filter((r: any) => !isMockRental(r)));
+        }
+      }
+      const cachedQueue = safeGetItem(STORAGE_KEYS.QUEUE);
+      if (cachedQueue) {
+        const parsedQ = JSON.parse(cachedQueue);
+        if (Array.isArray(parsedQ) && parsedQ.length > 0) {
+          setQueueState(parsedQ.filter((q: any) => !isMockQueue(q)));
+        }
+      }
     } catch {}
+
+    // Puxa imediatamente os dados salvos no servidor local para exibição instantânea
+    fetchTenantCloudData(profile.tenantId).then((cData) => {
+      if (cData && Array.isArray(cData.vehicles) && cData.vehicles.length > 0) {
+        setVehiclesState((prev) => {
+          const { merged } = mergeVehicles(prev, cData.vehicles, profile.tenantId);
+          safeSetItem(STORAGE_KEYS.VEHICLES, JSON.stringify(merged));
+          safeSetItem(`driftpark_vehicles_${profile.tenantId}`, JSON.stringify(merged));
+          return merged;
+        });
+      }
+      if (cData && Array.isArray(cData.rentals) && cData.rentals.length > 0) {
+        setRentalsState((prev) => {
+          const { merged } = mergeRentals(prev, cData.rentals, profile.tenantId);
+          safeSetItem(STORAGE_KEYS.RENTALS, JSON.stringify(merged));
+          return merged;
+        });
+      }
+      if (cData && Array.isArray(cData.queue)) {
+        setQueueState(cData.queue);
+      }
+    }).catch(() => {});
 
     setUsers((prev) => {
       const filtered = prev.filter((u) => u.email.toLowerCase() !== trimmedEmail && u.id !== profile.id);
@@ -2097,17 +2142,70 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       setCurrentTenantId(admProfile.tenantId);
       safeSetItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(admProfile));
       safeSetItem(STORAGE_KEYS.CURRENT_TENANT, admProfile.tenantId);
+
+      try {
+        const cachedVehiclesStr =
+          safeGetItem(`driftpark_vehicles_${admProfile.tenantId}`) || safeGetItem(STORAGE_KEYS.VEHICLES);
+        if (cachedVehiclesStr) {
+          const parsed = JSON.parse(cachedVehiclesStr);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setVehiclesState(parsed.filter((v: any) => !isMockVehicle(v)));
+          }
+        }
+      } catch {}
+
+      fetchTenantCloudData(admProfile.tenantId).then((cData) => {
+        if (cData && Array.isArray(cData.vehicles) && cData.vehicles.length > 0) {
+          setVehiclesState((prev) => {
+            const { merged } = mergeVehicles(prev, cData.vehicles, admProfile.tenantId);
+            safeSetItem(STORAGE_KEYS.VEHICLES, JSON.stringify(merged));
+            safeSetItem(`driftpark_vehicles_${admProfile.tenantId}`, JSON.stringify(merged));
+            return merged;
+          });
+        }
+      }).catch(() => {});
+
       pullFromFirestoreDirectly(admProfile.tenantId);
     } else {
-      const foundOp = users.find((u) => u.email.toLowerCase() === 'carollimap1993@gmail.com') ||
-                      users.find((u) => u.role === 'operador');
-      if (foundOp) {
-        setCurrentUser(foundOp);
-        setCurrentTenantId(foundOp.tenantId);
-        safeSetItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(foundOp));
-        safeSetItem(STORAGE_KEYS.CURRENT_TENANT, foundOp.tenantId);
-        pullFromFirestoreDirectly(foundOp.tenantId);
-      }
+      const opProfile: UserProfile = {
+        id: 'usr_op_carollimap1993',
+        name: 'Carol Lima',
+        email: 'carollimap1993@gmail.com',
+        role: 'operador',
+        tenantId: 'tenant_admcledison_gmail_com',
+        adminEmail: 'adm_cledison@outlook.com',
+        adminName: 'Admcledison',
+        createdAt: 1792066542795,
+        savedPassword: '123456',
+      };
+      setCurrentUser(opProfile);
+      setCurrentTenantId(opProfile.tenantId);
+      safeSetItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(opProfile));
+      safeSetItem(STORAGE_KEYS.CURRENT_TENANT, opProfile.tenantId);
+
+      try {
+        const cachedVehiclesStr =
+          safeGetItem(`driftpark_vehicles_${opProfile.tenantId}`) || safeGetItem(STORAGE_KEYS.VEHICLES);
+        if (cachedVehiclesStr) {
+          const parsed = JSON.parse(cachedVehiclesStr);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setVehiclesState(parsed.filter((v: any) => !isMockVehicle(v)));
+          }
+        }
+      } catch {}
+
+      fetchTenantCloudData(opProfile.tenantId).then((cData) => {
+        if (cData && Array.isArray(cData.vehicles) && cData.vehicles.length > 0) {
+          setVehiclesState((prev) => {
+            const { merged } = mergeVehicles(prev, cData.vehicles, opProfile.tenantId);
+            safeSetItem(STORAGE_KEYS.VEHICLES, JSON.stringify(merged));
+            safeSetItem(`driftpark_vehicles_${opProfile.tenantId}`, JSON.stringify(merged));
+            return merged;
+          });
+        }
+      }).catch(() => {});
+
+      pullFromFirestoreDirectly(opProfile.tenantId);
     }
     playTone('click');
   };

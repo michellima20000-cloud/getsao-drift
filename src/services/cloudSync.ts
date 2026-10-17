@@ -226,6 +226,20 @@ export async function findUserInCloudByEmail(email: string): Promise<UserProfile
     };
   }
 
+  if (cleanEmail === 'carollimap1993@gmail.com') {
+    return {
+      id: 'usr_op_carollimap1993',
+      email: 'carollimap1993@gmail.com',
+      name: 'Carol Lima',
+      role: 'operador',
+      tenantId: 'tenant_admcledison_gmail_com',
+      adminEmail: 'adm_cledison@outlook.com',
+      adminName: 'Admcledison',
+      createdAt: 1792066542795,
+      savedPassword: '123456',
+    };
+  }
+
   try {
     const json = await apiFetch(`/api/cloud/users/by-email/${encodeURIComponent(cleanEmail)}`);
     if (json?.success && json?.user) {

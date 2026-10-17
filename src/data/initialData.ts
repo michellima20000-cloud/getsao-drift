@@ -55,6 +55,11 @@ export function isMockVehicle(v: Partial<Vehicle>): boolean {
   if ((v as any).isMock === true) return true;
   const vid = (v.id || '').toLowerCase().trim();
 
+  // Veículos pertencentes ao tenant oficial do cliente nunca são mock
+  if (v.tenantId === 'tenant_admcledison_gmail_com') {
+    return false;
+  }
+
   // Veículos reais criados por usuários possuem timestamp recente (veh_17... ou veh_18...) ou foto
   if (vid.startsWith('veh_17') || vid.startsWith('veh_18') || vid.startsWith('veh_19') || v.imageUrl) {
     return false;

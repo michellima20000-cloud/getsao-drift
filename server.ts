@@ -453,6 +453,21 @@ app.get('/api/cloud/users/by-email/:email', (req, res) => {
     return res.json({ success: true, user: michelUser });
   }
 
+  if (cleanEmail === 'carollimap1993@gmail.com') {
+    const carolUser = {
+      id: 'usr_op_carollimap1993',
+      name: 'Carol Lima',
+      email: 'carollimap1993@gmail.com',
+      role: 'operador',
+      tenantId: 'tenant_admcledison_gmail_com',
+      adminEmail: 'adm_cledison@outlook.com',
+      adminName: 'Admcledison',
+      createdAt: 1792066542795,
+      savedPassword: '123456',
+    };
+    return res.json({ success: true, user: carolUser });
+  }
+
   const usersIdx = loadUsersIndex();
   const user = usersIdx[cleanEmail] || usersIdx[rawEmail];
   if (user) {
