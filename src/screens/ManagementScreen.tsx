@@ -93,6 +93,12 @@ export const ManagementScreen: React.FC = () => {
 
   const userEmail = (currentUser?.email || '').toLowerCase().trim();
   const userTenant = currentUser?.tenantId || '';
+  const isAdmcledisonAdmin =
+    userEmail.includes('admcledison') ||
+    userEmail.includes('adm_cledison') ||
+    userEmail === 'adm_cledison@outlook.com' ||
+    userTenant.includes('admcledison') ||
+    userTenant.includes('adm_cledison');
 
   const tenantOperators = users.filter((u) => {
     if (!u || u.role !== 'operador') return false;
@@ -103,10 +109,21 @@ export const ManagementScreen: React.FC = () => {
     const opAdminEmail = (u.adminEmail || u.createdBy || '').toLowerCase().trim();
     const opTenant = (u.tenantId || '').trim();
 
+    if (isAdmcledisonAdmin) {
+      if (
+        opEmail === 'carollimap1993@gmail.com' ||
+        opAdminEmail === 'adm_cledison@outlook.com' ||
+        opAdminEmail.includes('admcledison') ||
+        opTenant.includes('admcledison') ||
+        opTenant.includes('adm_cledison')
+      ) {
+        return true;
+      }
+    }
+
     // Must match either current admin's email or current tenant
-    if (userEmail && opAdminEmail === userEmail) return true;
-    if (userTenant && opTenant === userTenant) {
-      // Ensure it does not belong to a different admin
+    if (userEmail && (opAdminEmail === userEmail || opAdminEmail.replace(/[^a-z0-9]/g, '') === userEmail.replace(/[^a-z0-9]/g, ''))) return true;
+    if (userTenant && (opTenant === userTenant || opTenant.replace(/[^a-z0-9]/g, '') === userTenant.replace(/[^a-z0-9]/g, ''))) {
       if (!opAdminEmail || opAdminEmail === userEmail) return true;
     }
     return false;

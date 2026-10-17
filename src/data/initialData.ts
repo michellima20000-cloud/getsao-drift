@@ -24,27 +24,72 @@ export const INITIAL_TENANTS: Tenant[] = [
     active: true,
     colorTheme: '#00F0FF',
     pricing: {
-      5: 15.0,
-      10: 25.0,
-      15: 35.0,
-      20: 45.0,
-      30: 60.0,
+      5: 6.0,
+      10: 12.0,
+      15: 18.0,
+      20: 24.0,
+      30: 36.0,
     },
   },
 ];
 
-// Dados 100% reais carregados diretamente da nuvem pelo UID/tenantId
-// Sem dados fictícios, mocks hardcoded ou poluição de contas de clientes
-export const INITIAL_USERS: UserProfile[] = [];
-export const INITIAL_VEHICLES: Vehicle[] = [];
+// Contas e equipe oficiais da pista pré-carregadas para persistência imediata em qualquer domínio ou deploy
+export const INITIAL_USERS: UserProfile[] = [
+  {
+    id: 'x9LtAZ0RAMTyOPmZelhVoyTDAVx2',
+    name: 'Admcledison',
+    email: 'adm_cledison@outlook.com',
+    role: 'admin',
+    tenantId: 'tenant_adm_cledison_outlook_com',
+    adminEmail: 'adm_cledison@outlook.com',
+    adminName: 'Admcledison',
+    createdAt: 1791926468433,
+    savedPassword: '123456',
+  },
+  {
+    id: 'usr_op_carollimap1993',
+    name: 'carollimap1993',
+    email: 'carollimap1993@gmail.com',
+    role: 'operador',
+    tenantId: 'tenant_adm_cledison_outlook_com',
+    adminEmail: 'adm_cledison@outlook.com',
+    adminName: 'Admcledison',
+    createdAt: 1792066542795,
+    savedPassword: '123456',
+  },
+];
+
+export const INITIAL_VEHICLES: Vehicle[] = [
+  {
+    id: 'veh_1792154738004_eyl',
+    tenantId: 'tenant_admcledison_gmail_com',
+    name: 'Drift grande amarelo',
+    code: '#1',
+    category: 'DRIFT',
+    status: 'disponivel',
+    batteryLevel: 100,
+    totalRuns: 0,
+  },
+  {
+    id: 'veh_1792154833583_ct5',
+    tenantId: 'tenant_admcledison_gmail_com',
+    name: 'Drift grande azul',
+    code: '#2',
+    category: 'DRIFT',
+    status: 'disponivel',
+    batteryLevel: 100,
+    totalRuns: 0,
+  },
+];
+
 export const INITIAL_RENTALS: Rental[] = [];
 export const INITIAL_QUEUE: QueueItem[] = [];
 
 /**
- * Em ambiente 100% em produção, a frota inicial é limpa e gerenciada exclusivamente pelo usuário
+ * Retorna a frota inicial real cadastrada
  */
 export function getDefaultFleet(_tenantId = 'tenant_drift_01'): Vehicle[] {
-  return [];
+  return INITIAL_VEHICLES;
 }
 
 /**

@@ -643,6 +643,16 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       }
     } catch {}
 
+    // Inclui sempre os usuários e operadores iniciais caso não estejam deletados
+    const initialNonDeleted = INITIAL_USERS.filter(
+      (u) => !isMockEmail(u.email) && !isOperatorDeleted(u.email, u.id)
+    );
+    for (const initU of initialNonDeleted) {
+      if (!list.some((u) => u.email.toLowerCase() === initU.email.toLowerCase())) {
+        list.push(initU);
+      }
+    }
+
     return list;
   });
 
@@ -700,12 +710,13 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     } catch {}
 
     const saved = safeGetItem(STORAGE_KEYS.VEHICLES);
-    if (!saved) return [];
+    if (!saved) return INITIAL_VEHICLES;
     try {
       const parsed: Vehicle[] = JSON.parse(saved);
-      return Array.isArray(parsed) ? parsed.filter((v) => !isMockVehicle(v)) : [];
+      const filtered = Array.isArray(parsed) ? parsed.filter((v) => !isMockVehicle(v)) : [];
+      return filtered.length > 0 ? filtered : INITIAL_VEHICLES;
     } catch {
-      return [];
+      return INITIAL_VEHICLES;
     }
   });
 
@@ -1229,6 +1240,22 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
         foundUsersMap.set('adm_cledison@outlook.com', admUser);
       }
 
+      // Garante o operador cadastrado carollimap1993 vinculado ao Administrador caso não tenha sido excluído
+      if (!foundUsersMap.has('carollimap1993@gmail.com') && !isOperatorDeleted('carollimap1993@gmail.com')) {
+        const carolUser: UserProfile = {
+          id: 'usr_op_carollimap1993',
+          name: 'carollimap1993',
+          email: 'carollimap1993@gmail.com',
+          role: 'operador',
+          tenantId: 'tenant_adm_cledison_outlook_com',
+          adminEmail: 'adm_cledison@outlook.com',
+          adminName: 'Admcledison',
+          createdAt: 1792066542795,
+          savedPassword: '123456',
+        };
+        foundUsersMap.set('carollimap1993@gmail.com', carolUser);
+      }
+
       if (foundUsersMap.size > 0 || users.length > 0) {
         const cloudUsers = Array.from(foundUsersMap.values());
         setUsers((prev) => {
@@ -1653,22 +1680,28 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     return () => unsubscribe();
   }, [activeTenantKey, currentTenant.id]);
 
-  // Garante que o documento do Admin exista na coleção 'users' e 'usuarios'
+  // Garante que o documento do Admin e dos Operadores existam na coleção 'users' e 'usuarios' do Firestore
   useEffect(() => {
-    if (currentUser?.id && !isMockEmail(currentUser.email) && isFirestoreOnline && getIsFirestoreAvailable() && !getIsFirestoreQuotaExceeded()) {
-      try {
-        const userPayload = {
-          id: currentUser.id,
-          name: currentUser.name,
-          email: currentUser.email.toLowerCase().trim(),
-          role: currentUser.role,
-          tenantId: currentUser.tenantId,
-          createdAt: currentUser.createdAt || Date.now(),
-        };
-        saveDocToCloud('users', currentUser.id, userPayload, 'usuarios');
-      } catch {}
+    if (isFirestoreOnline && getIsFirestoreAvailable() && !getIsFirestoreQuotaExceeded()) {
+      users.forEach((u) => {
+        if (u && u.id && u.email && !isMockEmail(u.email) && !isOperatorDeleted(u.email, u.id)) {
+          const userPayload = {
+            id: u.id,
+            name: u.name,
+            email: u.email.toLowerCase().trim(),
+            role: u.role,
+            tenantId: u.tenantId,
+            adminEmail: u.adminEmail || 'adm_cledison@outlook.com',
+            adminName: u.adminName || 'Admcledison',
+            createdAt: u.createdAt || Date.now(),
+          };
+          saveDocToCloud('users', u.id, userPayload, 'usuarios').catch(() => {});
+          const cleanEmailDoc = u.email.toLowerCase().trim().replace(/[^a-z0-9_-]/g, '_');
+          saveDocToCloud('users', cleanEmailDoc, userPayload, 'usuarios').catch(() => {});
+        }
+      });
     }
-  }, [currentUser?.id, currentUser?.tenantId, isFirestoreOnline]);
+  }, [users, isFirestoreOnline]);
 
   // =========================================================================
   // SINCRONIZAÇÃO INTELIGENTE: MIGRAÇÃO DOS DADOS LOCAIS DO CLIENTE PARA A NUVEM
