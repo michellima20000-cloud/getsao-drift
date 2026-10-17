@@ -77,6 +77,21 @@ export function safeSetItem(key: string, value: string): boolean {
       // Executa poda para tentar liberar espaço
       attemptStoragePruning();
 
+      // Se for a chave de veículos e continuar falhando, salva versão podada sem fotos pesadas
+      if (key === 'driftpark_vehicles_v1') {
+        try {
+          const parsed = JSON.parse(value);
+          if (Array.isArray(parsed)) {
+            const lightweight = parsed.map((v: any) => ({
+              ...v,
+              imageUrl: typeof v.imageUrl === 'string' && v.imageUrl.length > 300 ? '' : v.imageUrl,
+            }));
+            window.localStorage.setItem(key, JSON.stringify(lightweight));
+            return true;
+          }
+        } catch {}
+      }
+
       // Se for a chave de corridas e continuar falhando, salva versão podada
       if (key === 'driftpark_rentals_v1') {
         try {

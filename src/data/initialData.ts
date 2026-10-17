@@ -17,7 +17,7 @@ export const INITIAL_TENANTS: Tenant[] = [
     },
   },
   {
-    id: 'tenant_admcledison_gmail_com',
+    id: 'tenant_adm_cledison_outlook_com',
     name: 'DRIFT PARK',
     city: 'Pista Principal',
     document: '00.000.000/0001-00',

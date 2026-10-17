@@ -58,6 +58,12 @@ function initSeedData() {
       if (seedContent.users && !fs.existsSync(USERS_FILE)) {
         fs.writeFileSync(USERS_FILE, JSON.stringify(seedContent.users, null, 2), 'utf-8');
       }
+
+      // Remove resquício de conta Gmail antiga se existir
+      const oldGmailFile = path.join(TENANTS_DIR, 'tenant_admcledison_gmail_com.json');
+      if (fs.existsSync(oldGmailFile)) {
+        try { fs.unlinkSync(oldGmailFile); } catch {}
+      }
     } catch (err) {
       console.warn('Erro ao ler seed inicial:', err);
     }
@@ -75,9 +81,10 @@ function normalizeTenantId(tenantId: string): string {
     norm.includes('clecio') ||
     norm.includes('outlook') ||
     norm.includes('1791633952871') ||
-    norm === 'tenant_admcledison_gmail_com'
+    norm === 'tenant_admcledison_gmail_com' ||
+    norm === 'tenant_adm_cledison_outlook_com'
   ) {
-    return 'tenant_admcledison_gmail_com';
+    return 'tenant_adm_cledison_outlook_com';
   }
   return tenantId.replace(/[^a-zA-Z0-9_-]/g, '_');
 }
@@ -417,16 +424,20 @@ app.get('/api/cloud/users/by-email/:email', (req, res) => {
   const cleanEmail = rawEmail;
 
   if (
-    cleanEmail === 'adm_cledison@outlook.com' ||
     cleanEmail === 'admcledison@gmail.com' ||
+    cleanEmail === 'adm.cledson@gmail.com' ||
     cleanEmail === 'adm_cledison@gmail.com'
   ) {
+    return res.status(404).json({ success: false, message: 'Esta conta Gmail foi desativada e excluída.' });
+  }
+
+  if (cleanEmail === 'adm_cledison@outlook.com') {
     const adminUser = {
       id: 'x9LtAZ0RAMTyOPmZelhVoyTDAVx2',
       name: 'Admcledison',
       email: 'adm_cledison@outlook.com',
       role: 'admin',
-      tenantId: 'tenant_admcledison_gmail_com',
+      tenantId: 'tenant_adm_cledison_outlook_com',
       adminEmail: 'adm_cledison@outlook.com',
       adminName: 'Admcledison',
       createdAt: 1791926468433,
@@ -492,19 +503,21 @@ app.get('/api/cloud/users/by-email/:email', (req, res) => {
     }
   }
 
-  if (cleanEmail === 'admcledison@gmail.com') {
-    const adm = {
-      id: 'usr_admcledison',
-      name: 'Admcledison',
-      email: 'admcledison@gmail.com',
-      role: 'admin',
-      tenantId: 'tenant_admcledison_gmail_com',
-      createdAt: 1791725656602,
+  if (cleanEmail === 'carollimap1993@gmail.com') {
+    const op = {
+      id: 'usr_op_carollimap1993',
+      name: 'carollimap1993',
+      email: 'carollimap1993@gmail.com',
+      role: 'operador',
+      tenantId: 'tenant_adm_cledison_outlook_com',
+      adminEmail: 'adm_cledison@outlook.com',
+      adminName: 'Admcledison',
+      createdAt: 1792066542795,
       savedPassword: '123456'
     };
-    usersIdx[cleanEmail] = adm;
+    usersIdx[cleanEmail] = op;
     saveUsersIndex(usersIdx);
-    return res.json({ success: true, user: adm });
+    return res.json({ success: true, user: op });
   }
 
   res.json({ success: false, message: 'Usuário não localizado' });
