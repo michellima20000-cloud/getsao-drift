@@ -96,22 +96,21 @@ export const auth = getAuth(app);
 if (typeof window !== 'undefined') {
   setPersistence(auth, browserLocalPersistence)
     .then(() => {
-      // Tenta autenticação com persistência para a conta principal caso não esteja autenticado
+      const rememberMe = window.localStorage ? window.localStorage.getItem('driftpark_remember_me') : null;
       const savedEmail = window.localStorage ? window.localStorage.getItem('driftpark_saved_email') : null;
       const savedPassword = window.localStorage ? window.localStorage.getItem('driftpark_saved_password') : null;
-      const targetEmail = savedEmail || 'adm_cledison@outlook.com';
-      const targetPassword = savedPassword || '123456';
 
-      if (!auth.currentUser) {
-        signInWithEmailAndPassword(auth, targetEmail, targetPassword).catch((error) => {
+      // Só tenta auto-login no Firebase Auth se o usuário optou por lembrar o login e possui credenciais salvas
+      if (rememberMe !== 'false' && savedEmail && savedPassword && !auth.currentUser) {
+        signInWithEmailAndPassword(auth, savedEmail, savedPassword).catch((error) => {
           if (error?.code === 'auth/user-not-found' || error?.code === 'auth/invalid-credential') {
-            createUserWithEmailAndPassword(auth, targetEmail, targetPassword).catch(() => {});
+            createUserWithEmailAndPassword(auth, savedEmail, savedPassword).catch(() => {});
           }
         });
       }
     })
     .catch((error) => {
-      console.error('Erro na persistência:', error?.message);
+      console.error('Erro na persistência do Firebase Auth:', error?.message);
     });
 }
 

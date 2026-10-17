@@ -1307,21 +1307,25 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
   };
 
   // Carga inicial assim que o componente é montado
+  // Carga inicial e re-fetch automático sempre que o usuário logar ou mudar de sessão/tenant
   useEffect(() => {
-    pullFromFirestoreDirectly(activeTenantKey);
-  }, []);
+    if (activeTenantKey) {
+      pullFromFirestoreDirectly(activeTenantKey);
+    }
+  }, [currentUser?.id, currentUser?.tenantId, activeTenantKey]);
 
   // =========================================================================
   // 2. SINCRONIZAÇÃO EM TEMPO REAL: AUTH STATE DO FIREBASE COM PERSISTÊNCIA LOCAL
   // =========================================================================
   useEffect(() => {
     // Força o Firebase a lembrar do usuário e do histórico localmente
-    const savedEmail = safeGetItem('driftpark_saved_email') || 'adm_cledison@outlook.com';
-    const savedPassword = safeGetItem('driftpark_saved_password') || '123456';
+    const rememberMe = safeGetItem('driftpark_remember_me');
+    const savedEmail = safeGetItem('driftpark_saved_email');
+    const savedPassword = safeGetItem('driftpark_saved_password');
 
     setPersistence(auth, browserLocalPersistence)
       .then(() => {
-        if (!auth.currentUser) {
+        if (rememberMe !== 'false' && savedEmail && savedPassword && !auth.currentUser) {
           return signInWithEmailAndPassword(auth, savedEmail, savedPassword).catch((err) => {
             if (err?.code === 'auth/user-not-found' || err?.code === 'auth/invalid-credential') {
               return createUserWithEmailAndPassword(auth, savedEmail, savedPassword).catch(() => null);
@@ -1330,7 +1334,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
         }
       })
       .catch((error) => {
-        console.error("Erro na persistência:", error?.message);
+        console.error("Erro na persistência do Firebase Auth:", error?.message);
       });
 
     const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -1407,6 +1411,11 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
           registerUserInCloud(defaultAdmin);
 
           pullFromFirestoreDirectly(defaultAdmin.tenantId);
+        }
+      } else {
+        const saved = safeGetItem(STORAGE_KEYS.CURRENT_USER);
+        if (!saved) {
+          setCurrentUser(null);
         }
       }
     });
@@ -1680,6 +1689,55 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     return () => unsubscribe();
   }, [activeTenantKey, currentTenant.id]);
 
+  // =========================================================================
+  // 7. SINCRONIZAÇÃO EM TEMPO REAL: EQUIPE E OPERADORES (users)
+  // Re-renderiza e atualiza em tempo real entre diferentes sessões e abas
+  // =========================================================================
+  useEffect(() => {
+    if (!activeTenantKey) return;
+
+    let unsubscribe = () => {};
+    try {
+      unsubscribe = onSnapshot(
+        collection(db, 'users'),
+        (snapshot) => {
+          const cloudUsers: UserProfile[] = [];
+          snapshot.forEach((docSnap) => {
+            const d = docSnap.data();
+            if (!d || !d.email || isMockEmail(d.email)) return;
+            if (isOperatorDeleted(d.email, docSnap.id || d.id)) return;
+
+            cloudUsers.push({
+              id: docSnap.id || d.id,
+              name: d.name || d.email.split('@')[0],
+              email: d.email.toLowerCase().trim(),
+              role: d.role === 'admin' ? 'admin' : 'operador',
+              tenantId: d.tenantId || activeTenantKey,
+              phone: d.phone,
+              createdAt: d.createdAt || Date.now(),
+              adminEmail: d.adminEmail || d.createdBy,
+              adminName: d.adminName,
+              createdBy: d.createdBy,
+              savedPassword: d.savedPassword,
+            });
+          });
+
+          if (cloudUsers.length > 0) {
+            setUsers((prev) => {
+              const { merged } = mergeUsers(prev, cloudUsers);
+              return merged;
+            });
+          }
+        },
+        (err) => {
+          console.warn('[Firebase] Aviso no listener de users:', err);
+        }
+      );
+    } catch {}
+
+    return () => unsubscribe();
+  }, [activeTenantKey]);
+
   // Garante que o documento do Admin e dos Operadores existam na coleção 'users' e 'usuarios' do Firestore
   useEffect(() => {
     if (isFirestoreOnline && getIsFirestoreAvailable() && !getIsFirestoreQuotaExceeded()) {
@@ -1915,10 +1973,18 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     setRentalsState([]);
     setQueueState([]);
 
-    // Grava perfil na API Cloud Server e no Firebase (Firestore + RTDB)
+    const cleanEmailDoc = trimmedEmail.replace(/[^a-z0-9_-]/g, '_');
     registerUserInCloud(newUser);
-    saveDocToCloud('users', userId, newUser, 'usuarios');
-    saveDocToCloud('tenants', generatedTenantId, newTenantObj);
+    saveDocToCloud('users', userId, newUser, true);
+    saveDocToCloud('users', cleanEmailDoc, newUser, true);
+    saveDocToCloud('tenants', generatedTenantId, newTenantObj, true);
+
+    try {
+      setDoc(doc(db, 'users', userId), sanitizeForFirestore(newUser), { merge: true }).catch(() => {});
+      setDoc(doc(db, 'users', cleanEmailDoc), sanitizeForFirestore(newUser), { merge: true }).catch(() => {});
+      setDoc(doc(db, 'tenants', generatedTenantId), sanitizeForFirestore(newTenantObj), { merge: true }).catch(() => {});
+      flushPendingWrites().catch(() => {});
+    } catch {}
 
     // Grava metadados no Firebase Auth caso o usuário tenha sido criado
     if (auth.currentUser) {
@@ -2134,8 +2200,17 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
 
       // Executa SEMPRE de forma independente do Firebase Auth
       try {
+        const cleanDocId = trimmedEmail.replace(/[^a-z0-9_-]/g, '_');
         registerUserInCloud(profile);
-        saveDocToCloud('users', profile.id, profile, 'usuarios');
+        saveDocToCloud('users', profile.id, profile, true);
+        saveDocToCloud('users', cleanDocId, profile, true);
+
+        try {
+          setDoc(doc(db, 'users', profile.id), sanitizeForFirestore(profile), { merge: true }).catch(() => {});
+          setDoc(doc(db, 'users', cleanDocId), sanitizeForFirestore(profile), { merge: true }).catch(() => {});
+          flushPendingWrites().catch(() => {});
+        } catch {}
+
         // Puxa dados reais do Firebase Firestore diretamente para este tenant em alta velocidade
         await pullFromFirestoreDirectly(profile.tenantId);
       } catch (bgErr) {
@@ -2307,7 +2382,15 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       createdAt: Date.now(),
     };
 
-    saveDocToCloud('users', uid, userPayload, 'usuarios');
+    const cleanDocId = cleanEmail.replace(/[^a-z0-9_-]/g, '_');
+    saveDocToCloud('users', uid, userPayload, true);
+    saveDocToCloud('users', cleanDocId, userPayload, true);
+
+    try {
+      setDoc(doc(db, 'users', uid), sanitizeForFirestore(userPayload), { merge: true }).catch(() => {});
+      setDoc(doc(db, 'users', cleanDocId), sanitizeForFirestore(userPayload), { merge: true }).catch(() => {});
+      flushPendingWrites().catch(() => {});
+    } catch {}
 
     // 3. ATUALIZA ESTADO LOCAL E BACKUPS DE FORMA RESILIENTE
     const newMember: UserProfile = {
