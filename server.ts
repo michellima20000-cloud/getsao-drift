@@ -466,11 +466,11 @@ app.get('/api/cloud/users/by-email/:email', (req, res) => {
 
   if (cleanEmail === 'carollimap1993@gmail.com') {
     const carolUser = {
-      id: 'usr_op_carollimap1993',
-      name: 'Carol Lima',
+      id: 'JBLyrtB5y3cSN8Xll1vypnxAGK02',
+      name: 'carollimap1993',
       email: 'carollimap1993@gmail.com',
       role: 'operador',
-      tenantId: 'tenant_admcledison_gmail_com',
+      tenantId: 'tenant_adm_cledison_outlook_com',
       adminEmail: 'adm_cledison@outlook.com',
       adminName: 'Admcledison',
       createdAt: 1792066542795,
@@ -505,7 +505,7 @@ app.get('/api/cloud/users/by-email/:email', (req, res) => {
 
   if (cleanEmail === 'carollimap1993@gmail.com') {
     const op = {
-      id: 'usr_op_carollimap1993',
+      id: 'JBLyrtB5y3cSN8Xll1vypnxAGK02',
       name: 'carollimap1993',
       email: 'carollimap1993@gmail.com',
       role: 'operador',

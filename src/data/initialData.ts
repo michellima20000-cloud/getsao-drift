@@ -47,7 +47,7 @@ export const INITIAL_USERS: UserProfile[] = [
     savedPassword: '123456',
   },
   {
-    id: 'usr_op_carollimap1993',
+    id: 'JBLyrtB5y3cSN8Xll1vypnxAGK02',
     name: 'carollimap1993',
     email: 'carollimap1993@gmail.com',
     role: 'operador',

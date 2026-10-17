@@ -211,7 +211,7 @@ export async function findUserInCloudByEmail(email: string): Promise<UserProfile
 
   if (cleanEmail === 'carollimap1993@gmail.com') {
     return {
-      id: 'usr_op_carollimap1993',
+      id: 'JBLyrtB5y3cSN8Xll1vypnxAGK02',
       email: 'carollimap1993@gmail.com',
       name: 'carollimap1993',
       role: 'operador',
@@ -231,20 +231,6 @@ export async function findUserInCloudByEmail(email: string): Promise<UserProfile
       role: 'admin',
       tenantId: 'tenant_drift_01',
       createdAt: 1791813452613,
-      savedPassword: '123456',
-    };
-  }
-
-  if (cleanEmail === 'carollimap1993@gmail.com') {
-    return {
-      id: 'usr_op_carollimap1993',
-      email: 'carollimap1993@gmail.com',
-      name: 'Carol Lima',
-      role: 'operador',
-      tenantId: 'tenant_admcledison_gmail_com',
-      adminEmail: 'adm_cledison@outlook.com',
-      adminName: 'Admcledison',
-      createdAt: 1792066542795,
       savedPassword: '123456',
     };
   }

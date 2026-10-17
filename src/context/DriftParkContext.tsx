@@ -1243,7 +1243,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       // Garante o operador cadastrado carollimap1993 vinculado ao Administrador caso não tenha sido excluído
       if (!foundUsersMap.has('carollimap1993@gmail.com') && !isOperatorDeleted('carollimap1993@gmail.com')) {
         const carolUser: UserProfile = {
-          id: 'usr_op_carollimap1993',
+          id: 'JBLyrtB5y3cSN8Xll1vypnxAGK02',
           name: 'carollimap1993',
           email: 'carollimap1993@gmail.com',
           role: 'operador',
@@ -2276,8 +2276,8 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       pullFromFirestoreDirectly(admProfile.tenantId);
     } else {
       const opProfile: UserProfile = {
-        id: 'usr_op_carollimap1993',
-        name: 'Carol Lima',
+        id: 'JBLyrtB5y3cSN8Xll1vypnxAGK02',
+        name: 'carollimap1993',
         email: 'carollimap1993@gmail.com',
         role: 'operador',
         tenantId: 'tenant_admcledison_gmail_com',
