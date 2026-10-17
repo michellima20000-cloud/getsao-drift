@@ -685,8 +685,20 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     };
   });
 
-  // 3. Vehicles State: Frota 100% limpa, filtrando qualquer dado fictício de mock
+  // 3. Vehicles State: Frota real carregada de forma resiliente do cache local e por tenant
   const [vehiclesState, setVehiclesState] = useState<Vehicle[]>(() => {
+    try {
+      const curTenant = safeGetItem(STORAGE_KEYS.CURRENT_TENANT) || 'tenant_admcledison_gmail_com';
+      const tenantSaved = safeGetItem(`driftpark_vehicles_${curTenant}`);
+      if (tenantSaved) {
+        const parsed = JSON.parse(tenantSaved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const filtered = parsed.filter((v) => !isMockVehicle(v));
+          if (filtered.length > 0) return filtered;
+        }
+      }
+    } catch {}
+
     const saved = safeGetItem(STORAGE_KEYS.VEHICLES);
     if (!saved) return [];
     try {
@@ -777,6 +789,12 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     } catch {}
   }, [users, currentTenant?.id, currentUser?.email, currentUser?.tenantId]);
 
+  // CHAVE PRIMÁRIA MULTI-TENANT BASEADA NO UID DO USUÁRIO AUTENTICADO
+  const rawTenantKey = currentUser?.tenantId || currentTenantId || currentTenant?.id || 'tenant_drift_01';
+  const activeTenantKey = isAdmcledisonAccount(rawTenantKey) || isAdmcledisonAccount(currentUser?.email) || isAdmcledisonAccount(currentUser?.adminEmail)
+    ? 'tenant_admcledison_gmail_com'
+    : rawTenantKey;
+
   useEffect(() => {
     if (currentUser) {
       safeSetItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(currentUser));
@@ -786,8 +804,13 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
   }, [currentUser]);
 
   useEffect(() => {
-    safeSetItem(STORAGE_KEYS.VEHICLES, JSON.stringify(vehiclesState));
-  }, [vehiclesState]);
+    if (Array.isArray(vehiclesState) && vehiclesState.length > 0) {
+      safeSetItem(STORAGE_KEYS.VEHICLES, JSON.stringify(vehiclesState));
+      if (activeTenantKey) {
+        safeSetItem(`driftpark_vehicles_${activeTenantKey}`, JSON.stringify(vehiclesState));
+      }
+    }
+  }, [vehiclesState, activeTenantKey]);
 
   useEffect(() => {
     safeSetItem(STORAGE_KEYS.RENTALS, JSON.stringify(rentalsState));
@@ -835,12 +858,6 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
 
     return () => clearInterval(timer);
   }, [rentalsState]);
-
-  // CHAVE PRIMÁRIA MULTI-TENANT BASEADA NO UID DO USUÁRIO AUTENTICADO
-  const rawTenantKey = currentUser?.tenantId || currentTenantId || currentTenant?.id || 'tenant_drift_01';
-  const activeTenantKey = isAdmcledisonAccount(rawTenantKey) || isAdmcledisonAccount(currentUser?.email) || isAdmcledisonAccount(currentUser?.adminEmail)
-    ? 'tenant_admcledison_gmail_com'
-    : rawTenantKey;
 
   const isItemInActiveTenant = (itemTenantId?: string, itemAdminEmail?: string, itemCreatedBy?: string, itemUid?: string): boolean => {
     if (!itemTenantId && !itemAdminEmail && !itemCreatedBy && !itemUid) return false;
@@ -1743,13 +1760,15 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
         }
 
         // Sobe os dados limpos do cliente diretamente para a API em Nuvem do servidor
-        syncTenantToCloud(activeTenantKey, {
-          vehicles: clientVehicles,
-          rentals: clientRentals,
-          queue: clientQueue,
-          users: clientOps,
-          pricing: currentTenant?.pricing,
-        }).catch(() => {});
+        if (clientVehicles.length > 0 || clientRentals.length > 0 || clientQueue.length > 0 || clientOps.length > 0) {
+          syncTenantToCloud(activeTenantKey, {
+            ...(clientVehicles.length > 0 ? { vehicles: clientVehicles } : {}),
+            ...(clientRentals.length > 0 ? { rentals: clientRentals } : {}),
+            ...(clientQueue.length > 0 ? { queue: clientQueue } : {}),
+            ...(clientOps.length > 0 ? { users: clientOps } : {}),
+            pricing: currentTenant?.pricing,
+          }).catch(() => {});
+        }
 
         // Garante configurações do tenant no Firestore sem re-escrever histórico inteiro
         if (!getIsFirestoreQuotaExceeded() && currentTenant && currentTenant.pricing) {
@@ -1987,6 +2006,21 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
 
     setCurrentUser(profile);
     setCurrentTenantId(profile.tenantId);
+
+    // Restaura frota em cache imediatamente para o usuário/operador ter acesso instantâneo
+    try {
+      const cachedVehiclesStr =
+        safeGetItem(`driftpark_vehicles_${profile.tenantId}`) || safeGetItem(STORAGE_KEYS.VEHICLES);
+      if (cachedVehiclesStr) {
+        const parsed = JSON.parse(cachedVehiclesStr);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const validVehs = parsed.filter((v: any) => !isMockVehicle(v));
+          if (validVehs.length > 0) {
+            setVehiclesState(validVehs);
+          }
+        }
+      }
+    } catch {}
 
     setUsers((prev) => {
       const filtered = prev.filter((u) => u.email.toLowerCase() !== trimmedEmail && u.id !== profile.id);
@@ -2274,7 +2308,14 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       totalRuns: 0,
       imageUrl: imageUrl?.trim() || undefined,
     };
-    setVehiclesState((prev) => [...prev, newVehicle]);
+    setVehiclesState((prev) => {
+      const next = [...prev, newVehicle];
+      safeSetItem(STORAGE_KEYS.VEHICLES, JSON.stringify(next));
+      if (activeTenantKey) {
+        safeSetItem(`driftpark_vehicles_${activeTenantKey}`, JSON.stringify(next));
+      }
+      return next;
+    });
 
     // Grava no Firebase (Firestore + RTDB) e na nuvem do servidor
     saveDocToCloud('veiculos', newVehicle.id, {
@@ -2289,15 +2330,20 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   const updateVehicle = (vehicleId: string, data: Partial<Omit<Vehicle, 'id' | 'tenantId'>>) => {
     let updatedItem: Vehicle | null = null;
-    setVehiclesState((prev) =>
-      prev.map((v) => {
+    setVehiclesState((prev) => {
+      const next = prev.map((v) => {
         if (v.id === vehicleId) {
           updatedItem = { ...v, ...data };
           return updatedItem;
         }
         return v;
-      })
-    );
+      });
+      safeSetItem(STORAGE_KEYS.VEHICLES, JSON.stringify(next));
+      if (activeTenantKey) {
+        safeSetItem(`driftpark_vehicles_${activeTenantKey}`, JSON.stringify(next));
+      }
+      return next;
+    });
 
     saveDocToCloud('veiculos', vehicleId, data, false);
     if (updatedItem) {
@@ -2308,15 +2354,20 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   const updateVehicleStatus = (vehicleId: string, status: VehicleStatus) => {
     let updatedItem: Vehicle | null = null;
-    setVehiclesState((prev) =>
-      prev.map((v) => {
+    setVehiclesState((prev) => {
+      const next = prev.map((v) => {
         if (v.id === vehicleId) {
           updatedItem = { ...v, status };
           return updatedItem;
         }
         return v;
-      })
-    );
+      });
+      safeSetItem(STORAGE_KEYS.VEHICLES, JSON.stringify(next));
+      if (activeTenantKey) {
+        safeSetItem(`driftpark_vehicles_${activeTenantKey}`, JSON.stringify(next));
+      }
+      return next;
+    });
 
     saveDocToCloud('veiculos', vehicleId, { status }, false);
     if (updatedItem) {
@@ -2326,7 +2377,14 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
   };
 
   const deleteVehicle = (vehicleId: string) => {
-    setVehiclesState((prev) => prev.filter((v) => v.id !== vehicleId));
+    setVehiclesState((prev) => {
+      const next = prev.filter((v) => v.id !== vehicleId);
+      safeSetItem(STORAGE_KEYS.VEHICLES, JSON.stringify(next));
+      if (activeTenantKey) {
+        safeSetItem(`driftpark_vehicles_${activeTenantKey}`, JSON.stringify(next));
+      }
+      return next;
+    });
 
     deleteDocToCloud('veiculos', vehicleId, true);
     deleteVehicleCloud(activeTenantKey, vehicleId);

@@ -35,7 +35,6 @@ export const BottomNav: React.FC = () => {
       id: 'gestao' as const,
       label: 'Gestão',
       icon: ShieldCheck,
-      adminOnly: true,
     },
   ];
 
@@ -87,12 +86,7 @@ export const BottomNav: React.FC = () => {
                 {tab.label}
               </span>
 
-              {/* Sub-label for Admin tag on Gestão */}
-              {tab.adminOnly && currentUser?.role !== 'admin' && (
-                <span className="absolute -top-0.5 right-1 text-[8px] text-amber-400/80">
-                  🔒
-                </span>
-              )}
+
             </button>
           );
         })}

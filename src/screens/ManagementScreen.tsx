@@ -366,46 +366,17 @@ export const ManagementScreen: React.FC = () => {
         </span>
       </div>
 
-      {/* Operator Restricted State (Strict RBAC requirement) */}
-      {!isAdmin ? (
-        <div className="p-6 rounded-2xl bg-[#141E38]/80 border border-amber-500/40 text-center space-y-3 my-4">
-          <div className="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center mx-auto text-amber-400">
-            <Lock size={24} />
-          </div>
-          <h3 className="text-sm font-bold text-white">
-            Acesso Restrito ao Administrador
-          </h3>
-          <p className="text-xs text-slate-400 max-w-sm mx-auto">
-            Operadores têm acesso limitado a iniciar/finalizar corridas, alterar status de pagamento e gerenciar a fila. A criação de funcionários e configurações da frota são exclusivas do Dono da Pista.
-          </p>
-          <div className="pt-2">
-            <button
-              onClick={() => quickLoginAs('admin')}
-              className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shadow-md transition-all inline-flex items-center gap-2"
-            >
-              <span>Alternar para Conta Administrador</span>
-            </button>
-          </div>
-        </div>
-      ) : (
-        <>
-
-
-          {/* 1. Atalhos Rápidos em Cards (As specified in prompt) */}
+      {/* 1. Atalhos Rápidos em Cards */}
       <div>
         <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2">
           Atalhos Rápidos
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          {/* [+ Novo Veículo] */}
+          {/* [+ Novo Veículo] - Disponível para Admin e Operador */}
           <button
-            onClick={() => setIsVehicleModalOpen(true)}
-            disabled={!isAdmin}
-            className={`p-3 rounded-xl border flex flex-col items-center justify-center text-center transition-all ${
-              isAdmin
-                ? 'bg-[#141E38] hover:bg-[#1C2541] border-cyan-500/40 text-cyan-300 hover:scale-[1.02] shadow-sm'
-                : 'bg-slate-900/60 border-slate-800 text-slate-600 cursor-not-allowed'
-            }`}
+            type="button"
+            onClick={handleOpenNewVehicle}
+            className="p-3 rounded-xl border bg-[#141E38] hover:bg-[#1C2541] border-cyan-500/40 text-cyan-300 hover:scale-[1.02] shadow-sm flex flex-col items-center justify-center text-center transition-all cursor-pointer"
           >
             <div className="w-8 h-8 rounded-lg bg-cyan-500/20 flex items-center justify-center mb-1 text-cyan-400">
               <Car size={16} />
@@ -416,42 +387,47 @@ export const ManagementScreen: React.FC = () => {
 
           {/* [+ Criar Sub-Conta / Novo Operador] */}
           <button
-            onClick={() => setIsSubAccountModalOpen(true)}
+            type="button"
+            onClick={() => isAdmin && setIsSubAccountModalOpen(true)}
             disabled={!isAdmin}
             className={`p-3 rounded-xl border flex flex-col items-center justify-center text-center transition-all ${
               isAdmin
-                ? 'bg-[#141E38] hover:bg-[#1C2541] border-cyan-500/40 text-cyan-300 hover:scale-[1.02] shadow-sm'
-                : 'bg-slate-900/60 border-slate-800 text-slate-600 cursor-not-allowed'
+                ? 'bg-[#141E38] hover:bg-[#1C2541] border-cyan-500/40 text-cyan-300 hover:scale-[1.02] shadow-sm cursor-pointer'
+                : 'bg-slate-900/60 border-slate-800 text-slate-500 cursor-not-allowed opacity-60'
             }`}
+            title={!isAdmin ? 'Apenas o Administrador pode criar novas contas' : undefined}
           >
             <div className="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center mb-1 text-amber-400">
               <UserPlus size={16} />
             </div>
             <span className="text-xs font-bold text-white">+ Criar Sub-Conta</span>
-            <span className="text-[10px] text-slate-400 mt-0.5">Permissão restrita</span>
+            <span className="text-[10px] text-slate-400 mt-0.5">{isAdmin ? 'Novo funcionário' : 'Exclusivo Admin'}</span>
           </button>
 
           {/* [Configurar Preços] */}
           <button
-            onClick={() => setIsPricingModalOpen(true)}
+            type="button"
+            onClick={() => isAdmin && setIsPricingModalOpen(true)}
             disabled={!isAdmin}
             className={`p-3 rounded-xl border flex flex-col items-center justify-center text-center transition-all ${
               isAdmin
-                ? 'bg-[#141E38] hover:bg-[#1C2541] border-cyan-500/40 text-cyan-300 hover:scale-[1.02] shadow-sm'
-                : 'bg-slate-900/60 border-slate-800 text-slate-600 cursor-not-allowed'
+                ? 'bg-[#141E38] hover:bg-[#1C2541] border-cyan-500/40 text-cyan-300 hover:scale-[1.02] shadow-sm cursor-pointer'
+                : 'bg-slate-900/60 border-slate-800 text-slate-500 cursor-not-allowed opacity-60'
             }`}
+            title={!isAdmin ? 'Apenas o Administrador pode alterar os preços' : undefined}
           >
             <div className="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center mb-1 text-emerald-400">
               <Settings size={16} />
             </div>
             <span className="text-xs font-bold text-white">Tabela de Preços</span>
-            <span className="text-[10px] text-slate-400 mt-0.5">Ajustar min / R$</span>
+            <span className="text-[10px] text-slate-400 mt-0.5">{isAdmin ? 'Ajustar min / R$' : 'Exclusivo Admin'}</span>
           </button>
 
           {/* [Exportar Diário] */}
           <button
+            type="button"
             onClick={exportDailyReport}
-            className="p-3 rounded-xl border bg-[#141E38] hover:bg-[#1C2541] border-cyan-500/40 text-cyan-300 hover:scale-[1.02] shadow-sm flex flex-col items-center justify-center text-center transition-all"
+            className="p-3 rounded-xl border bg-[#141E38] hover:bg-[#1C2541] border-cyan-500/40 text-cyan-300 hover:scale-[1.02] shadow-sm flex flex-col items-center justify-center text-center transition-all cursor-pointer"
           >
             <div className="w-8 h-8 rounded-lg bg-cyan-500/20 flex items-center justify-center mb-1 text-cyan-400">
               <FileSpreadsheet size={16} />
@@ -462,7 +438,7 @@ export const ManagementScreen: React.FC = () => {
         </div>
       </div>
 
-      {/* 2. Grid Visual de Veículos Cadastrados (As specified in prompt) */}
+      {/* 2. Grid Visual de Veículos Cadastrados */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
@@ -470,15 +446,14 @@ export const ManagementScreen: React.FC = () => {
             Frota Cadastrada ({vehicles.length} veículos nesta operação)
           </div>
 
-          {isAdmin && (
-            <button
-              onClick={handleOpenNewVehicle}
-              className="text-xs text-cyan-400 hover:text-cyan-300 font-bold flex items-center gap-1 px-2.5 py-1 rounded-lg bg-cyan-500/10 border border-cyan-500/30 hover:bg-cyan-500/20 transition-all"
-            >
-              <Plus size={12} />
-              Novo Veículo
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={handleOpenNewVehicle}
+            className="text-xs text-cyan-400 hover:text-cyan-300 font-bold flex items-center gap-1 px-2.5 py-1 rounded-lg bg-cyan-500/10 border border-cyan-500/30 hover:bg-cyan-500/20 transition-all cursor-pointer"
+          >
+            <Plus size={12} />
+            Novo Veículo
+          </button>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -582,43 +557,44 @@ export const ManagementScreen: React.FC = () => {
                     {isAvailable ? 'Livre' : isInUse ? 'Em Uso' : 'Manutenção'}
                   </span>
 
-                  {/* Admin Actions */}
-                  {isAdmin && (
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <button
-                        onClick={() => handleOpenEditVehicle(veh)}
-                        className="p-1.5 rounded-lg bg-slate-800/90 text-slate-300 hover:text-cyan-300 border border-slate-700 hover:border-cyan-500/50 transition-colors shadow-sm active:scale-95"
-                        title="Editar veículo e foto"
-                      >
-                        <Pencil size={13} />
-                      </button>
+                  {/* Vehicle Actions */}
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenEditVehicle(veh)}
+                      className="p-1.5 rounded-lg bg-slate-800/90 text-slate-300 hover:text-cyan-300 border border-slate-700 hover:border-cyan-500/50 transition-colors shadow-sm active:scale-95 cursor-pointer"
+                      title="Editar veículo e foto"
+                    >
+                      <Pencil size={13} />
+                    </button>
 
-                      <button
-                        onClick={() =>
-                          updateVehicleStatus(
-                            veh.id,
-                            isMaintenance ? 'disponivel' : 'manutencao'
-                          )
-                        }
-                        className={`p-1.5 rounded-lg border transition-colors shadow-sm active:scale-95 ${
-                          isMaintenance
-                            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                            : 'bg-slate-800/90 text-slate-400 hover:text-amber-300 border-slate-700 hover:border-amber-500/40'
-                        }`}
-                        title={isMaintenance ? 'Retirar da manutenção' : 'Colocar em manutenção'}
-                      >
-                        <Wrench size={13} />
-                      </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        updateVehicleStatus(
+                          veh.id,
+                          isMaintenance ? 'disponivel' : 'manutencao'
+                        )
+                      }
+                      className={`p-1.5 rounded-lg border transition-colors shadow-sm active:scale-95 cursor-pointer ${
+                        isMaintenance
+                          ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                          : 'bg-slate-800/90 text-slate-400 hover:text-amber-300 border-slate-700 hover:border-amber-500/40'
+                      }`}
+                      title={isMaintenance ? 'Retirar da manutenção' : 'Colocar em manutenção'}
+                    >
+                      <Wrench size={13} />
+                    </button>
 
-                      <button
-                        onClick={() => deleteVehicle(veh.id)}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 border border-slate-800 hover:border-rose-500/30 transition-colors shadow-sm active:scale-95"
-                        title="Excluir veículo da frota"
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-                  )}
+                    <button
+                      type="button"
+                      onClick={() => deleteVehicle(veh.id)}
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 border border-slate-800 hover:border-rose-500/30 transition-colors shadow-sm active:scale-95 cursor-pointer"
+                      title="Excluir veículo da frota"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
                 </div>
               </div>
             );
@@ -787,9 +763,6 @@ export const ManagementScreen: React.FC = () => {
           </div>
         </div>
       </div>
-
-      </>
-      )}
 
       {/* MODAL: NOVO VEÍCULO / EDITAR VEÍCULO */}
       {isVehicleModalOpen && (

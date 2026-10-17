@@ -52,8 +52,15 @@ export function getDefaultFleet(_tenantId = 'tenant_drift_01'): Vehicle[] {
  */
 export function isMockVehicle(v: Partial<Vehicle>): boolean {
   if (!v || !v.id) return true;
+  if ((v as any).isMock === true) return true;
   const vid = (v.id || '').toLowerCase().trim();
-  const vname = (v.name || '').toLowerCase().trim();
+
+  // Veículos reais criados por usuários possuem timestamp recente (veh_17... ou veh_18...) ou foto
+  if (vid.startsWith('veh_17') || vid.startsWith('veh_18') || vid.startsWith('veh_19') || v.imageUrl) {
+    return false;
+  }
+
+  // Apenas elimina IDs fixos de sementes sintéticas antigas obsoletas
   if (
     vid.includes('1791552623302') ||
     vid.includes('1791633952871') ||
@@ -61,24 +68,19 @@ export function isMockVehicle(v: Partial<Vehicle>): boolean {
     vid.includes('admcledison_gmail_com_0') ||
     vid.startsWith('veh_tenant_drift_01_') ||
     vid.startsWith('veh_tenant_admcledison_') ||
-    vid.startsWith('veh_drift_') ||
-    vid.startsWith('veh_jeep_') ||
-    vid.startsWith('veh_bump_') ||
-    vname.startsWith('drift blade') ||
-    vname.startsWith('neon drift') ||
-    vname.startsWith('turbo slide') ||
-    vname.startsWith('ghost racer') ||
-    vname.startsWith('apex thunder') ||
-    vname.startsWith('storm slider') ||
-    vname.startsWith('jeep safari') ||
-    vname.startsWith('jeep raptor') ||
-    vname.startsWith('jungle trail') ||
-    vname.startsWith('bump master') ||
-    vname.startsWith('flash bumper') ||
-    vname.startsWith('volt crash') ||
-    vname.startsWith('spark ranger') ||
-    vname.startsWith('drift kart #') ||
-    vname.startsWith('bate-bate #')
+    vid === 'veh_drift_01' ||
+    vid === 'veh_drift_02' ||
+    vid === 'veh_drift_03' ||
+    vid === 'veh_drift_04' ||
+    vid === 'veh_drift_05' ||
+    vid === 'veh_drift_06' ||
+    vid === 'veh_jeep_01' ||
+    vid === 'veh_jeep_02' ||
+    vid === 'veh_jeep_03' ||
+    vid === 'veh_bump_01' ||
+    vid === 'veh_bump_02' ||
+    vid === 'veh_bump_03' ||
+    vid === 'veh_bump_04'
   ) {
     return true;
   }

@@ -183,11 +183,18 @@ app.post('/api/cloud/tenants/:tenantId/sync', (req, res) => {
 
   const current = loadTenantData(tenantId);
 
-  // Atualiza frota autoritativa enviada pelo cliente (sem ressuscitar excluídos)
-  if (Array.isArray(vehicles)) {
-    current.vehicles = vehicles
+  // Atualiza frota autoritativa enviada pelo cliente (preserva frota se vier array vazio)
+  if (Array.isArray(vehicles) && vehicles.length > 0) {
+    const vMap = new Map();
+    (current.vehicles || []).forEach((v: any) => {
+      if (v && v.id) vMap.set(v.id, v);
+    });
+    vehicles
       .filter((v: any) => v && v.id)
-      .map((v: any) => ({ ...v, tenantId }));
+      .forEach((v: any) => {
+        vMap.set(v.id, { ...v, tenantId });
+      });
+    current.vehicles = Array.from(vMap.values());
   }
 
   // Atualiza corridas autoritativas
