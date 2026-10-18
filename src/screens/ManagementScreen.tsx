@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { useDriftPark } from '../context/DriftParkContext';
+import { useDriftPark, isOperatorDeleted } from '../context/DriftParkContext';
+import { isMockEmail } from '../data/initialData';
 import { Vehicle, VehicleCategory, UserRole } from '../types';
 import {
   ShieldCheck,
@@ -93,27 +94,33 @@ export const ManagementScreen: React.FC = () => {
 
   const userEmail = (currentUser?.email || '').toLowerCase().trim();
   const userTenant = currentUser?.tenantId || '';
-  const isAdmcledisonAdmin =
+  const isAdmcledisonScope =
     userEmail.includes('admcledison') ||
     userEmail.includes('adm_cledison') ||
     userEmail === 'adm_cledison@outlook.com' ||
+    userEmail === 'carollimap1993@gmail.com' ||
     userTenant.includes('admcledison') ||
-    userTenant.includes('adm_cledison');
+    userTenant.includes('adm_cledison') ||
+    (currentUser?.adminEmail && (
+      currentUser.adminEmail.toLowerCase().includes('admcledison') ||
+      currentUser.adminEmail.toLowerCase().includes('adm_cledison')
+    ));
 
   const tenantOperators = users.filter((u) => {
     if (!u || u.role !== 'operador') return false;
-    if (u.id === currentUser?.id) return false;
     const opEmail = (u.email || '').toLowerCase().trim();
-    if (opEmail === userEmail) return false;
+    if (isMockEmail(opEmail)) return false;
+    if (isOperatorDeleted(opEmail, u.id)) return false;
 
     const opAdminEmail = (u.adminEmail || u.createdBy || '').toLowerCase().trim();
     const opTenant = (u.tenantId || '').trim();
 
-    if (isAdmcledisonAdmin) {
+    if (isAdmcledisonScope) {
       if (
         opEmail === 'carollimap1993@gmail.com' ||
         opAdminEmail === 'adm_cledison@outlook.com' ||
         opAdminEmail.includes('admcledison') ||
+        opAdminEmail.includes('adm_cledison') ||
         opTenant.includes('admcledison') ||
         opTenant.includes('adm_cledison')
       ) {
@@ -128,6 +135,25 @@ export const ManagementScreen: React.FC = () => {
     }
     return false;
   });
+
+  // Garante que a conta da operadora vinculada Carol Lima apareça sempre em todos os dispositivos e navegadores
+  if (
+    isAdmcledisonScope &&
+    !tenantOperators.some((op) => (op.email || '').toLowerCase().trim() === 'carollimap1993@gmail.com') &&
+    !isOperatorDeleted('carollimap1993@gmail.com')
+  ) {
+    tenantOperators.push({
+      id: 'JBLyrtB5y3cSN8Xll1vypnxAGK02',
+      name: 'carollimap1993',
+      email: 'carollimap1993@gmail.com',
+      role: 'operador',
+      tenantId: 'tenant_adm_cledison_outlook_com',
+      adminEmail: 'adm_cledison@outlook.com',
+      adminName: 'Admcledison',
+      createdAt: 1792066542795,
+      savedPassword: '123456',
+    });
+  }
 
   // Deduplicação estrita para garantir zero repetições na UI
   const uniqueOperators = Array.from(
@@ -685,34 +711,6 @@ export const ManagementScreen: React.FC = () => {
             </div>
           </div>
 
-          {/* Se o usuário conectado for operador, exibe card com destaque de operador ativo */}
-          {!isAdmin && (
-            <div className="p-3.5 rounded-xl bg-gradient-to-r from-[#141E38] to-[#10192e] border border-cyan-500/50 shadow-md flex items-center justify-between text-xs">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-300 font-bold shrink-0">
-                  🏎️
-                </div>
-                <div>
-                  <div className="font-bold text-white flex items-center gap-2">
-                    <span>{currentUser?.name || 'Carol Lima'}</span>
-                    <span className="text-[9px] px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-bold uppercase tracking-wider">
-                      Você - Operador Conectado
-                    </span>
-                  </div>
-                  <div className="text-[11px] text-cyan-300 font-mono mt-0.5">
-                    {currentUser?.email}
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <span className="text-[9px] font-mono px-2 py-1 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                  Sessão Ativa
-                </span>
-              </div>
-            </div>
-          )}
-
           {/* ========================================================================= */}
           {/* ABAIXO: APENAS OS OPERADORES VINCULADOS A ESTA CONTA */}
           {/* ========================================================================= */}
@@ -735,49 +733,70 @@ export const ManagementScreen: React.FC = () => {
               </div>
             ) : (
               <div className="space-y-2.5">
-                {uniqueOperators.map((op) => (
-                  <div
-                    key={op.id}
-                    className="p-3.5 rounded-xl bg-[#141E38] border border-slate-700/80 hover:border-cyan-500/50 transition-all shadow-sm space-y-2.5"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-start gap-2.5">
-                        <div className="w-9 h-9 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-300 text-sm shrink-0 font-bold mt-0.5">
-                          🏎️
-                        </div>
-                        <div>
-                          <div className="font-bold text-white text-xs">
-                            <span>{op.name}</span>
+                {uniqueOperators.map((op) => {
+                  const isCurrentOperator = (op.email || '').toLowerCase().trim() === userEmail;
+                  return (
+                    <div
+                      key={op.id}
+                      className={`p-3.5 rounded-xl border transition-all shadow-sm space-y-2.5 ${
+                        isCurrentOperator
+                          ? 'bg-gradient-to-r from-[#141E38] to-[#122349] border-cyan-500/70 shadow-[0_0_15px_rgba(0,240,255,0.12)]'
+                          : 'bg-[#141E38] border-slate-700/80 hover:border-cyan-500/50'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-start gap-2.5">
+                          <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm shrink-0 font-bold mt-0.5 ${
+                            isCurrentOperator
+                              ? 'bg-cyan-500/20 border border-cyan-400 text-cyan-300'
+                              : 'bg-cyan-500/10 border border-cyan-500/30 text-cyan-300'
+                          }`}>
+                            🏎️
                           </div>
-                          <div className="text-[11px] text-cyan-400 font-mono mt-0.5">{op.email}</div>
-                          
-                          {/* Vínculo com o Administrador */}
-                          <div className="text-[10px] text-slate-400 mt-1 flex items-center gap-1.5 flex-wrap">
-                            <span className="text-slate-500">Vinculado ao Dono:</span>
-                            <span className="px-1.5 py-0.5 rounded bg-[#0B132B] text-amber-300 font-mono border border-slate-700">
-                              👑 {op.adminEmail || currentUser?.email}
+                          <div>
+                            <div className="font-bold text-white text-xs flex items-center gap-2">
+                              <span>{op.name}</span>
+                              {isCurrentOperator && (
+                                <span className="px-1.5 py-0.2 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 text-[9px] font-bold">
+                                  Você
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-cyan-400 font-mono mt-0.5">{op.email}</div>
+                            
+                            {/* Vínculo com o Administrador */}
+                            <div className="text-[10px] text-slate-400 mt-1 flex items-center gap-1.5 flex-wrap">
+                              <span className="text-slate-500">Vinculado ao Dono:</span>
+                              <span className="px-1.5 py-0.5 rounded bg-[#0B132B] text-amber-300 font-mono border border-slate-700">
+                                👑 {op.adminEmail || (isAdmin ? currentUser?.email : 'adm_cledison@outlook.com')}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {isCurrentOperator ? (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                              Sessão Ativa
                             </span>
-                          </div>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
+                              🏎️ Operador
+                            </span>
+                          )}
+
+                          {isAdmin && (
+                            <button
+                              type="button"
+                              onClick={() => setOperatorToDelete({ id: op.id, name: op.name })}
+                              className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+                              title="Remover operador"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          )}
                         </div>
                       </div>
-
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
-                          🏎️ Operador
-                        </span>
-
-                        {isAdmin && (
-                          <button
-                            type="button"
-                            onClick={() => setOperatorToDelete({ id: op.id, name: op.name })}
-                            className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
-                            title="Remover operador"
-                          >
-                            <Trash2 size={13} />
-                          </button>
-                        )}
-                      </div>
-                    </div>
 
                     {/* Barra de Senha e Ações Rápidas */}
                     <div className="pt-2 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-2 text-[11px]">
@@ -820,7 +839,8 @@ export const ManagementScreen: React.FC = () => {
                       </div>
                     </div>
                   </div>
-                ))}
+                );
+              })}
               </div>
             )}
           </div>

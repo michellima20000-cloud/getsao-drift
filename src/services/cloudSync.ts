@@ -60,6 +60,19 @@ export async function fetchTenantCloudData(tenantId: string): Promise<any | null
   return null;
 }
 
+export async function fetchTenantUsersCloud(tenantId: string): Promise<UserProfile[] | null> {
+  if (!tenantId) return null;
+  try {
+    const json = await apiFetch(`/api/cloud/tenants/${encodeURIComponent(tenantId)}/users`);
+    if (json?.success && Array.isArray(json?.users)) {
+      return json.users as UserProfile[];
+    }
+  } catch (err) {
+    console.warn('Aviso ao buscar operadores na nuvem via API:', err);
+  }
+  return null;
+}
+
 export async function syncTenantToCloud(
   tenantId: string,
   payload: TenantCloudPayload

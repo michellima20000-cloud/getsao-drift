@@ -20,6 +20,7 @@ export const TopHeader: React.FC = () => {
     firestoreUpgradeUrl,
     dismissQuotaWarning,
     syncWithCloudNow,
+    quickLoginAs,
   } = useDriftPark();
 
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
@@ -141,7 +142,62 @@ export const TopHeader: React.FC = () => {
                   </div>
                 </div>
 
+                {/* Alternar Contas com 1 Toque */}
+                <div className="py-1.5 px-1 border-b border-slate-800 space-y-1">
+                  <div className="text-[9px] uppercase font-bold text-slate-400 px-1.5">
+                    Alternar Conta da Pista
+                  </div>
 
+                  {currentUser?.role === 'admin' ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        quickLoginAs('operador');
+                        setUserDropdownOpen(false);
+                      }}
+                      className="w-full text-left p-1.5 rounded-lg text-xs hover:bg-[#1C2541] border border-cyan-500/30 flex items-center justify-between group transition-all cursor-pointer"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm">🏎️</span>
+                        <div>
+                          <div className="font-bold text-white text-[11px] group-hover:text-cyan-300">
+                            Carol Lima
+                          </div>
+                          <div className="text-[9px] text-cyan-400 font-mono">
+                            carollimap1993@gmail.com
+                          </div>
+                        </div>
+                      </div>
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/40">
+                        Entrar
+                      </span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        quickLoginAs('admin');
+                        setUserDropdownOpen(false);
+                      }}
+                      className="w-full text-left p-1.5 rounded-lg text-xs hover:bg-[#1C2541] border border-amber-500/30 flex items-center justify-between group transition-all cursor-pointer"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm">👑</span>
+                        <div>
+                          <div className="font-bold text-white text-[11px] group-hover:text-amber-300">
+                            Admcledison
+                          </div>
+                          <div className="text-[9px] text-amber-400 font-mono">
+                            adm_cledison@outlook.com
+                          </div>
+                        </div>
+                      </div>
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-bold border border-amber-500/40">
+                        Entrar
+                      </span>
+                    </button>
+                  )}
+                </div>
 
                 <div className="pt-1 border-t border-slate-800">
                   <button
