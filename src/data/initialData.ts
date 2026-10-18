@@ -62,7 +62,7 @@ export const INITIAL_USERS: UserProfile[] = [
 export const INITIAL_VEHICLES: Vehicle[] = [
   {
     id: 'veh_1792154738004_eyl',
-    tenantId: 'tenant_admcledison_gmail_com',
+    tenantId: 'tenant_adm_cledison_outlook_com',
     name: 'Drift grande amarelo',
     code: '#1',
     category: 'DRIFT',
@@ -72,7 +72,7 @@ export const INITIAL_VEHICLES: Vehicle[] = [
   },
   {
     id: 'veh_1792154833583_ct5',
-    tenantId: 'tenant_admcledison_gmail_com',
+    tenantId: 'tenant_adm_cledison_outlook_com',
     name: 'Drift grande azul',
     code: '#2',
     category: 'DRIFT',
@@ -101,7 +101,7 @@ export function isMockVehicle(v: Partial<Vehicle>): boolean {
   const vid = (v.id || '').toLowerCase().trim();
 
   // Veículos pertencentes ao tenant oficial do cliente nunca são mock
-  if (v.tenantId === 'tenant_admcledison_gmail_com') {
+  if (v.tenantId === 'tenant_adm_cledison_outlook_com' || v.tenantId === 'tenant_admcledison_gmail_com') {
     return false;
   }
 

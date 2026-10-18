@@ -294,8 +294,8 @@ function isSameTenantId(t1?: string, t2?: string): boolean {
   const clean1 = t1.toLowerCase().replace(/[^a-z0-9]/g, '');
   const clean2 = t2.toLowerCase().replace(/[^a-z0-9]/g, '');
   if (clean1 === clean2) return true;
-  const isAdm1 = clean1.includes('admcledison') || clean1.includes('admcledson') || clean1.includes('clecio') || clean1.includes('1791633952871');
-  const isAdm2 = clean2.includes('admcledison') || clean2.includes('admcledson') || clean2.includes('clecio') || clean2.includes('1791633952871');
+  const isAdm1 = clean1.includes('admcledison') || clean1.includes('admcledson') || clean1.includes('clecio') || clean1.includes('outlook') || clean1.includes('1791633952871');
+  const isAdm2 = clean2.includes('admcledison') || clean2.includes('admcledson') || clean2.includes('clecio') || clean2.includes('outlook') || clean2.includes('1791633952871');
   if (isAdm1 && isAdm2) return true;
   return false;
 }
@@ -592,7 +592,8 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       clean.includes('clecio') ||
       clean.includes('outlook') ||
       clean.includes('1791633952871') ||
-      clean === 'tenant_admcledison_gmail_com'
+      clean === 'tenant_admcledison_gmail_com' ||
+      clean === 'tenant_adm_cledison_outlook_com'
     );
   };
 
@@ -670,7 +671,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
               email: 'adm_cledison@outlook.com',
               name: parsed.name || 'Admcledison',
               role: 'admin',
-              tenantId: 'tenant_admcledison_gmail_com',
+              tenantId: 'tenant_adm_cledison_outlook_com',
               adminEmail: 'adm_cledison@outlook.com',
               adminName: 'Admcledison',
             };
@@ -687,7 +688,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       email: 'adm_cledison@outlook.com',
       name: 'Admcledison',
       role: 'admin',
-      tenantId: 'tenant_admcledison_gmail_com',
+      tenantId: 'tenant_adm_cledison_outlook_com',
       adminEmail: 'adm_cledison@outlook.com',
       adminName: 'Admcledison',
       createdAt: 1791926468433,
@@ -698,7 +699,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
   // 3. Vehicles State: Frota real carregada de forma resiliente do cache local e por tenant
   const [vehiclesState, setVehiclesState] = useState<Vehicle[]>(() => {
     try {
-      const curTenant = safeGetItem(STORAGE_KEYS.CURRENT_TENANT) || 'tenant_admcledison_gmail_com';
+      const curTenant = safeGetItem(STORAGE_KEYS.CURRENT_TENANT) || 'tenant_adm_cledison_outlook_com';
       const tenantSaved = safeGetItem(`driftpark_vehicles_${curTenant}`);
       if (tenantSaved) {
         const parsed = JSON.parse(tenantSaved);
@@ -803,7 +804,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
   // CHAVE PRIMÁRIA MULTI-TENANT BASEADA NO UID DO USUÁRIO AUTENTICADO
   const rawTenantKey = currentUser?.tenantId || currentTenantId || currentTenant?.id || 'tenant_drift_01';
   const activeTenantKey = isAdmcledisonAccount(rawTenantKey) || isAdmcledisonAccount(currentUser?.email) || isAdmcledisonAccount(currentUser?.adminEmail)
-    ? 'tenant_admcledison_gmail_com'
+    ? 'tenant_adm_cledison_outlook_com'
     : rawTenantKey;
 
   useEffect(() => {
@@ -881,12 +882,13 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     const cleanAdminOfUser = (currentUser?.adminEmail || '').toLowerCase().trim();
 
     if (
+      activeTenantKey === 'tenant_adm_cledison_outlook_com' ||
       activeTenantKey === 'tenant_admcledison_gmail_com' ||
       isAdmcledisonAccount(currentUser?.email) ||
       isAdmcledisonAccount(currentUser?.tenantId) ||
       cleanUser === 'carollimap1993@gmail.com'
     ) {
-      if (itemTenantId && (isAdmcledisonAccount(itemTenantId) || itemTenantId === 'tenant_admcledison_gmail_com')) return true;
+      if (itemTenantId && (isAdmcledisonAccount(itemTenantId) || itemTenantId === 'tenant_adm_cledison_outlook_com' || itemTenantId === 'tenant_admcledison_gmail_com')) return true;
       if (isAdmcledisonAccount(cleanAdmin) || isAdmcledisonAccount(cleanCreatedBy)) return true;
       if (cleanUid === 'x9LtAZ0RAMTyOPmZelhVoyTDAVx2' || cleanUid === 'usr_admcledison') return true;
       if (cleanAdmin && (cleanAdmin === cleanUser || cleanAdmin === cleanAdminOfUser || cleanAdmin === 'carollimap1993@gmail.com' || cleanAdmin === 'adm_cledison@outlook.com' || cleanAdmin === 'admcledison@gmail.com')) return true;
