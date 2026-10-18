@@ -1299,13 +1299,6 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
             return merged;
           });
         }
-        if (Array.isArray(cData.users) && cData.users.length > 0) {
-          setUsers((prev) => {
-            const { merged } = mergeUsers(prev, cData.users);
-            safeSetItem(STORAGE_KEYS.USERS, JSON.stringify(merged));
-            return merged;
-          });
-        }
       }
     } finally {
       setIsSyncing(false);
@@ -1457,13 +1450,6 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
         if (Array.isArray(cData.queue) && cData.queue.length > 0) {
           setQueueState((prev) => {
             const { merged } = mergeQueue(prev, cData.queue, activeTenantKey);
-            return merged;
-          });
-        }
-        if (Array.isArray(cData.users) && cData.users.length > 0) {
-          setUsers((prev) => {
-            const { merged } = mergeUsers(prev, cData.users);
-            safeSetItem(STORAGE_KEYS.USERS, JSON.stringify(merged));
             return merged;
           });
         }
@@ -2178,13 +2164,6 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       if (cData && Array.isArray(cData.queue)) {
         setQueueState(cData.queue);
       }
-      if (cData && Array.isArray(cData.users) && cData.users.length > 0) {
-        setUsers((prev) => {
-          const { merged } = mergeUsers(prev, cData.users);
-          safeSetItem(STORAGE_KEYS.USERS, JSON.stringify(merged));
-          return merged;
-        });
-      }
     }).catch(() => {});
 
     setUsers((prev) => {
@@ -2255,41 +2234,22 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
   };
 
   const quickLoginAs = (role: UserRole) => {
-    const admProfile: UserProfile = {
-      id: 'x9LtAZ0RAMTyOPmZelhVoyTDAVx2',
-      name: 'Admcledison',
-      email: 'adm_cledison@outlook.com',
-      role: 'admin',
-      tenantId: 'tenant_admcledison_gmail_com',
-      adminEmail: 'adm_cledison@outlook.com',
-      adminName: 'Admcledison',
-      createdAt: 1791926468433,
-      savedPassword: '123456',
-    };
-
-    const opProfile: UserProfile = {
-      id: 'JBLyrtB5y3cSN8Xll1vypnxAGK02',
-      name: 'carollimap1993',
-      email: 'carollimap1993@gmail.com',
-      role: 'operador',
-      tenantId: 'tenant_admcledison_gmail_com',
-      adminEmail: 'adm_cledison@outlook.com',
-      adminName: 'Admcledison',
-      createdAt: 1792066542795,
-      savedPassword: '123456',
-    };
-
     if (role === 'admin') {
+      const admProfile: UserProfile = {
+        id: 'x9LtAZ0RAMTyOPmZelhVoyTDAVx2',
+        name: 'Admcledison',
+        email: 'adm_cledison@outlook.com',
+        role: 'admin',
+        tenantId: 'tenant_admcledison_gmail_com',
+        adminEmail: 'adm_cledison@outlook.com',
+        adminName: 'Admcledison',
+        createdAt: 1791926468433,
+        savedPassword: '123456',
+      };
       setCurrentUser(admProfile);
       setCurrentTenantId(admProfile.tenantId);
       safeSetItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(admProfile));
       safeSetItem(STORAGE_KEYS.CURRENT_TENANT, admProfile.tenantId);
-
-      setUsers((prev) => {
-        const { merged } = mergeUsers(prev, [admProfile, opProfile]);
-        safeSetItem(STORAGE_KEYS.USERS, JSON.stringify(merged));
-        return merged;
-      });
 
       try {
         const cachedVehiclesStr =
@@ -2303,37 +2263,33 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       } catch {}
 
       fetchTenantCloudData(admProfile.tenantId).then((cData) => {
-        if (cData) {
-          if (Array.isArray(cData.vehicles) && cData.vehicles.length > 0) {
-            setVehiclesState((prev) => {
-              const { merged } = mergeVehicles(prev, cData.vehicles, admProfile.tenantId);
-              safeSetItem(STORAGE_KEYS.VEHICLES, JSON.stringify(merged));
-              safeSetItem(`driftpark_vehicles_${admProfile.tenantId}`, JSON.stringify(merged));
-              return merged;
-            });
-          }
-          if (Array.isArray(cData.users) && cData.users.length > 0) {
-            setUsers((prev) => {
-              const { merged } = mergeUsers(prev, cData.users);
-              safeSetItem(STORAGE_KEYS.USERS, JSON.stringify(merged));
-              return merged;
-            });
-          }
+        if (cData && Array.isArray(cData.vehicles) && cData.vehicles.length > 0) {
+          setVehiclesState((prev) => {
+            const { merged } = mergeVehicles(prev, cData.vehicles, admProfile.tenantId);
+            safeSetItem(STORAGE_KEYS.VEHICLES, JSON.stringify(merged));
+            safeSetItem(`driftpark_vehicles_${admProfile.tenantId}`, JSON.stringify(merged));
+            return merged;
+          });
         }
       }).catch(() => {});
 
       pullFromFirestoreDirectly(admProfile.tenantId);
     } else {
+      const opProfile: UserProfile = {
+        id: 'JBLyrtB5y3cSN8Xll1vypnxAGK02',
+        name: 'carollimap1993',
+        email: 'carollimap1993@gmail.com',
+        role: 'operador',
+        tenantId: 'tenant_admcledison_gmail_com',
+        adminEmail: 'adm_cledison@outlook.com',
+        adminName: 'Admcledison',
+        createdAt: 1792066542795,
+        savedPassword: '123456',
+      };
       setCurrentUser(opProfile);
       setCurrentTenantId(opProfile.tenantId);
       safeSetItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(opProfile));
       safeSetItem(STORAGE_KEYS.CURRENT_TENANT, opProfile.tenantId);
-
-      setUsers((prev) => {
-        const { merged } = mergeUsers(prev, [admProfile, opProfile]);
-        safeSetItem(STORAGE_KEYS.USERS, JSON.stringify(merged));
-        return merged;
-      });
 
       try {
         const cachedVehiclesStr =
@@ -2347,22 +2303,13 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       } catch {}
 
       fetchTenantCloudData(opProfile.tenantId).then((cData) => {
-        if (cData) {
-          if (Array.isArray(cData.vehicles) && cData.vehicles.length > 0) {
-            setVehiclesState((prev) => {
-              const { merged } = mergeVehicles(prev, cData.vehicles, opProfile.tenantId);
-              safeSetItem(STORAGE_KEYS.VEHICLES, JSON.stringify(merged));
-              safeSetItem(`driftpark_vehicles_${opProfile.tenantId}`, JSON.stringify(merged));
-              return merged;
-            });
-          }
-          if (Array.isArray(cData.users) && cData.users.length > 0) {
-            setUsers((prev) => {
-              const { merged } = mergeUsers(prev, cData.users);
-              safeSetItem(STORAGE_KEYS.USERS, JSON.stringify(merged));
-              return merged;
-            });
-          }
+        if (cData && Array.isArray(cData.vehicles) && cData.vehicles.length > 0) {
+          setVehiclesState((prev) => {
+            const { merged } = mergeVehicles(prev, cData.vehicles, opProfile.tenantId);
+            safeSetItem(STORAGE_KEYS.VEHICLES, JSON.stringify(merged));
+            safeSetItem(`driftpark_vehicles_${opProfile.tenantId}`, JSON.stringify(merged));
+            return merged;
+          });
         }
       }).catch(() => {});
 

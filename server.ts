@@ -97,87 +97,47 @@ function getTenantFilePath(tenantId: string) {
 function loadTenantData(tenantId: string) {
   const filePath = getTenantFilePath(tenantId);
   const safeId = normalizeTenantId(tenantId);
-  let data: any = null;
-
   if (fs.existsSync(filePath)) {
     try {
       const content = fs.readFileSync(filePath, 'utf-8');
-      data = JSON.parse(content);
+      return JSON.parse(content);
     } catch {}
   }
-
   // Se ainda não existir no arquivo individual, tenta recuperar do seed
-  if (!data) {
-    const seedFile = path.join(__dirname, 'data', 'cloud-store.json');
-    if (fs.existsSync(seedFile)) {
-      try {
-        const seed = JSON.parse(fs.readFileSync(seedFile, 'utf-8'));
-        const seedTenant = seed.tenants?.[tenantId] || seed.tenants?.[safeId];
-        if (seedTenant) {
-          const raw = seedTenant;
-          data = {
-            id: raw.tenant?.id || tenantId,
-            name: raw.tenant?.name || 'Drift Park',
-            city: raw.tenant?.city || 'Pista Principal',
-            pricing: raw.tenant?.pricing || { 5: 15.0, 10: 25.0, 15: 35.0, 20: 45.0, 30: 60.0 },
-            vehicles: raw.vehicles || [],
-            rentals: raw.rentals || [],
-            queue: raw.queue || [],
-            users: raw.users || [],
-            updatedAt: raw.updatedAt || Date.now(),
-          };
-          fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
-        }
-      } catch {}
-    }
+  const seedFile = path.join(__dirname, 'data', 'cloud-store.json');
+  if (fs.existsSync(seedFile)) {
+    try {
+      const seed = JSON.parse(fs.readFileSync(seedFile, 'utf-8'));
+      const seedTenant = seed.tenants?.[tenantId] || seed.tenants?.[safeId];
+      if (seedTenant) {
+        const raw = seedTenant;
+        const normalized = {
+          id: raw.tenant?.id || tenantId,
+          name: raw.tenant?.name || 'Drift Park',
+          city: raw.tenant?.city || 'Pista Principal',
+          pricing: raw.tenant?.pricing || { 5: 15.0, 10: 25.0, 15: 35.0, 20: 45.0, 30: 60.0 },
+          vehicles: raw.vehicles || [],
+          rentals: raw.rentals || [],
+          queue: raw.queue || [],
+          users: raw.users || [],
+          updatedAt: raw.updatedAt || Date.now(),
+        };
+        fs.writeFileSync(filePath, JSON.stringify(normalized, null, 2), 'utf-8');
+        return normalized;
+      }
+    } catch {}
   }
-
-  if (!data) {
-    data = {
-      id: tenantId,
-      name: 'Drift Park',
-      city: 'Pista Principal',
-      pricing: { 5: 15.0, 10: 25.0, 15: 35.0, 20: 45.0, 30: 60.0 },
-      vehicles: [],
-      rentals: [],
-      queue: [],
-      users: [],
-      updatedAt: Date.now(),
-    };
-  }
-
-  // Garante que o Dono (Admcledison) e o Operador vinculado (Carol Lima) estejam sempre presentes e sincronizados
-  if (safeId === 'tenant_adm_cledison_outlook_com') {
-    data.users = Array.isArray(data.users) ? data.users : [];
-    if (!data.users.some((u: any) => (u.email || '').toLowerCase() === 'adm_cledison@outlook.com')) {
-      data.users.unshift({
-        id: 'x9LtAZ0RAMTyOPmZelhVoyTDAVx2',
-        name: 'Admcledison',
-        email: 'adm_cledison@outlook.com',
-        role: 'admin',
-        tenantId: 'tenant_adm_cledison_outlook_com',
-        adminEmail: 'adm_cledison@outlook.com',
-        adminName: 'Admcledison',
-        savedPassword: '123456',
-        createdAt: 1791926468433,
-      });
-    }
-    if (!data.users.some((u: any) => (u.email || '').toLowerCase() === 'carollimap1993@gmail.com')) {
-      data.users.push({
-        id: 'JBLyrtB5y3cSN8Xll1vypnxAGK02',
-        name: 'carollimap1993',
-        email: 'carollimap1993@gmail.com',
-        role: 'operador',
-        tenantId: 'tenant_adm_cledison_outlook_com',
-        adminEmail: 'adm_cledison@outlook.com',
-        adminName: 'Admcledison',
-        createdAt: 1792066542795,
-        savedPassword: '123456',
-      });
-    }
-  }
-
-  return data;
+  return {
+    id: tenantId,
+    name: 'Drift Park',
+    city: 'Pista Principal',
+    pricing: { 5: 15.0, 10: 25.0, 15: 35.0, 20: 45.0, 30: 60.0 },
+    vehicles: [],
+    rentals: [],
+    queue: [],
+    users: [],
+    updatedAt: Date.now(),
+  };
 }
 
 function saveTenantData(tenantId: string, data: any) {
@@ -220,14 +180,6 @@ app.get('/api/cloud/tenants/:tenantId', (req, res) => {
   if (!tenantId) return res.status(400).json({ error: 'tenantId obrigatório' });
   const data = loadTenantData(tenantId);
   res.json({ success: true, data });
-});
-
-// Busca especificamente a lista de usuários e operadores vinculados ao tenant
-app.get('/api/cloud/tenants/:tenantId/users', (req, res) => {
-  const { tenantId } = req.params;
-  if (!tenantId) return res.status(400).json({ error: 'tenantId obrigatório' });
-  const data = loadTenantData(tenantId);
-  res.json({ success: true, users: data.users || [] });
 });
 
 // Sincronização e migração dos dados locais do cliente para a nuvem
