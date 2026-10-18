@@ -2531,10 +2531,16 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       return next;
     });
 
+    const targetAdminEmail =
+      activeTenantKey === 'tenant_admcledison_gmail_com'
+        ? 'adm_cledison@outlook.com'
+        : (currentUser?.role === 'admin' ? currentUser.email : (currentUser?.adminEmail || currentUser?.email));
+
     // Grava no Firebase (Firestore + RTDB) e na nuvem do servidor
     saveDocToCloud('veiculos', newVehicle.id, {
       ...newVehicle,
-      adminEmail: currentUser?.email || undefined,
+      adminEmail: targetAdminEmail,
+      createdBy: currentUser?.email,
     }, true);
     saveVehicleCloud(activeTenantKey, newVehicle);
 

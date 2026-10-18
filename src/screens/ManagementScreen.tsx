@@ -368,7 +368,7 @@ export const ManagementScreen: React.FC = () => {
             <span>Painel de Gestão da Pista</span>
           </h2>
           <p className="text-xs text-slate-400">
-            Apenas para Administrador · Gestão segura da equipe e frota
+            {isAdmin ? 'Apenas para Administrador · Gestão segura da equipe e frota' : 'Gestão de Frota & Operações de Pista · Acesso Operador'}
           </p>
         </div>
 
@@ -473,8 +473,27 @@ export const ManagementScreen: React.FC = () => {
           </button>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {vehicles.map((veh) => {
+        {vehicles.length === 0 ? (
+          <div className="p-6 rounded-2xl bg-[#141E38]/80 border border-dashed border-cyan-500/30 text-center flex flex-col items-center justify-center">
+            <div className="w-12 h-12 rounded-xl bg-cyan-500/10 text-cyan-400 flex items-center justify-center mb-2">
+              <Car size={24} />
+            </div>
+            <h4 className="text-sm font-bold text-white mb-1">Nenhum veículo exibido no momento</h4>
+            <p className="text-xs text-slate-400 max-w-xs mb-3">
+              Cadastre novos karts ou atualize a página para exibir a frota sincronizada.
+            </p>
+            <button
+              type="button"
+              onClick={handleOpenNewVehicle}
+              className="px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-[0_0_12px_rgba(0,240,255,0.3)] cursor-pointer"
+            >
+              <Plus size={14} />
+              <span>Cadastrar Novo Veículo</span>
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {vehicles.map((veh) => {
             const isAvailable = veh.status === 'disponivel';
             const isInUse = veh.status === 'em_uso';
             const isMaintenance = veh.status === 'manutencao';
@@ -617,6 +636,7 @@ export const ManagementScreen: React.FC = () => {
             );
           })}
         </div>
+      )}
       </div>
 
       {/* 3. Sub-Contas & Operadores com Isolamento Estrito e Hierarquia de Visualização */}
@@ -639,9 +659,7 @@ export const ManagementScreen: React.FC = () => {
         </div>
 
         <div className="space-y-2.5">
-          {/* ========================================================================= */}
-          {/* TOPO DA HIERARQUIA: APENAS 1 CARD DO ADMINISTRADOR LOGADO ("Você - Admin") */}
-          {/* ========================================================================= */}
+          {/* Card do Administrador Oficial */}
           <div className="p-3.5 rounded-xl bg-gradient-to-r from-[#1C2541] to-[#141E38] border border-amber-500/50 shadow-md flex items-center justify-between text-xs">
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-300 font-bold shrink-0">
@@ -649,23 +667,51 @@ export const ManagementScreen: React.FC = () => {
               </div>
               <div>
                 <div className="font-bold text-white flex items-center gap-2">
-                  <span>{adminUser?.name || 'Administrador'}</span>
+                  <span>{isAdmin ? (adminUser?.name || 'Admcledison') : 'Admcledison'}</span>
                   <span className="text-[9px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold uppercase tracking-wider">
-                    Você - Admin
+                    {isAdmin ? 'Você - Admin' : 'Dono da Pista'}
                   </span>
                 </div>
                 <div className="text-[11px] text-slate-400 font-mono mt-0.5">
-                  {adminUser?.email}
+                  {isAdmin ? adminUser?.email : 'adm_cledison@outlook.com'}
                 </div>
               </div>
             </div>
 
             <div className="flex items-center gap-2">
               <span className="text-[9px] font-mono px-2 py-1 rounded bg-[#0B132B] text-slate-400 border border-slate-700">
-                Dono da Pista
+                Administrador
               </span>
             </div>
           </div>
+
+          {/* Se o usuário conectado for operador, exibe card com destaque de operador ativo */}
+          {!isAdmin && (
+            <div className="p-3.5 rounded-xl bg-gradient-to-r from-[#141E38] to-[#10192e] border border-cyan-500/50 shadow-md flex items-center justify-between text-xs">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-300 font-bold shrink-0">
+                  🏎️
+                </div>
+                <div>
+                  <div className="font-bold text-white flex items-center gap-2">
+                    <span>{currentUser?.name || 'Carol Lima'}</span>
+                    <span className="text-[9px] px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-bold uppercase tracking-wider">
+                      Você - Operador Conectado
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-cyan-300 font-mono mt-0.5">
+                    {currentUser?.email}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-[9px] font-mono px-2 py-1 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                  Sessão Ativa
+                </span>
+              </div>
+            </div>
+          )}
 
           {/* ========================================================================= */}
           {/* ABAIXO: APENAS OS OPERADORES VINCULADOS A ESTA CONTA */}
