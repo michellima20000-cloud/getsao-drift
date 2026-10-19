@@ -295,8 +295,8 @@ app.post('/api/cloud/tenants/:tenantId/rental', (req, res) => {
   if (action === 'delete') {
     current.rentals = current.rentals.filter((r: any) => r.id !== rentalId);
   } else if (action === 'clearHistory') {
-    // Remove apenas corridas concluídas, preserva ativas
-    current.rentals = current.rentals.filter((r: any) => r.status === 'ativa');
+    // Remove apenas corridas concluídas, preserva ativas e pausadas
+    current.rentals = current.rentals.filter((r: any) => r.status === 'ativa' || r.status === 'pausada');
   } else if (action === 'save' && rental) {
     const idx = current.rentals.findIndex((r: any) => r.id === rental.id);
     const item = { ...rental, tenantId };

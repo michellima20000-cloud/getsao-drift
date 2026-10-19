@@ -116,28 +116,30 @@ if (typeof window !== 'undefined') {
     });
 }
 
-// Previne que rejeições assíncronas do Firebase e erros de cota quebrem a interface
+// Previne que rejeições assíncronas do Firebase quebrem a interface
 if (typeof window !== 'undefined') {
   window.addEventListener('unhandledrejection', (event) => {
-    const reasonMsg = event.reason?.message || String(event.reason || '');
+    const reason = event.reason;
+    const reasonMsg = reason?.message || String(reason || '');
+    // Ignora erros de localStorage do navegador, extensões ou ruído de conexão
     if (
+      reasonMsg.includes('QuotaExceeded') ||
+      reasonMsg.includes('setItem') ||
+      reasonMsg.includes('chrome-extension') ||
       reasonMsg.includes('installations') ||
-      reasonMsg.includes('API key not valid') ||
-      reasonMsg.includes('400 INVALID_ARGUMENT') ||
-      reasonMsg.includes('resource-exhausted') ||
-      reasonMsg.includes('Quota limit exceeded') ||
-      reasonMsg.includes('quota metric') ||
-      reasonMsg.includes('Quota exceeded') ||
-      (event.reason?.name === 'FirebaseError' && (
-        String(event.reason?.code || '').includes('installations') ||
-        String(event.reason?.code || '').includes('resource-exhausted')
-      ))
+      reasonMsg.includes('400 INVALID_ARGUMENT')
     ) {
-      if (reasonMsg.includes('resource-exhausted') || reasonMsg.includes('Quota') || reasonMsg.includes('quota')) {
-        markFirestoreQuotaExceeded();
-      }
       event.preventDefault();
-      console.warn('[Firebase] Aviso tratado com resiliência:', reasonMsg);
+      return;
+    }
+    // Apenas erros genuínos do Cloud Firestore com código resource-exhausted
+    if (
+      reason?.name === 'FirebaseError' &&
+      (reason?.code === 'resource-exhausted' || reasonMsg.includes('resource-exhausted'))
+    ) {
+      markFirestoreQuotaExceeded();
+      event.preventDefault();
+      console.warn('[Firebase] Cota diária atingida no Firestore:', reasonMsg);
     }
   });
 }
@@ -161,6 +163,13 @@ export const db = (() => {
 
 // Conexão canônica com o banco de dados ativo do Firestore
 export const defaultDb = db;
+
+// Garante que a rede do Firestore esteja ativa
+if (typeof window !== 'undefined') {
+  try {
+    enableNetwork(db).catch(() => {});
+  } catch {}
+}
 
 // Limpeza preventiva de banco IndexedDB antigo do Firestore para eliminar mutações travadas em retry infinito
 if (typeof window !== 'undefined' && window.indexedDB && window.indexedDB.databases) {
@@ -195,11 +204,11 @@ export const FIRESTORE_UPGRADE_URL = `https://console.firebase.google.com/projec
 const QUOTA_STORAGE_KEY = 'driftpark_firestore_quota_exceeded_day';
 
 function checkStoredQuotaExceeded(): boolean {
-  if (typeof window === 'undefined') return true; // Server/pre-render safe
+  if (typeof window === 'undefined') return false; // Server/pre-render safe
   try {
     const stored = window.localStorage ? window.localStorage.getItem(QUOTA_STORAGE_KEY) : null;
     const currentDay = new Date().toISOString().slice(0, 10);
-    if (stored === currentDay || stored === 'exceeded') {
+    if (stored === currentDay) {
       return true;
     }
   } catch {}
@@ -233,16 +242,11 @@ export function markFirestoreQuotaExceeded() {
 
   if (!isFirestoreQuotaExceeded) {
     isFirestoreQuotaExceeded = true;
-    console.warn('[Firestore] Cota diária gratuita de escritas atingida (Free daily write units). Pausando sincronização de rede do Firestore para interromper retentativas.');
+    console.warn('[Firestore] Cota diária gratuita do Cloud Firestore atingida. Modo de contingência ativado.');
     quotaListeners.forEach((l) => {
       try { l(true); } catch {}
     });
   }
-
-  // Desativa a rede do Firestore imediatamente para parar o loop de retentativas do SDK
-  try {
-    disableNetwork(db).catch(() => {});
-  } catch {}
 }
 
 export function resetFirestoreQuotaExceeded() {
@@ -260,13 +264,51 @@ export function resetFirestoreQuotaExceeded() {
   });
 }
 
-// Se a cota já estiver gravada como excedida hoje, pausa a rede do Firestore de imediato
-if (typeof window !== 'undefined' && isFirestoreQuotaExceeded) {
-  setTimeout(() => {
-    try {
-      disableNetwork(db).catch(() => {});
-    } catch {}
-  }, 50);
+export enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+export interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string | null;
+    email?: string | null;
+    emailVerified?: boolean | null;
+    isAnonymous?: boolean | null;
+    tenantId?: string | null;
+    providerInfo?: {
+      providerId?: string | null;
+      email?: string | null;
+    }[];
+  };
+}
+
+export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null): FirestoreErrorInfo {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo: auth.currentUser?.providerData?.map((provider) => ({
+        providerId: provider.providerId,
+        email: provider.email,
+      })) || [],
+    },
+    operationType,
+    path,
+  };
+  console.warn('[Firestore Diagnóstico]:', JSON.stringify(errInfo));
+  return errInfo;
 }
 
 try {
@@ -324,11 +366,11 @@ export function optimizePayloadForFirestore(collectionName: string, data: any): 
     // Remove senhas ou dados irrelevantes
     delete clean.savedPassword;
     delete clean.isPaused;
-    // Se a corrida não estiver pausada, não envia campos vazios de pausa
+    // Se a corrida não estiver pausada, remove apenas campos undefined
     if (clean.status !== 'pausada') {
-      delete clean.remainingTimeMs;
-      delete clean.pausedAt;
-      delete clean.pauseReason;
+      if (clean.remainingTimeMs === undefined) delete clean.remainingTimeMs;
+      if (clean.pausedAt === undefined) delete clean.pausedAt;
+      if (clean.pauseReason === undefined) delete clean.pauseReason;
     }
   } else if (collectionName === 'users' || collectionName === 'usuarios') {
     // Nunca trafega senha em texto puro para o Firestore
@@ -535,10 +577,9 @@ if (typeof window !== 'undefined') {
 }
 
 /**
- * Grava documento com debouncing, enxugamento de payload e batching inteligente.
- * - Elimina imagens base64 repetidas e campos voláteis.
- * - Descarta escritas duplicadas se os dados não mudaram (Dirty-Checking).
- * - Se isCritical for true (início/fim de corrida, cadastro), agenda envio ultra-rápido (200ms).
+ * Grava documento diretamente no Cloud Firestore com garantia de sincronização em tempo real entre dispositivos.
+ * - Enxuga payloads removendo imagens pesadas repetidas e campos voláteis.
+ * - Atualiza o Firestore imediatamente disparando onSnapshot para todos os aparelhos conectados.
  */
 export async function saveDocToCloud(
   collectionName: string,
@@ -546,118 +587,101 @@ export async function saveDocToCloud(
   data: any,
   isCriticalOrSecondary?: boolean | string
 ): Promise<boolean> {
-  if (isFirestoreQuotaExceeded) {
-    return true;
-  }
+  if (!docId) return false;
 
-  const isCritical = typeof isCriticalOrSecondary === 'boolean' ? isCriticalOrSecondary : false;
+  const isCritical = typeof isCriticalOrSecondary === 'boolean' ? isCriticalOrSecondary : true;
   const cleanData = optimizePayloadForFirestore(collectionName, data);
+
+  const payloadToSave = {
+    ...cleanData,
+    updatedAt: cleanData?.updatedAt || Date.now(),
+  };
 
   const key = `${collectionName}/${docId}`;
 
-  // Verificação de Dirty-Checking: se dados já foram gravados e nada mudou, não queima cota do Firestore
-  const { updatedAt: _ignored, ...businessProps } = cleanData || {};
-  const fingerprint = JSON.stringify(businessProps);
+  // Se for operação crítica (corrida, frota, fila, usuário), grava imediatamente no Firestore
+  if (isCritical) {
+    try {
+      const docRef = doc(db, collectionName, docId);
+      await setDoc(docRef, payloadToSave, { merge: true });
+      lastCommittedHashes.set(key, JSON.stringify(cleanData));
+      return true;
+    } catch (err: any) {
+      const msg = String(err?.message || err || '');
+      if (err?.code === 'resource-exhausted' || msg.includes('resource-exhausted')) {
+        markFirestoreQuotaExceeded();
+      }
+      console.warn(`[Firestore] Aviso na escrita imediata de ${collectionName}/${docId}:`, err);
+      // Agenda para retry no batch
+      pendingBatch.set(key, {
+        collection: collectionName,
+        docId,
+        data: payloadToSave,
+        action: 'set',
+        isCritical: true,
+        queuedAt: Date.now(),
+      });
+      persistPendingBatch();
+      return false;
+    }
+  }
+
+  // Dirty-Checking para operações secundárias/repetitivas
+  const fingerprint = JSON.stringify(cleanData);
   if (lastCommittedHashes.get(key) === fingerprint && !pendingBatch.has(key)) {
     return true;
   }
 
-  const payloadToSave = {
-    ...cleanData,
-    updatedAt: cleanData.updatedAt || Date.now(),
-  };
-
-  const existing = pendingBatch.get(key);
-
-  if (existing && existing.action === 'set') {
-    pendingBatch.set(key, {
-      collection: collectionName,
-      docId,
-      data: { ...existing.data, ...payloadToSave },
-      action: 'set',
-      isCritical: existing.isCritical || isCritical,
-      queuedAt: existing.queuedAt,
-    });
-  } else {
-    pendingBatch.set(key, {
-      collection: collectionName,
-      docId,
-      data: payloadToSave,
-      action: 'set',
-      isCritical,
-      queuedAt: Date.now(),
-    });
-  }
-
+  pendingBatch.set(key, {
+    collection: collectionName,
+    docId,
+    data: payloadToSave,
+    action: 'set',
+    isCritical: false,
+    queuedAt: Date.now(),
+  });
   persistPendingBatch();
 
-  // Operações críticas disparam flush com brevidade (200ms)
-  if (isCritical) {
-    if (debounceTimer) clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => {
-      flushPendingWrites();
-    }, 200);
-    return true;
-  }
-
-  // Agendamento padrão com debounce inteligente para mesclar alterações
   if (debounceTimer) clearTimeout(debounceTimer);
   debounceTimer = setTimeout(() => {
     flushPendingWrites();
   }, DEBOUNCE_DELAY_MS);
 
-  if (!maxWaitTimer) {
-    maxWaitTimer = setTimeout(() => {
-      flushPendingWrites();
-    }, MAX_WAIT_MS);
-  }
-
-  if (pendingBatch.size >= 15) {
-    flushPendingWrites();
-  }
-
   return true;
 }
 
 /**
- * Remove documento utilizando o motor de batching
+ * Remove documento diretamente do Cloud Firestore garantindo reflexo instantâneo em todos os dispositivos.
  */
 export async function deleteDocFromCloud(
   collectionName: string,
   docId: string,
-  isCriticalOrSecondary?: boolean | string,
+  _isCriticalOrSecondary?: boolean | string,
   _tenantId?: string
 ): Promise<boolean> {
-  if (isFirestoreQuotaExceeded) {
-    return true;
-  }
+  if (!docId) return false;
 
-  const isCritical = typeof isCriticalOrSecondary === 'boolean' ? isCriticalOrSecondary : true;
   const key = `${collectionName}/${docId}`;
+  lastCommittedHashes.delete(key);
 
-  pendingBatch.set(key, {
-    collection: collectionName,
-    docId,
-    action: 'delete',
-    isCritical,
-    queuedAt: Date.now(),
-  });
-
-  persistPendingBatch();
-
-  if (isCritical) {
-    if (debounceTimer) clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => {
-      flushPendingWrites();
-    }, 150);
-  } else {
-    if (debounceTimer) clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => {
-      flushPendingWrites();
-    }, DEBOUNCE_DELAY_MS);
+  try {
+    const docRef = doc(db, collectionName, docId);
+    await deleteDoc(docRef);
+    pendingBatch.delete(key);
+    persistPendingBatch();
+    return true;
+  } catch (err: any) {
+    console.warn(`[Firestore] Aviso na exclusão de ${collectionName}/${docId}:`, err);
+    pendingBatch.set(key, {
+      collection: collectionName,
+      docId,
+      action: 'delete',
+      isCritical: true,
+      queuedAt: Date.now(),
+    });
+    persistPendingBatch();
+    return false;
   }
-
-  return true;
 }
 
 export const deleteDocToCloud = deleteDocFromCloud;
@@ -671,7 +695,7 @@ export async function testAndVerifyFirestore(): Promise<{
 }> {
   try {
     const pingDoc = doc(db, '_health_check_', 'ping');
-    await getDoc(pingDoc);
+    await getDocFromServer(pingDoc).catch(() => getDoc(pingDoc));
     markFirestoreAvailable();
     return {
       success: true,
@@ -689,15 +713,13 @@ export async function testAndVerifyFirestore(): Promise<{
       };
     }
     if (
-      errMsg.includes('resource-exhausted') ||
-      errMsg.includes('Quota') ||
-      errMsg.includes('quota metric') ||
-      err?.code === 'resource-exhausted'
+      err?.code === 'resource-exhausted' ||
+      (errMsg.includes('resource-exhausted') && !errMsg.includes('QuotaExceeded'))
     ) {
       markFirestoreQuotaExceeded();
       return {
         success: true,
-        message: `Cloud Firebase conectado (${ACTIVE_DATABASE_ID}). Cota diária gratuita de escritas atingida; modo de contingência local e servidor ativo.`,
+        message: `Cloud Firebase conectado (${ACTIVE_DATABASE_ID}). Cota diária gratuita atingida; modo de contingência local ativo.`,
       };
     }
     markFirestoreAvailable();
