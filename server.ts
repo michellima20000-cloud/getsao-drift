@@ -204,11 +204,17 @@ app.post('/api/cloud/tenants/:tenantId/sync', (req, res) => {
     current.vehicles = Array.from(vMap.values());
   }
 
-  // Atualiza corridas autoritativas
+  // Atualiza corridas autoritativas (enxuga imagens pesadas desnecessárias)
   if (Array.isArray(rentals)) {
     current.rentals = rentals
       .filter((r: any) => r && r.id)
-      .map((r: any) => ({ ...r, tenantId }))
+      .map((r: any) => {
+        const item = { ...r, tenantId };
+        if (item.vehicleImageUrl && (item.vehicleImageUrl.startsWith('data:') || item.vehicleImageUrl.length > 300)) {
+          delete item.vehicleImageUrl;
+        }
+        return item;
+      })
       .sort((a: any, b: any) => (b.createdAt || 0) - (a.createdAt || 0));
   }
 
@@ -290,6 +296,9 @@ app.post('/api/cloud/tenants/:tenantId/rental', (req, res) => {
   } else if (action === 'save' && rental) {
     const idx = current.rentals.findIndex((r: any) => r.id === rental.id);
     const item = { ...rental, tenantId };
+    if (item.vehicleImageUrl && (item.vehicleImageUrl.startsWith('data:') || item.vehicleImageUrl.length > 300)) {
+      delete item.vehicleImageUrl;
+    }
     if (idx >= 0) {
       current.rentals[idx] = { ...current.rentals[idx], ...item };
     } else {

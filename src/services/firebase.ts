@@ -302,6 +302,44 @@ export function sanitizeForFirestore<T = any>(val: T): T {
   return result as T;
 }
 
+/**
+ * Otimiza e enxuga payloads antes de enviar ao Firebase Firestore:
+ * - Remove campos de imagem base64 pesados de corridas (vehicleImageUrl economiza ~15KB por corrida)
+ * - Remove senhas em texto puro de perfis de usuário
+ * - Remove campos nulos/undefined e propriedades voláteis desnecessárias
+ * - Garante apenas as informações necessárias no banco de dados na nuvem
+ */
+export function optimizePayloadForFirestore(collectionName: string, data: any): any {
+  if (!data || typeof data !== 'object') return data;
+  const clean = sanitizeForFirestore({ ...data });
+
+  if (collectionName === 'corridas') {
+    // Reduz drasticamente o consumo de dados removendo base64 repetido em cada corrida
+    // A imagem do veículo já reside no cadastro do veículo (veiculos)
+    if (clean.vehicleImageUrl && (clean.vehicleImageUrl.startsWith('data:') || clean.vehicleImageUrl.length > 300)) {
+      delete clean.vehicleImageUrl;
+    }
+    // Remove senhas ou dados irrelevantes
+    delete clean.savedPassword;
+    delete clean.isPaused;
+    // Se a corrida não estiver pausada, não envia campos vazios de pausa
+    if (clean.status !== 'pausada') {
+      delete clean.remainingTimeMs;
+      delete clean.pausedAt;
+      delete clean.pauseReason;
+    }
+  } else if (collectionName === 'users' || collectionName === 'usuarios') {
+    // Nunca trafega senha em texto puro para o Firestore
+    delete clean.savedPassword;
+  } else if (collectionName === 'veiculos') {
+    delete clean.savedPassword;
+  } else if (collectionName === 'fila') {
+    delete clean.savedPassword;
+  }
+
+  return clean;
+}
+
 // ============================================================================
 // MOTOR DE BATCHING E DEBOUNCING INTELIGENTE DO FIRESTORE
 // Agrupa múltiplas mutações e descarta intermediárias, reduzindo drasticamente
@@ -318,10 +356,13 @@ interface PendingWrite {
 }
 
 const pendingBatch = new Map<string, PendingWrite>();
+// Cache de deduplicação (Dirty-Checking): evita gravar se o documento não sofreu alteração real
+const lastCommittedHashes = new Map<string, string>();
+
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 let maxWaitTimer: ReturnType<typeof setTimeout> | null = null;
-const DEBOUNCE_DELAY_MS = 1200; // Janela de 1.2s para agregar alterações
-const MAX_WAIT_MS = 4000; // Limite máximo para forçar envio
+const DEBOUNCE_DELAY_MS = 2000; // Janela inteligente para agregar alterações não-críticas
+const MAX_WAIT_MS = 5000; // Limite máximo para forçar envio
 let isFlushing = false;
 
 export function getPendingWritesCount(): number {
@@ -379,8 +420,16 @@ export async function flushPendingWrites(): Promise<boolean> {
         const docRef = doc(db, item.collection, item.docId);
         if (item.action === 'delete') {
           batch.delete(docRef);
+          lastCommittedHashes.delete(`${item.collection}/${item.docId}`);
         } else {
           batch.set(docRef, item.data, { merge: true });
+          const bKey = `${item.collection}/${item.docId}`;
+          const { updatedAt, ...businessOnly } = item.data || {};
+          lastCommittedHashes.set(bKey, JSON.stringify(businessOnly));
+          if (lastCommittedHashes.size > 2000) {
+            const firstKey = lastCommittedHashes.keys().next().value;
+            if (firstKey) lastCommittedHashes.delete(firstKey);
+          }
         }
       }
 
@@ -426,10 +475,10 @@ if (typeof window !== 'undefined') {
 }
 
 /**
- * Grava documento com debouncing e batching inteligente.
- * - Se isCritical for true (início/fim de corrida, cadastro), agenda envio ultra-rápido (150ms).
- * - Se múltiplos updates do mesmo documento chegarem na mesma janela,
- *   eles são mesclados em memória, gerando uma única operação de escrita.
+ * Grava documento com debouncing, enxugamento de payload e batching inteligente.
+ * - Elimina imagens base64 repetidas e campos voláteis.
+ * - Descarta escritas duplicadas se os dados não mudaram (Dirty-Checking).
+ * - Se isCritical for true (início/fim de corrida, cadastro), agenda envio ultra-rápido (200ms).
  */
 export async function saveDocToCloud(
   collectionName: string,
@@ -442,19 +491,29 @@ export async function saveDocToCloud(
   }
 
   const isCritical = typeof isCriticalOrSecondary === 'boolean' ? isCriticalOrSecondary : false;
-  const cleanData = sanitizeForFirestore({
-    ...data,
-    updatedAt: Date.now(),
-  });
+  const cleanData = optimizePayloadForFirestore(collectionName, data);
 
   const key = `${collectionName}/${docId}`;
+
+  // Verificação de Dirty-Checking: se dados já foram gravados e nada mudou, não queima cota do Firestore
+  const { updatedAt: _ignored, ...businessProps } = cleanData || {};
+  const fingerprint = JSON.stringify(businessProps);
+  if (lastCommittedHashes.get(key) === fingerprint && !pendingBatch.has(key)) {
+    return true;
+  }
+
+  const payloadToSave = {
+    ...cleanData,
+    updatedAt: cleanData.updatedAt || Date.now(),
+  };
+
   const existing = pendingBatch.get(key);
 
   if (existing && existing.action === 'set') {
     pendingBatch.set(key, {
       collection: collectionName,
       docId,
-      data: { ...existing.data, ...cleanData },
+      data: { ...existing.data, ...payloadToSave },
       action: 'set',
       isCritical: existing.isCritical || isCritical,
       queuedAt: existing.queuedAt,
@@ -463,23 +522,23 @@ export async function saveDocToCloud(
     pendingBatch.set(key, {
       collection: collectionName,
       docId,
-      data: cleanData,
+      data: payloadToSave,
       action: 'set',
       isCritical,
       queuedAt: Date.now(),
     });
   }
 
-  // Operações críticas disparam flush com brevidade (150ms)
+  // Operações críticas disparam flush com brevidade (200ms)
   if (isCritical) {
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
       flushPendingWrites();
-    }, 150);
+    }, 200);
     return true;
   }
 
-  // Agendamento padrão com debounce
+  // Agendamento padrão com debounce inteligente para mesclar alterações
   if (debounceTimer) clearTimeout(debounceTimer);
   debounceTimer = setTimeout(() => {
     flushPendingWrites();
