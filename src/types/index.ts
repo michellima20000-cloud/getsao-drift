@@ -4,11 +4,11 @@ export type VehicleCategory = 'DRIFT' | 'JEEP' | 'BATE_BATE';
 
 export type VehicleStatus = 'disponivel' | 'em_uso' | 'manutencao';
 
-export type PaymentMethod = 'PIX' | 'CARTAO' | 'DINHEIRO';
+export type PaymentMethod = 'PIX' | 'CARTAO' | 'DINHEIRO' | 'CARTAO_CREDITO' | 'CARTAO_DEBITO';
 
 export type PaymentStatus = 'PAGO' | 'NAO_PAGO';
 
-export type RentalMode = 'padrao' | 'agendado' | 'manual';
+export type RentalMode = 'padrao' | 'agendado' | 'manual' | 'CRONOMETRADO' | 'LIVRE';
 
 export interface UserProfile {
   id: string;

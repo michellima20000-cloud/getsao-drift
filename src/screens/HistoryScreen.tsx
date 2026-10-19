@@ -82,9 +82,10 @@ export const HistoryScreen: React.FC = () => {
   const beforeYesterdayStr = useMemo(() => formatYMD(beforeYesterday), [beforeYesterday]);
 
   // Modo de Filtro de Calendário: 'HOJE' | 'ONTEM' | 'ANTEONTEM' | 'DATA_ESPECIFICA' | 'MES' | 'TODAS'
+  // Inicia em 'TODAS' para exibir o histórico completo da nuvem imediatamente
   const [dateFilterMode, setDateFilterMode] = useState<
     'HOJE' | 'ONTEM' | 'ANTEONTEM' | 'DATA_ESPECIFICA' | 'MES' | 'TODAS'
-  >('HOJE');
+  >('TODAS');
 
   const [selectedSpecificDate, setSelectedSpecificDate] = useState<string>(todayStr);
 

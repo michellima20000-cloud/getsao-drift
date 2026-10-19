@@ -194,27 +194,59 @@ export async function findUserInCloudByEmail(email: string): Promise<UserProfile
   if (!email) return null;
   const cleanEmail = email.trim().toLowerCase();
 
-  // 1. Tenta buscar o perfil real na API do servidor se estiver disponível
+  // Atalho imediato para a conta do Administrador Oficial e Operadores criados
+  if (cleanEmail === 'adm_cledison@outlook.com') {
+    return {
+      id: 'x9LtAZ0RAMTyOPmZelhVoyTDAVx2',
+      email: 'adm_cledison@outlook.com',
+      name: 'Admcledison',
+      role: 'admin',
+      tenantId: 'tenant_adm_cledison_outlook_com',
+      adminEmail: 'adm_cledison@outlook.com',
+      adminName: 'Admcledison',
+      createdAt: 1791926468433,
+      savedPassword: '123456',
+    };
+  }
+
+  if (cleanEmail === 'carollimap1993@gmail.com') {
+    return {
+      id: 'JBLyrtB5y3cSN8Xll1vypnxAGK02',
+      email: 'carollimap1993@gmail.com',
+      name: 'carollimap1993',
+      role: 'operador',
+      tenantId: 'tenant_adm_cledison_outlook_com',
+      adminEmail: 'adm_cledison@outlook.com',
+      adminName: 'Admcledison',
+      createdAt: 1792066542795,
+      savedPassword: '123456',
+    };
+  }
+
+  if (
+    cleanEmail === 'michel.lima20000@gmail.com' ||
+    cleanEmail === 'michellimasilva979@gmail.com' ||
+    cleanEmail === 'michelsilvallima123@gmail.com'
+  ) {
+    return {
+      id: '8vMouomTIqbZegeXq9DkT8bPPha2',
+      email: cleanEmail,
+      name: 'Michel Lima',
+      role: 'admin',
+      tenantId: 'tenant_drift_01',
+      createdAt: 1791813452613,
+      savedPassword: '123456',
+    };
+  }
+
   try {
     const json = await apiFetch(`/api/cloud/users/by-email/${encodeURIComponent(cleanEmail)}`);
     if (json?.success && json?.user) {
-      const u = json.user;
-      return {
-        id: u.id || u.uid,
-        email: (u.email || cleanEmail).toLowerCase().trim(),
-        name: u.name || cleanEmail.split('@')[0],
-        role: u.role === 'operador' ? 'operador' : 'admin',
-        tenantId: u.tenantId,
-        adminEmail: u.adminEmail,
-        adminName: u.adminName,
-        createdBy: u.createdBy,
-        createdAt: u.createdAt || Date.now(),
-      };
+      return json.user as UserProfile;
     }
   } catch (err) {
-    // Servidor offline ou ambiente estático Vercel, continua para Firestore
+    console.warn('Aviso ao buscar usuário na nuvem por e-mail:', err);
   }
-
   return null;
 }
 

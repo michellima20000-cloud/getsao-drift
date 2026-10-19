@@ -13,7 +13,20 @@ function attemptStoragePruning() {
   if (typeof window === 'undefined' || !window.localStorage) return;
 
   try {
-    // 1. Remove URLs base64 pesadas de fotos salvas no cache de veículos do localStorage caso esteja cheio
+    // 1. Reduz o histórico local de corridas mantendo apenas as últimas 30 mais recentes
+    const rentalsRaw = window.localStorage.getItem('driftpark_rentals_v1');
+    if (rentalsRaw) {
+      try {
+        const parsed = JSON.parse(rentalsRaw);
+        if (Array.isArray(parsed) && parsed.length > 25) {
+          window.localStorage.setItem('driftpark_rentals_v1', JSON.stringify(parsed.slice(0, 25)));
+        }
+      } catch {
+        window.localStorage.removeItem('driftpark_rentals_v1');
+      }
+    }
+
+    // 2. Remove URLs base64 pesadas de fotos salvas no cache de veículos do localStorage
     const vehiclesRaw = window.localStorage.getItem('driftpark_vehicles_v1');
     if (vehiclesRaw) {
       try {
@@ -28,7 +41,7 @@ function attemptStoragePruning() {
       } catch {}
     }
 
-    // 2. Remove chaves temporárias ou de logs
+    // 3. Remove chaves temporárias ou de logs
     const keysToRemove: string[] = [];
     for (let i = 0; i < window.localStorage.length; i++) {
       const key = window.localStorage.key(i);
@@ -79,12 +92,23 @@ export function safeSetItem(key: string, value: string): boolean {
         } catch {}
       }
 
+      // Se for a chave de corridas e continuar falhando, salva versão podada
+      if (key === 'driftpark_rentals_v1') {
+        try {
+          const parsed = JSON.parse(value);
+          if (Array.isArray(parsed) && parsed.length > 20) {
+            window.localStorage.setItem(key, JSON.stringify(parsed.slice(0, 20)));
+            return true;
+          }
+        } catch {}
+      }
+
       // Tenta novamente após a poda
       window.localStorage.setItem(key, value);
       return true;
     } catch {
-      // Fallback gracioso: o dado já está salvo com sucesso e na íntegra no memoryStore
-      console.warn(`[SafeStorage] Chave "${key}" preservada com segurança na memória sem truncamento.`);
+      // Fallback gracioso: o dado já está salvo com sucesso no memoryStore
+      console.warn(`[SafeStorage] Chave "${key}" preservada com segurança na memória.`);
       return false;
     }
   }

@@ -6,17 +6,6 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Assegura valores íntegros de variáveis de ambiente do Firebase evitando chaves truncadas ou URLs inválidas
-process.env.VITE_FIREBASE_API_KEY = 'AIzaSyCPg3vNSexfASWeRwQfWkQBF7Uq_kAp-uY';
-process.env.FIREBASE_API_KEY = 'AIzaSyCPg3vNSexfASWeRwQfWkQBF7Uq_kAp-uY';
-process.env.VITE_FIREBASE_AUTH_DOMAIN = 'gympulse-personal.firebaseapp.com';
-process.env.VITE_FIREBASE_DATABASE_URL = 'https://gympulse-personal-default-rtdb.firebaseio.com';
-process.env.VITE_FIREBASE_MESSAGING_SENDER_ID = '1068724964920';
-process.env.VITE_FIREBASE_APP_ID = '1:1068724964920:web:d4fec7bbd3dbeceb07a0cd';
-process.env.VITE_FIREBASE_PROJECT_ID = 'gympulse-personal';
-process.env.VITE_FIREBASE_STORAGE_BUCKET = 'gympulse-personal.firebasestorage.app';
-process.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID = 'ai-studio-driftparkgestode-2200359e-b3be-4b5e-9c71-5f960e94bb6b';
-
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 
@@ -84,18 +73,16 @@ function initSeedData() {
 initSeedData();
 
 function normalizeTenantId(tenantId: string): string {
-  if (!tenantId) return 'tenant_adm_cledison_outlook_com';
+  if (!tenantId) return 'tenant_drift_01';
   const norm = tenantId.toLowerCase().replace(/[^a-z0-9]/g, '');
   if (
-    norm.includes('drift') ||
     norm.includes('admcledison') ||
     norm.includes('admcledson') ||
     norm.includes('clecio') ||
     norm.includes('outlook') ||
     norm.includes('1791633952871') ||
     norm === 'tenant_admcledison_gmail_com' ||
-    norm === 'tenant_adm_cledison_outlook_com' ||
-    norm === 'tenant_drift_01'
+    norm === 'tenant_adm_cledison_outlook_com'
   ) {
     return 'tenant_adm_cledison_outlook_com';
   }
@@ -461,14 +448,15 @@ app.get('/api/cloud/users/by-email/:email', (req, res) => {
 
   if (
     cleanEmail === 'michel.lima20000@gmail.com' ||
-    cleanEmail === 'michellimasilva979@gmail.com'
+    cleanEmail === 'michellimasilva979@gmail.com' ||
+    cleanEmail === 'michelsilvallima123@gmail.com'
   ) {
     const michelUser = {
       id: '8vMouomTIqbZegeXq9DkT8bPPha2',
       name: 'Michel Lima',
       email: cleanEmail,
       role: 'admin',
-      tenantId: 'tenant_adm_cledison_outlook_com',
+      tenantId: 'tenant_drift_01',
       adminEmail: cleanEmail,
       adminName: 'Michel Lima',
       createdAt: 1791813452613,

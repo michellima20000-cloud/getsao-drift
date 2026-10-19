@@ -2,6 +2,21 @@ import { Tenant, UserProfile, Vehicle, Rental, QueueItem } from '../types';
 
 export const INITIAL_TENANTS: Tenant[] = [
   {
+    id: 'tenant_adm_cledison_outlook_com',
+    name: 'DRIFT PARK',
+    city: 'Pista Principal',
+    document: '00.000.000/0001-00',
+    active: true,
+    colorTheme: '#00F0FF',
+    pricing: {
+      5: 15.0,
+      10: 25.0,
+      15: 35.0,
+      20: 45.0,
+      30: 60.0,
+    },
+  },
+  {
     id: 'tenant_drift_01',
     name: 'Drift Park - Pista Principal',
     city: 'Pista Principal',
@@ -14,21 +29,6 @@ export const INITIAL_TENANTS: Tenant[] = [
       15: 35.0,
       20: 45.0,
       30: 60.0,
-    },
-  },
-  {
-    id: 'tenant_adm_cledison_outlook_com',
-    name: 'DRIFT PARK',
-    city: 'Pista Principal',
-    document: '00.000.000/0001-00',
-    active: true,
-    colorTheme: '#00F0FF',
-    pricing: {
-      5: 6.0,
-      10: 12.0,
-      15: 18.0,
-      20: 24.0,
-      30: 36.0,
     },
   },
 ];
@@ -44,6 +44,18 @@ export const INITIAL_USERS: UserProfile[] = [
     adminEmail: 'adm_cledison@outlook.com',
     adminName: 'Admcledison',
     createdAt: 1791926468433,
+    savedPassword: '123456',
+  },
+  {
+    id: '8vMouomTIqbZegeXq9DkT8bPPha2',
+    name: 'Michel Lima',
+    email: 'michelsilvallima123@gmail.com',
+    role: 'admin',
+    tenantId: 'tenant_drift_01',
+    adminEmail: 'michelsilvallima123@gmail.com',
+    adminName: 'Michel Lima',
+    createdAt: 1791813452613,
+    savedPassword: '123456',
   },
   {
     id: 'JBLyrtB5y3cSN8Xll1vypnxAGK02',
@@ -54,6 +66,7 @@ export const INITIAL_USERS: UserProfile[] = [
     adminEmail: 'adm_cledison@outlook.com',
     adminName: 'Admcledison',
     createdAt: 1792066542795,
+    savedPassword: '123456',
   },
 ];
 
@@ -66,7 +79,7 @@ export const INITIAL_VEHICLES: Vehicle[] = [
     category: 'DRIFT',
     status: 'disponivel',
     batteryLevel: 100,
-    totalRuns: 0,
+    totalRuns: 3,
   },
   {
     id: 'veh_1792154833583_ct5',
@@ -76,11 +89,128 @@ export const INITIAL_VEHICLES: Vehicle[] = [
     category: 'DRIFT',
     status: 'disponivel',
     batteryLevel: 100,
-    totalRuns: 0,
+    totalRuns: 2,
   },
 ];
 
-export const INITIAL_RENTALS: Rental[] = [];
+export const INITIAL_RENTALS: Rental[] = [
+  {
+    id: 'rent_1792332600000_drift1',
+    tenantId: 'tenant_adm_cledison_outlook_com',
+    vehicleId: 'veh_1792154738004_eyl',
+    vehicleName: 'Drift grande amarelo',
+    vehicleCode: '#1',
+    vehicleCategory: 'DRIFT',
+    customerName: 'Bruno Alcantara',
+    customerPhone: '(11) 98765-4321',
+    durationMinutes: 10,
+    amount: 25.0,
+    paymentMethod: 'PIX',
+    paymentStatus: 'PAGO',
+    mode: 'CRONOMETRADO',
+    startTime: 1792332600000,
+    endTime: 1792333200000,
+    status: 'concluida',
+    operatorId: 'carollimap1993_gmail_com',
+    operatorName: 'Carol Lima',
+    adminEmail: 'adm_cledison@outlook.com',
+    adminUid: 'x9LtAZ0RAMTyOPmZelhVoyTDAVx2',
+    createdAt: 1792332600000,
+  },
+  {
+    id: 'rent_1792337100000_drift2',
+    tenantId: 'tenant_adm_cledison_outlook_com',
+    vehicleId: 'veh_1792154833583_ct5',
+    vehicleName: 'Drift grande azul',
+    vehicleCode: '#2',
+    vehicleCategory: 'DRIFT',
+    customerName: 'Marcio Santos',
+    customerPhone: '(11) 97123-4567',
+    durationMinutes: 15,
+    amount: 35.0,
+    paymentMethod: 'CARTAO_CREDITO',
+    paymentStatus: 'PAGO',
+    mode: 'CRONOMETRADO',
+    startTime: 1792337100000,
+    endTime: 1792338000000,
+    status: 'concluida',
+    operatorId: 'carollimap1993_gmail_com',
+    operatorName: 'Carol Lima',
+    adminEmail: 'adm_cledison@outlook.com',
+    adminUid: 'x9LtAZ0RAMTyOPmZelhVoyTDAVx2',
+    createdAt: 1792337100000,
+  },
+  {
+    id: 'rent_1792246000000_drift3',
+    tenantId: 'tenant_adm_cledison_outlook_com',
+    vehicleId: 'veh_1792154738004_eyl',
+    vehicleName: 'Drift grande amarelo',
+    vehicleCode: '#1',
+    vehicleCategory: 'DRIFT',
+    customerName: 'Lucas Rodrigues',
+    customerPhone: '(11) 96543-2109',
+    durationMinutes: 10,
+    amount: 25.0,
+    paymentMethod: 'DINHEIRO',
+    paymentStatus: 'PAGO',
+    mode: 'CRONOMETRADO',
+    startTime: 1792246000000,
+    endTime: 1792246600000,
+    status: 'concluida',
+    operatorId: 'carollimap1993_gmail_com',
+    operatorName: 'Carol Lima',
+    adminEmail: 'adm_cledison@outlook.com',
+    adminUid: 'x9LtAZ0RAMTyOPmZelhVoyTDAVx2',
+    createdAt: 1792246000000,
+  },
+  {
+    id: 'rent_1792250000000_drift4',
+    tenantId: 'tenant_adm_cledison_outlook_com',
+    vehicleId: 'veh_1792154833583_ct5',
+    vehicleName: 'Drift grande azul',
+    vehicleCode: '#2',
+    vehicleCategory: 'DRIFT',
+    customerName: 'Eduardo Ribeiro',
+    customerPhone: '(11) 95432-1098',
+    durationMinutes: 20,
+    amount: 45.0,
+    paymentMethod: 'PIX',
+    paymentStatus: 'PAGO',
+    mode: 'CRONOMETRADO',
+    startTime: 1792250000000,
+    endTime: 1792251200000,
+    status: 'concluida',
+    operatorId: 'carollimap1993_gmail_com',
+    operatorName: 'Carol Lima',
+    adminEmail: 'adm_cledison@outlook.com',
+    adminUid: 'x9LtAZ0RAMTyOPmZelhVoyTDAVx2',
+    createdAt: 1792250000000,
+  },
+  {
+    id: 'rent_1792155000000_drift5',
+    tenantId: 'tenant_adm_cledison_outlook_com',
+    vehicleId: 'veh_1792154738004_eyl',
+    vehicleName: 'Drift grande amarelo',
+    vehicleCode: '#1',
+    vehicleCategory: 'DRIFT',
+    customerName: 'Thiago Moreira',
+    customerPhone: '(11) 94321-0987',
+    durationMinutes: 10,
+    amount: 25.0,
+    paymentMethod: 'CARTAO_DEBITO',
+    paymentStatus: 'PAGO',
+    mode: 'CRONOMETRADO',
+    startTime: 1792155000000,
+    endTime: 1792155600000,
+    status: 'concluida',
+    operatorId: 'carollimap1993_gmail_com',
+    operatorName: 'Carol Lima',
+    adminEmail: 'adm_cledison@outlook.com',
+    adminUid: 'x9LtAZ0RAMTyOPmZelhVoyTDAVx2',
+    createdAt: 1792155000000,
+  },
+];
+
 export const INITIAL_QUEUE: QueueItem[] = [];
 
 /**
@@ -99,7 +229,10 @@ export function isMockVehicle(v: Partial<Vehicle>): boolean {
   const vid = (v.id || '').toLowerCase().trim();
 
   // Veículos pertencentes ao tenant oficial do cliente nunca são mock
-  if (v.tenantId === 'tenant_adm_cledison_outlook_com' || v.tenantId === 'tenant_admcledison_gmail_com') {
+  if (
+    v.tenantId === 'tenant_adm_cledison_outlook_com' ||
+    v.tenantId === 'tenant_admcledison_gmail_com'
+  ) {
     return false;
   }
 

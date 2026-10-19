@@ -13,8 +13,7 @@ import {
 import {
   getFirestore,
   initializeFirestore,
-  persistentLocalCache,
-  persistentMultipleTabManager,
+  memoryLocalCache,
   disableNetwork,
   enableNetwork,
   collection,
@@ -57,26 +56,11 @@ const USER_MESSAGING_SENDER_ID = cfg.messagingSenderId || "1068724964920";
 const USER_APP_ID = cfg.appId || "1:1068724964920:web:d4fec7bbd3dbeceb07a0cd";
 const USER_MEASUREMENT_ID = cfg.measurementId || "G-PWD1EYY9DD";
 
-// Helper para validar estritamente o formato de uma Firebase API key (Google Cloud API Key: AIzaSy + 33 chars = 39 chars)
-const isValidFirebaseApiKey = (key: string | undefined | null): boolean => {
-  return typeof key === 'string' && /^AIzaSy[A-Za-z0-9_-]{33}$/.test(key.trim());
-};
-
-const CANONICAL_API_KEY = "AIzaSyCPg3vNSexfASWeRwQfWkQBF7Uq_kAp-uY";
-
-// Garante que chaves corrompidas ou truncadas no ambiente (como 38 chars sem o 'Y' final) sejam descartadas
-const resolveApiKey = (): string => {
-  if (isValidFirebaseApiKey(cfg.apiKey)) {
-    return cfg.apiKey.trim();
-  }
-  const envKey = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_API_KEY) || '';
-  if (isValidFirebaseApiKey(envKey)) {
-    return envKey.trim();
-  }
-  return CANONICAL_API_KEY;
-};
-
-const validApiKey = resolveApiKey();
+// Valida API key garantindo que a chave correta com maiúsculas/minúsculas exatas seja sempre usada
+const envApiKey = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_API_KEY) || '';
+const validApiKey = (envApiKey && envApiKey !== "AIzaSyCpG3vNSexfASWeRwQFwkQBF7Uq_kAp-uY")
+  ? envApiKey
+  : USER_API_KEY;
 
 // Valida authDomain prevenindo valores corrompidos como ://firebaseapp.com
 const envAuthDomain = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_AUTH_DOMAIN) || '';
@@ -108,11 +92,26 @@ export const firebaseConfig = {
 export const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 
-// Força o Firebase Auth a persistir a sessão autenticada localmente
+// Força o Firebase a lembrar do usuário e do histórico localmente
 if (typeof window !== 'undefined') {
-  setPersistence(auth, browserLocalPersistence).catch((error) => {
-    console.error('Erro na persistência do Firebase Auth:', error?.message);
-  });
+  setPersistence(auth, browserLocalPersistence)
+    .then(() => {
+      const rememberMe = window.localStorage ? window.localStorage.getItem('driftpark_remember_me') : null;
+      const savedEmail = window.localStorage ? window.localStorage.getItem('driftpark_saved_email') : null;
+      const savedPassword = window.localStorage ? window.localStorage.getItem('driftpark_saved_password') : null;
+
+      // Só tenta auto-login no Firebase Auth se o usuário optou por lembrar o login e possui credenciais salvas
+      if (rememberMe !== 'false' && savedEmail && savedPassword && !auth.currentUser) {
+        signInWithEmailAndPassword(auth, savedEmail, savedPassword).catch((error) => {
+          if (error?.code === 'auth/user-not-found' || error?.code === 'auth/invalid-credential') {
+            createUserWithEmailAndPassword(auth, savedEmail, savedPassword).catch(() => {});
+          }
+        });
+      }
+    })
+    .catch((error) => {
+      console.error('Erro na persistência do Firebase Auth:', error?.message);
+    });
 }
 
 // Previne que rejeições assíncronas do Firebase e erros de cota quebrem a interface
@@ -144,14 +143,14 @@ if (typeof window !== 'undefined') {
 // Analytics is omitted to prevent invalid API key installations errors
 export const analytics: any = null;
 
-// Initialize Firestore with Persistent Local Cache (IndexedDB Multi-Tab)
-// Preserva o cache offline e as gravações pendentes entre abas e dispositivos
+// Initialize Firestore with Memory Local Cache
+// Evita acúmulo de fila de mutações travadas em IndexedDB que geram loops de retentativa
 export const ACTIVE_DATABASE_ID = cfg.firestoreDatabaseId || "ai-studio-driftparkgestode-2200359e-b3be-4b5e-9c71-5f960e94bb6b";
 
 export const db = (() => {
   try {
     return initializeFirestore(app, {
-      localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+      localCache: memoryLocalCache(),
     }, ACTIVE_DATABASE_ID);
   } catch (initErr) {
     return getFirestore(app, ACTIVE_DATABASE_ID);
@@ -160,6 +159,19 @@ export const db = (() => {
 
 // Conexão canônica com o banco de dados ativo do Firestore
 export const defaultDb = db;
+
+// Limpeza preventiva de banco IndexedDB antigo do Firestore para eliminar mutações travadas em retry infinito
+if (typeof window !== 'undefined' && window.indexedDB && window.indexedDB.databases) {
+  try {
+    window.indexedDB.databases().then((dbs) => {
+      dbs.forEach((d) => {
+        if (d.name && (d.name.includes('firestore') || d.name.includes('gympulse'))) {
+          try { window.indexedDB.deleteDatabase(d.name); } catch {}
+        }
+      });
+    }).catch(() => {});
+  } catch {}
+}
 
 // O banco de dados primário do projeto é o Cloud Firestore (databaseId: ACTIVE_DATABASE_ID).
 // Desativa escritas no Realtime Database para evitar aviso permission_denied quando não configurado.
@@ -596,14 +608,12 @@ export async function getFirestoreUserProfile(uidOrEmail: string): Promise<any |
 
   const fetchInternal = async (): Promise<any | null> => {
     // 1. Busca direta simultânea O(1) por Document ID (e-mail e UID em paralelo)
-    const sanitizedClean = clean.replace(/[^a-z0-9_-]/g, '_');
+    // 1. Busca direta O(1) por Document ID (e-mail e UID em paralelo)
     const directPromises: Promise<any>[] = [
       getDoc(doc(db, 'users', clean)).catch(() => null),
       getDoc(doc(db, 'usuarios', clean)).catch(() => null),
-      getDoc(doc(db, 'users', sanitizedClean)).catch(() => null),
-      getDoc(doc(db, 'usuarios', sanitizedClean)).catch(() => null),
     ];
-    if (rawId && rawId !== clean && rawId !== sanitizedClean) {
+    if (rawId && rawId !== clean) {
       directPromises.push(getDoc(doc(db, 'users', rawId)).catch(() => null));
       directPromises.push(getDoc(doc(db, 'usuarios', rawId)).catch(() => null));
     }
@@ -612,7 +622,7 @@ export async function getFirestoreUserProfile(uidOrEmail: string): Promise<any |
     for (const snap of directSnaps) {
       if (snap && snap.exists && snap.exists()) {
         const d = snap.data();
-        if (d && (d.email || d.role || d.tenantId)) return d;
+        if (d) return d;
       }
     }
 
@@ -651,8 +661,8 @@ export async function getFirestoreUserProfile(uidOrEmail: string): Promise<any |
   };
 
   try {
-    // Timeout resiliente de 6000ms para conexões móveis e cross-browser
-    const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 6000));
+    // Timeout seguro de 3000ms garantindo resposta em redes móveis (3G/4G/5G) sem travamento
+    const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000));
     return await Promise.race([fetchInternal(), timeoutPromise]);
   } catch (err) {
     console.warn('Aviso ao consultar perfil no Firestore:', err);

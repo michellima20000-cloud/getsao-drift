@@ -3,8 +3,9 @@ import { useDriftPark } from '../context/DriftParkContext';
 import { SpeedometerLogo } from '../components/SpeedometerLogo';
 import { Mail, Lock, Eye, EyeOff, User, Check, AlertCircle } from 'lucide-react';
 import { safeGetItem, safeSetItem, safeRemoveItem } from '../utils/safeStorage';
+
 export const LoginScreen: React.FC = () => {
-  const { login, register } = useDriftPark();
+  const { login, register, quickLoginAs } = useDriftPark();
 
   const [email, setEmail] = useState(() => {
     const saved = safeGetItem('driftpark_saved_email') || '';
@@ -106,6 +107,66 @@ export const LoginScreen: React.FC = () => {
         </p>
       </div>
 
+      {/* Quick Access Account Selector */}
+      {!isRegisterMode && (
+        <div className="w-full max-w-sm mx-auto my-3 z-10">
+          <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider mb-2 text-center">
+            Entrar com 1 Toque
+          </div>
+          <div className="grid grid-cols-3 gap-1.5">
+            <button
+              type="button"
+              onClick={() => {
+                setEmail('adm_cledison@outlook.com');
+                setPassword('123456');
+                quickLoginAs('admin');
+              }}
+              className="p-2 rounded-xl bg-[#141E38] hover:bg-[#1C2541] border border-amber-500/40 hover:border-amber-400 text-left transition-all hover:scale-[1.02] shadow-sm group cursor-pointer"
+            >
+              <div className="flex items-center gap-1 mb-0.5">
+                <span className="text-xs">👑</span>
+                <span className="text-[10px] font-bold text-white group-hover:text-amber-300">Dono</span>
+              </div>
+              <div className="text-[10px] text-amber-300 font-bold truncate">Admcledison</div>
+              <div className="text-[8px] text-slate-400 truncate">adm_cledison</div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setEmail('michelsilvallima123@gmail.com');
+                setPassword('123456');
+                login('michelsilvallima123@gmail.com', '123456');
+              }}
+              className="p-2 rounded-xl bg-[#141E38] hover:bg-[#1C2541] border border-emerald-500/40 hover:border-emerald-400 text-left transition-all hover:scale-[1.02] shadow-sm group cursor-pointer"
+            >
+              <div className="flex items-center gap-1 mb-0.5">
+                <span className="text-xs">⚡</span>
+                <span className="text-[10px] font-bold text-white group-hover:text-emerald-300">Admin</span>
+              </div>
+              <div className="text-[10px] text-emerald-300 font-bold truncate">Michel Lima</div>
+              <div className="text-[8px] text-slate-400 truncate">michelsilva</div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setEmail('carollimap1993@gmail.com');
+                setPassword('123456');
+                quickLoginAs('operador');
+              }}
+              className="p-2 rounded-xl bg-[#141E38] hover:bg-[#1C2541] border border-cyan-500/40 hover:border-cyan-400 text-left transition-all hover:scale-[1.02] shadow-sm group cursor-pointer"
+            >
+              <div className="flex items-center gap-1 mb-0.5">
+                <span className="text-xs">🏎️</span>
+                <span className="text-[10px] font-bold text-white group-hover:text-cyan-300">Equipe</span>
+              </div>
+              <div className="text-[10px] text-cyan-300 font-bold truncate">Carol Lima</div>
+              <div className="text-[8px] text-slate-400 truncate">carollimap</div>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Form Section */}
       <div className="w-full max-w-sm mx-auto my-2 z-10">
