@@ -39,7 +39,6 @@ export const ManagementScreen: React.FC = () => {
     deleteOperator,
     exportDailyReport,
     updatePriceTier,
-    quickLoginAs,
   } = useDriftPark();
 
   // Modals
