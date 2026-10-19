@@ -44,7 +44,6 @@ export const INITIAL_USERS: UserProfile[] = [
     adminEmail: 'adm_cledison@outlook.com',
     adminName: 'Admcledison',
     createdAt: 1791926468433,
-    savedPassword: '123456',
   },
   {
     id: 'JBLyrtB5y3cSN8Xll1vypnxAGK02',
@@ -55,7 +54,6 @@ export const INITIAL_USERS: UserProfile[] = [
     adminEmail: 'adm_cledison@outlook.com',
     adminName: 'Admcledison',
     createdAt: 1792066542795,
-    savedPassword: '123456',
   },
 ];
 
