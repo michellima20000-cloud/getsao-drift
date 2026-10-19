@@ -1975,13 +1975,6 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
 
     if (!effectivePassword) return { success: false, message: 'Informe sua senha de acesso.' };
 
-    if (isDeactivatedAccount(trimmedEmail)) {
-      return {
-        success: false,
-        message: 'A conta adm.cledson@gmail.com foi desativada e não está mais em uso. Utilize a conta oficial adm_cledison@outlook.com.',
-      };
-    }
-
     // 1. AUTENTICAÇÃO REAL COM O FIREBASE AUTHENTICATION
     let authUid: string | null = null;
     try {
@@ -1998,6 +1991,12 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       }
       if (errCode === 'auth/too-many-requests') {
         return { success: false, message: 'Muitas tentativas sem sucesso. Aguarde alguns instantes e tente novamente.' };
+      }
+      if (errCode === 'auth/invalid-email') {
+        return { success: false, message: 'E-mail com formato inválido. Verifique o endereço digitado.' };
+      }
+      if (errCode.includes('api-key-not-valid') || errCode === 'auth/invalid-api-key') {
+        return { success: false, message: 'Chave de autenticação inválida. A aplicação foi atualizada, recarregue a página.' };
       }
     }
 

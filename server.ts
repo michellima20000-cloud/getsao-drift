@@ -6,6 +6,17 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Assegura valores íntegros de variáveis de ambiente do Firebase evitando chaves truncadas ou URLs inválidas
+process.env.VITE_FIREBASE_API_KEY = 'AIzaSyCPg3vNSexfASWeRwQfWkQBF7Uq_kAp-uY';
+process.env.FIREBASE_API_KEY = 'AIzaSyCPg3vNSexfASWeRwQfWkQBF7Uq_kAp-uY';
+process.env.VITE_FIREBASE_AUTH_DOMAIN = 'gympulse-personal.firebaseapp.com';
+process.env.VITE_FIREBASE_DATABASE_URL = 'https://gympulse-personal-default-rtdb.firebaseio.com';
+process.env.VITE_FIREBASE_MESSAGING_SENDER_ID = '1068724964920';
+process.env.VITE_FIREBASE_APP_ID = '1:1068724964920:web:d4fec7bbd3dbeceb07a0cd';
+process.env.VITE_FIREBASE_PROJECT_ID = 'gympulse-personal';
+process.env.VITE_FIREBASE_STORAGE_BUCKET = 'gympulse-personal.firebasestorage.app';
+process.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID = 'ai-studio-driftparkgestode-2200359e-b3be-4b5e-9c71-5f960e94bb6b';
+
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 

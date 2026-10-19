@@ -57,11 +57,26 @@ const USER_MESSAGING_SENDER_ID = cfg.messagingSenderId || "1068724964920";
 const USER_APP_ID = cfg.appId || "1:1068724964920:web:d4fec7bbd3dbeceb07a0cd";
 const USER_MEASUREMENT_ID = cfg.measurementId || "G-PWD1EYY9DD";
 
-// Valida API key garantindo que a chave correta com maiúsculas/minúsculas exatas seja sempre usada
-const envApiKey = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_API_KEY) || '';
-const validApiKey = (envApiKey && envApiKey !== "AIzaSyCpG3vNSexfASWeRwQFwkQBF7Uq_kAp-uY")
-  ? envApiKey
-  : USER_API_KEY;
+// Helper para validar estritamente o formato de uma Firebase API key (Google Cloud API Key: AIzaSy + 33 chars = 39 chars)
+const isValidFirebaseApiKey = (key: string | undefined | null): boolean => {
+  return typeof key === 'string' && /^AIzaSy[A-Za-z0-9_-]{33}$/.test(key.trim());
+};
+
+const CANONICAL_API_KEY = "AIzaSyCPg3vNSexfASWeRwQfWkQBF7Uq_kAp-uY";
+
+// Garante que chaves corrompidas ou truncadas no ambiente (como 38 chars sem o 'Y' final) sejam descartadas
+const resolveApiKey = (): string => {
+  if (isValidFirebaseApiKey(cfg.apiKey)) {
+    return cfg.apiKey.trim();
+  }
+  const envKey = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_API_KEY) || '';
+  if (isValidFirebaseApiKey(envKey)) {
+    return envKey.trim();
+  }
+  return CANONICAL_API_KEY;
+};
+
+const validApiKey = resolveApiKey();
 
 // Valida authDomain prevenindo valores corrompidos como ://firebaseapp.com
 const envAuthDomain = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_AUTH_DOMAIN) || '';
