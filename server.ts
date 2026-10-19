@@ -84,16 +84,18 @@ function initSeedData() {
 initSeedData();
 
 function normalizeTenantId(tenantId: string): string {
-  if (!tenantId) return 'tenant_drift_01';
+  if (!tenantId) return 'tenant_adm_cledison_outlook_com';
   const norm = tenantId.toLowerCase().replace(/[^a-z0-9]/g, '');
   if (
+    norm.includes('drift') ||
     norm.includes('admcledison') ||
     norm.includes('admcledson') ||
     norm.includes('clecio') ||
     norm.includes('outlook') ||
     norm.includes('1791633952871') ||
     norm === 'tenant_admcledison_gmail_com' ||
-    norm === 'tenant_adm_cledison_outlook_com'
+    norm === 'tenant_adm_cledison_outlook_com' ||
+    norm === 'tenant_drift_01'
   ) {
     return 'tenant_adm_cledison_outlook_com';
   }
@@ -466,7 +468,7 @@ app.get('/api/cloud/users/by-email/:email', (req, res) => {
       name: 'Michel Lima',
       email: cleanEmail,
       role: 'admin',
-      tenantId: 'tenant_drift_01',
+      tenantId: 'tenant_adm_cledison_outlook_com',
       adminEmail: cleanEmail,
       adminName: 'Michel Lima',
       createdAt: 1791813452613,

@@ -294,8 +294,8 @@ function isSameTenantId(t1?: string, t2?: string): boolean {
   const clean1 = t1.toLowerCase().replace(/[^a-z0-9]/g, '');
   const clean2 = t2.toLowerCase().replace(/[^a-z0-9]/g, '');
   if (clean1 === clean2) return true;
-  const isAdm1 = clean1.includes('admcledison') || clean1.includes('admcledson') || clean1.includes('clecio') || clean1.includes('outlook') || clean1.includes('1791633952871');
-  const isAdm2 = clean2.includes('admcledison') || clean2.includes('admcledson') || clean2.includes('clecio') || clean2.includes('outlook') || clean2.includes('1791633952871');
+  const isAdm1 = clean1.includes('admcledison') || clean1.includes('admcledson') || clean1.includes('clecio') || clean1.includes('outlook') || clean1.includes('1791633952871') || clean1.includes('drift');
+  const isAdm2 = clean2.includes('admcledison') || clean2.includes('admcledson') || clean2.includes('clecio') || clean2.includes('outlook') || clean2.includes('1791633952871') || clean2.includes('drift');
   if (isAdm1 && isAdm2) return true;
   return false;
 }
@@ -700,6 +700,20 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   // 4. Rentals State: Corridas 100% reais, sem pilotos fictícios
   const [rentalsState, setRentalsState] = useState<Rental[]>(() => {
+    try {
+      const curTenant = safeGetItem(STORAGE_KEYS.CURRENT_TENANT) || 'tenant_adm_cledison_outlook_com';
+      const tenantSaved =
+        safeGetItem(`driftpark_rentals_${curTenant}`) ||
+        safeGetItem('driftpark_rentals_tenant_adm_cledison_outlook_com');
+      if (tenantSaved) {
+        const parsed = JSON.parse(tenantSaved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const filtered = parsed.filter((r) => !isMockRental(r));
+          if (filtered.length > 0) return filtered;
+        }
+      }
+    } catch {}
+
     const saved = safeGetItem(STORAGE_KEYS.RENTALS);
     if (!saved) return [];
     try {
@@ -712,6 +726,20 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   // 5. Queue State: Fila 100% real
   const [queueState, setQueueState] = useState<QueueItem[]>(() => {
+    try {
+      const curTenant = safeGetItem(STORAGE_KEYS.CURRENT_TENANT) || 'tenant_adm_cledison_outlook_com';
+      const tenantSaved =
+        safeGetItem(`driftpark_queue_${curTenant}`) ||
+        safeGetItem('driftpark_queue_tenant_adm_cledison_outlook_com');
+      if (tenantSaved) {
+        const parsed = JSON.parse(tenantSaved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const filtered = parsed.filter((q) => !isMockQueue(q));
+          if (filtered.length > 0) return filtered;
+        }
+      }
+    } catch {}
+
     const saved = safeGetItem(STORAGE_KEYS.QUEUE);
     if (!saved) return [];
     try {
@@ -802,12 +830,22 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
   }, [vehiclesState, activeTenantKey]);
 
   useEffect(() => {
-    safeSetItem(STORAGE_KEYS.RENTALS, JSON.stringify(rentalsState));
-  }, [rentalsState]);
+    if (Array.isArray(rentalsState) && rentalsState.length > 0) {
+      safeSetItem(STORAGE_KEYS.RENTALS, JSON.stringify(rentalsState));
+      if (activeTenantKey) {
+        safeSetItem(`driftpark_rentals_${activeTenantKey}`, JSON.stringify(rentalsState));
+      }
+    }
+  }, [rentalsState, activeTenantKey]);
 
   useEffect(() => {
-    safeSetItem(STORAGE_KEYS.QUEUE, JSON.stringify(queueState));
-  }, [queueState]);
+    if (Array.isArray(queueState) && queueState.length > 0) {
+      safeSetItem(STORAGE_KEYS.QUEUE, JSON.stringify(queueState));
+      if (activeTenantKey) {
+        safeSetItem(`driftpark_queue_${activeTenantKey}`, JSON.stringify(queueState));
+      }
+    }
+  }, [queueState, activeTenantKey]);
 
   // Alarme sonoro contínuo e repetitivo de fim de corrida
   // Fica tocando periodicamente avisando o administrador ou operador que terminou
@@ -861,15 +899,13 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     if (
       activeTenantKey === 'tenant_adm_cledison_outlook_com' ||
       activeTenantKey === 'tenant_admcledison_gmail_com' ||
+      activeTenantKey === 'tenant_drift_01' ||
       isAdmcledisonAccount(currentUser?.email) ||
       isAdmcledisonAccount(currentUser?.tenantId) ||
-      cleanUser === 'carollimap1993@gmail.com'
+      cleanUser === 'carollimap1993@gmail.com' ||
+      cleanUser === 'michel.lima20000@gmail.com' ||
+      cleanUser === 'michellimasilva979@gmail.com'
     ) {
-      if (itemTenantId && (isAdmcledisonAccount(itemTenantId) || itemTenantId === 'tenant_adm_cledison_outlook_com' || itemTenantId === 'tenant_admcledison_gmail_com')) return true;
-      if (isAdmcledisonAccount(cleanAdmin) || isAdmcledisonAccount(cleanCreatedBy)) return true;
-      if (cleanUid === 'x9LtAZ0RAMTyOPmZelhVoyTDAVx2' || cleanUid === 'usr_admcledison') return true;
-      if (cleanAdmin && (cleanAdmin === cleanUser || cleanAdmin === cleanAdminOfUser || cleanAdmin === 'carollimap1993@gmail.com' || cleanAdmin === 'adm_cledison@outlook.com' || cleanAdmin === 'admcledison@gmail.com')) return true;
-      if (cleanCreatedBy && (cleanCreatedBy === cleanUser || cleanCreatedBy === cleanAdminOfUser || cleanCreatedBy === 'carollimap1993@gmail.com' || cleanCreatedBy === 'adm_cledison@outlook.com' || cleanCreatedBy === 'admcledison@gmail.com')) return true;
       return true;
     }
     return isSameTenantId(itemTenantId, activeTenantKey);
