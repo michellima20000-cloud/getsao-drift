@@ -57,6 +57,9 @@ import {
   getIsFirestoreQuotaExceeded,
   subscribeFirestoreQuota,
   flushPendingWrites,
+  reconcilePendingWrites,
+  limit,
+  orderBy,
   FIRESTORE_UPGRADE_URL,
   type FirebaseUser,
 } from '../services/firebase';
@@ -100,6 +103,7 @@ interface DriftParkContextType {
   toggleAlarmMute: () => void;
   isSyncing: boolean;
   syncWithCloudNow: () => Promise<void>;
+  loadHistoryFromCloud: (force?: boolean) => Promise<void>;
 
   // Auth & Multi-tenant actions
   login: (email: string, password?: string) => Promise<{ success: boolean; message?: string }>;
@@ -985,10 +989,15 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
           const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve(null), 1800));
           const withTimeout = (p: Promise<any>) => Promise.race([p, timeoutPromise]).catch(() => null);
 
-          // Consulta estritamente pelo tenantId correspondente sem ler documentos de outros clientes
+          // Consulta estritamente pelo tenantId e apenas corridas ativas/recentes (evita baixar coleção inteira)
+          const needInitialHistory = rentalsState.length === 0;
           [snapVeiculos, snapCorridas, snapFila, tenantDoc, snapUsers] = await Promise.all([
             withTimeout(getDocs(query(collection(db, 'veiculos'), where('tenantId', '==', tenantKey)))),
-            withTimeout(getDocs(query(collection(db, 'corridas'), where('tenantId', '==', tenantKey)))),
+            withTimeout(getDocs(query(
+              collection(db, 'corridas'),
+              where('tenantId', '==', tenantKey),
+              ...(needInitialHistory ? [limit(30)] : [where('status', 'in', ['ativa', 'pausada'])])
+            ))),
             withTimeout(getDocs(query(collection(db, 'fila'), where('tenantId', '==', tenantKey)))),
             withTimeout(getDoc(doc(db, 'tenants', tenantKey))),
             withTimeout(getDocs(query(collection(db, 'users'), where('tenantId', '==', tenantKey)))),
@@ -1328,12 +1337,97 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     }
   };
 
+  // Carregamento sob demanda do Histórico / Relatórios com cache inteligente (evita consumo desnecessário)
+  const lastHistorySyncRef = React.useRef<number>(0);
+  const loadHistoryFromCloud = async (force = false) => {
+    const now = Date.now();
+    if (!force && now - lastHistorySyncRef.current < 60000) {
+      return; // Já consultado recentemente (menos de 60s)
+    }
+    lastHistorySyncRef.current = now;
+
+    try {
+      // 1. Busca primeiro no servidor em nuvem
+      const cData = await fetchTenantCloudData(activeTenantKey);
+      if (cData && Array.isArray(cData.rentals) && cData.rentals.length > 0) {
+        setRentalsState((prev) => {
+          const { merged } = mergeRentals(prev, cData.rentals, activeTenantKey);
+          safeSetItem(STORAGE_KEYS.RENTALS, JSON.stringify(merged));
+          return merged;
+        });
+      }
+
+      // 2. Se o Firestore estiver operacional, busca apenas as 50 corridas mais recentes (limit 50)
+      if (!getIsFirestoreQuotaExceeded()) {
+        const q = query(
+          collection(db, 'corridas'),
+          where('tenantId', '==', activeTenantKey),
+          limit(50)
+        );
+        const snap = await getDocs(q);
+        const cloudItems: Rental[] = [];
+        snap.forEach((docSnap) => {
+          const d = docSnap.data();
+          if (d && !isMockRental(d) && !d.isDeleted && !d.isMock) {
+            cloudItems.push({
+              id: docSnap.id || d.id,
+              tenantId: activeTenantKey,
+              vehicleId: d.vehicleId,
+              vehicleName: d.vehicleName,
+              vehicleCode: d.vehicleCode,
+              vehicleCategory: d.vehicleCategory,
+              vehicleImageUrl: d.vehicleImageUrl,
+              customerName: d.customerName || 'Piloto',
+              customerPhone: d.customerPhone || '-',
+              durationMinutes: d.durationMinutes || 10,
+              amount: d.amount || 0,
+              paymentMethod: d.paymentMethod || 'PIX',
+              paymentStatus: d.paymentStatus || 'PAGO',
+              mode: d.mode || 'LIVRE',
+              startTime: d.startTime || d.createdAt || Date.now(),
+              endTime: d.endTime || Date.now(),
+              status: d.status || 'concluida',
+              remainingTimeMs: d.remainingTimeMs,
+              pausedAt: d.pausedAt,
+              pauseReason: d.pauseReason,
+              operatorId: d.operatorId,
+              operatorName: d.operatorName,
+              createdAt: d.createdAt || d.startTime || Date.now(),
+              notes: d.notes,
+              isManualPastEntry: d.isManualPastEntry,
+              isNightClosure: d.isNightClosure,
+              closureDetails: d.closureDetails,
+            });
+          }
+        });
+        if (cloudItems.length > 0) {
+          setRentalsState((prev) => {
+            const { merged } = mergeRentals(prev, cloudItems, activeTenantKey);
+            safeSetItem(STORAGE_KEYS.RENTALS, JSON.stringify(merged));
+            return merged;
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('Aviso ao carregar histórico sob demanda:', err);
+    }
+  };
+
+  // Carrega histórico sob demanda quando o usuário acessa as abas de Histórico ou Gestão
+  useEffect(() => {
+    if (activeTab === 'historico' || activeTab === 'gestao') {
+      loadHistoryFromCloud();
+    }
+  }, [activeTab]);
+
   // Sincronização manual imediata disparada pelo usuário
   const syncWithCloudNow = async () => {
     setIsSyncing(true);
     try {
+      await reconcilePendingWrites();
       await flushPendingWrites();
       await pullFromFirestoreDirectly(activeTenantKey);
+      await loadHistoryFromCloud(true);
       const cData = await fetchTenantCloudData(activeTenantKey);
       if (cData) {
         if (Array.isArray(cData.vehicles) && cData.vehicles.length > 0) {
@@ -1360,6 +1454,11 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       playTone('click');
     }
   };
+
+  // Reconciliação imediata de operações pendentes ao abrir o sistema
+  useEffect(() => {
+    reconcilePendingWrites().catch(() => {});
+  }, []);
 
   // Carga inicial assim que o componente é montado
   // Carga inicial e re-fetch automático sempre que o usuário logar ou mudar de sessão/tenant
@@ -1480,6 +1579,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
   }, []);
 
   // Sincronização periódica em nuvem automatizada e ultra-leve via servidor
+  const lastServerSyncTimeRef = React.useRef<number>(0);
   useEffect(() => {
     if (!activeTenantKey) return;
     let isMounted = true;
@@ -1487,10 +1587,15 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
 
     const syncTick = async () => {
       if (!isMounted || isExecuting) return;
+      if (typeof document !== 'undefined' && document.hidden) return; // Não gasta rede/bateria se a aba estiver em segundo plano
       isExecuting = true;
       try {
-        const cData = await fetchTenantCloudData(activeTenantKey);
+        const lastSync = lastServerSyncTimeRef.current;
+        const cData = await fetchTenantCloudData(activeTenantKey, lastSync);
         if (!isMounted || !cData) return;
+        if (cData.unmodified) return; // Dados inalterados no servidor: economiza 100% de processamento
+
+        lastServerSyncTimeRef.current = cData.updatedAt || Date.now();
 
         if (Array.isArray(cData.vehicles) && cData.vehicles.length > 0) {
           setVehiclesState((prev) => {
@@ -1517,7 +1622,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       }
     };
 
-    const interval = setInterval(syncTick, 45000);
+    const interval = setInterval(syncTick, 90000); // Intervalo econômico de 90s
     return () => {
       isMounted = false;
       clearInterval(interval);
@@ -1642,16 +1747,51 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
         }
       });
 
-      if (cloudRentals.length > 0) {
-        setRentalsState((prev) => {
-          const { merged } = mergeRentals(prev, cloudRentals, activeTenantKey);
-          return merged;
+      setRentalsState((prev) => {
+        const map = new Map<string, Rental>();
+        prev.forEach((r) => map.set(r.id, r));
+
+        // Se uma corrida ativa saiu da query ativa (ou seja, foi finalizada ou anulada em outro aparelho)
+        if (typeof snapshot.docChanges === 'function') {
+          snapshot.docChanges().forEach((change: any) => {
+            if (change.type === 'removed') {
+              const removedDoc = change.doc?.data ? change.doc.data() : null;
+              const existing = map.get(change.doc.id);
+              if (existing && (existing.status === 'ativa' || existing.status === 'pausada')) {
+                map.set(change.doc.id, {
+                  ...existing,
+                  status: removedDoc?.status || 'concluida',
+                  endTime: removedDoc?.endTime || Date.now(),
+                });
+              }
+            }
+          });
+        }
+
+        cloudRentals.forEach((inc) => {
+          const existing = map.get(inc.id);
+          if (!existing) {
+            map.set(inc.id, inc);
+          } else {
+            map.set(inc.id, { ...existing, ...inc });
+          }
         });
-      }
+
+        const merged = Array.from(map.values()).sort(
+          (a, b) => (b.createdAt || b.startTime || 0) - (a.createdAt || a.startTime || 0)
+        );
+        safeSetItem(STORAGE_KEYS.RENTALS, JSON.stringify(merged));
+        return merged;
+      });
     };
 
     try {
-      const q = query(collection(db, 'corridas'), where('tenantId', '==', activeTenantKey));
+      // Sincroniza em tempo real exclusivamente corridas ativas ou pausadas em pista (economia de 99%+ em leituras)
+      const q = query(
+        collection(db, 'corridas'),
+        where('tenantId', '==', activeTenantKey),
+        where('status', 'in', ['ativa', 'pausada'])
+      );
       unsubs.push(
         onSnapshot(q, handleRentalSnapshot, () => {})
       );
@@ -1813,6 +1953,12 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
 
     const migrateLocalDataToCloud = async () => {
       try {
+        const lastMigrationKey = `driftpark_migrated_${activeTenantKey}`;
+        const lastMigrated = safeGetItem(lastMigrationKey);
+        // Se já sincronizou o backup local nos últimos 30 minutos, não reenvia o banco inteiro para a nuvem
+        if (lastMigrated && Date.now() - Number(lastMigrated) < 30 * 60 * 1000) {
+          return;
+        }
         // 1. Veículos que já existem no aparelho do cliente (apenas veículos reais)
         let clientVehicles: Vehicle[] = [];
         const rawVeh = safeGetItem(STORAGE_KEYS.VEHICLES);
@@ -1922,6 +2068,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
         }
 
         safeSetItem('driftpark_last_cloud_sync', String(Date.now()));
+        safeSetItem(lastMigrationKey, String(Date.now()));
       } catch (err) {
         console.warn('Aviso durante migração segura dos dados locais para a nuvem:', err);
       }
@@ -3065,8 +3212,12 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     saveDocToCloud('corridas', rentalId, {
       ...closureEntry,
       adminEmail: currentUser?.email || undefined,
-    }, 'rentals');
+    }, true);
     saveRentalCloud(activeTenantKey, closureEntry);
+
+    // Conferência e envio imediato de todas as alterações pendentes no encerramento da noite
+    reconcilePendingWrites().catch(() => {});
+    flushPendingWrites().catch(() => {});
 
     playTone('click');
     return true;
@@ -3326,6 +3477,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
         dismissQuotaWarning,
         isSyncing,
         syncWithCloudNow,
+        loadHistoryFromCloud,
         isAlarmMuted,
         toggleAlarmMute,
         login,

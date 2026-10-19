@@ -179,6 +179,10 @@ app.get('/api/cloud/tenants/:tenantId', (req, res) => {
   const { tenantId } = req.params;
   if (!tenantId) return res.status(400).json({ error: 'tenantId obrigatório' });
   const data = loadTenantData(tenantId);
+  const since = Number(req.query.since);
+  if (since && data && data.updatedAt && data.updatedAt <= since) {
+    return res.json({ success: true, unmodified: true, updatedAt: data.updatedAt });
+  }
   res.json({ success: true, data });
 });
 

@@ -44,7 +44,13 @@ export const HistoryScreen: React.FC = () => {
     addPastDaySummary,
     currentUser,
     playSound,
+    loadHistoryFromCloud,
   } = useDriftPark();
+
+  // Carrega histórico sob demanda quando a tela de histórico é aberta
+  React.useEffect(() => {
+    loadHistoryFromCloud?.();
+  }, [loadHistoryFromCloud]);
 
   const isAdmin = currentUser?.role === 'admin';
 

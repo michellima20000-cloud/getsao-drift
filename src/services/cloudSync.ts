@@ -47,10 +47,14 @@ async function apiFetch(path: string, options?: RequestInit, timeoutMs = 4000): 
   return null;
 }
 
-export async function fetchTenantCloudData(tenantId: string): Promise<any | null> {
+export async function fetchTenantCloudData(tenantId: string, since?: number): Promise<any | null> {
   if (!tenantId) return null;
   try {
-    const json = await apiFetch(`/api/cloud/tenants/${encodeURIComponent(tenantId)}`);
+    const queryStr = since ? `?since=${encodeURIComponent(String(since))}` : '';
+    const json = await apiFetch(`/api/cloud/tenants/${encodeURIComponent(tenantId)}${queryStr}`);
+    if (json?.unmodified) {
+      return { unmodified: true, updatedAt: json.updatedAt };
+    }
     if (json?.success && json?.data) {
       return json.data;
     }
@@ -106,9 +110,13 @@ export async function deleteVehicleCloud(tenantId: string, vehicleId: string): P
 export async function saveRentalCloud(tenantId: string, rental: Rental): Promise<void> {
   if (!tenantId || !rental) return;
   try {
+    const cleanRental = { ...rental };
+    if (cleanRental.vehicleImageUrl && (cleanRental.vehicleImageUrl.startsWith('data:') || cleanRental.vehicleImageUrl.length > 300)) {
+      delete cleanRental.vehicleImageUrl;
+    }
     await apiFetch(`/api/cloud/tenants/${encodeURIComponent(tenantId)}/rental`, {
       method: 'POST',
-      body: JSON.stringify({ action: 'save', rental }),
+      body: JSON.stringify({ action: 'save', rental: cleanRental }),
     });
   } catch (err) {
     console.warn('Aviso ao persistir corrida na nuvem:', err);

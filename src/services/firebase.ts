@@ -30,6 +30,8 @@ import {
   getDocFromServer,
   setLogLevel,
   writeBatch,
+  limit,
+  orderBy,
 } from 'firebase/firestore';
 
 try {
@@ -359,6 +361,45 @@ const pendingBatch = new Map<string, PendingWrite>();
 // Cache de deduplicação (Dirty-Checking): evita gravar se o documento não sofreu alteração real
 const lastCommittedHashes = new Map<string, string>();
 
+const PENDING_WRITES_STORAGE_KEY = 'driftpark_offline_pending_writes_v1';
+
+function persistPendingBatch() {
+  if (typeof window === 'undefined') return;
+  try {
+    if (pendingBatch.size === 0) {
+      window.localStorage?.removeItem(PENDING_WRITES_STORAGE_KEY);
+    } else {
+      const serialized = JSON.stringify(Array.from(pendingBatch.entries()));
+      window.localStorage?.setItem(PENDING_WRITES_STORAGE_KEY, serialized);
+    }
+  } catch {}
+}
+
+/**
+ * Reconcilia e envia alterações pendentes salvas no armazenamento local
+ * (executado ao abrir o sistema, ao reconectar rede ou no encerramento do dia)
+ */
+export async function reconcilePendingWrites(): Promise<boolean> {
+  if (typeof window === 'undefined' || isFirestoreQuotaExceeded) return true;
+  try {
+    const raw = window.localStorage?.getItem(PENDING_WRITES_STORAGE_KEY);
+    if (raw) {
+      const entries: [string, PendingWrite][] = JSON.parse(raw);
+      if (Array.isArray(entries)) {
+        for (const [k, v] of entries) {
+          if (!pendingBatch.has(k)) {
+            pendingBatch.set(k, v);
+          }
+        }
+      }
+    }
+  } catch {}
+  if (pendingBatch.size > 0) {
+    return flushPendingWrites();
+  }
+  return true;
+}
+
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 let maxWaitTimer: ReturnType<typeof setTimeout> | null = null;
 const DEBOUNCE_DELAY_MS = 2000; // Janela inteligente para agregar alterações não-críticas
@@ -374,6 +415,7 @@ export function getPendingWritesCount(): number {
  */
 export async function flushPendingWrites(): Promise<boolean> {
   if (pendingBatch.size === 0 || isFirestoreQuotaExceeded) {
+    persistPendingBatch();
     return true;
   }
 
@@ -393,6 +435,7 @@ export async function flushPendingWrites(): Promise<boolean> {
 
   const itemsToCommit = Array.from(pendingBatch.values());
   pendingBatch.clear();
+  persistPendingBatch();
 
   try {
     const handleErr = (err: any) => {
@@ -436,6 +479,7 @@ export async function flushPendingWrites(): Promise<boolean> {
       await batch.commit().catch(handleErr);
     }
 
+    persistPendingBatch();
     return true;
   } catch (err: any) {
     const msg = String(err?.message || err || '');
@@ -449,17 +493,28 @@ export async function flushPendingWrites(): Promise<boolean> {
     ) {
       markFirestoreQuotaExceeded();
     }
+    // Reinsere itens na fila para retentativa posterior
+    for (const it of itemsToCommit) {
+      const k = `${it.collection}/${it.docId}`;
+      if (!pendingBatch.has(k)) pendingBatch.set(k, it);
+    }
+    persistPendingBatch();
     return false;
   } finally {
     isFlushing = false;
   }
 }
 
-// Flush automático quando a aba é ocultada ou antes de fechar o app
+// Flush automático quando a aba é ocultada ou antes de fechar o app e auto-reconciliação ao voltar a ter internet
 if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => {
+    reconcilePendingWrites().catch(() => {});
+  });
   window.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden' && pendingBatch.size > 0) {
       flushPendingWrites();
+    } else if (document.visibilityState === 'visible') {
+      reconcilePendingWrites().catch(() => {});
     }
   });
   window.addEventListener('pagehide', () => {
@@ -472,6 +527,11 @@ if (typeof window !== 'undefined') {
       flushPendingWrites();
     }
   });
+
+  // Tenta reconciliar escritas pendentes offline de sessões anteriores após breve delay
+  setTimeout(() => {
+    reconcilePendingWrites().catch(() => {});
+  }, 1000);
 }
 
 /**
@@ -529,6 +589,8 @@ export async function saveDocToCloud(
     });
   }
 
+  persistPendingBatch();
+
   // Operações críticas disparam flush com brevidade (200ms)
   if (isCritical) {
     if (debounceTimer) clearTimeout(debounceTimer);
@@ -580,6 +642,8 @@ export async function deleteDocFromCloud(
     isCritical,
     queuedAt: Date.now(),
   });
+
+  persistPendingBatch();
 
   if (isCritical) {
     if (debounceTimer) clearTimeout(debounceTimer);
@@ -828,5 +892,7 @@ export {
   updateDoc,
   deleteDoc,
   addDoc,
+  limit,
+  orderBy,
 };
 export type { FirebaseUser };
