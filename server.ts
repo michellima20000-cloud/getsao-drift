@@ -140,12 +140,60 @@ function loadTenantData(tenantId: string) {
   };
 }
 
+function reconcileTenantVehicles(tenantData: any) {
+  if (!tenantData || !Array.isArray(tenantData.vehicles)) return;
+  const rentals = Array.isArray(tenantData.rentals) ? tenantData.rentals : [];
+  const activeRentals = rentals.filter((r: any) => r && (r.status === 'ativa' || r.status === 'pausada'));
+  const activeVehicleIds = new Map<string, string>(); // vehicleId -> rentalId
+  for (const r of activeRentals) {
+    if (r.vehicleId) {
+      activeVehicleIds.set(r.vehicleId, r.id);
+    }
+  }
+
+  for (const v of tenantData.vehicles) {
+    if (!v) continue;
+    if (activeVehicleIds.has(v.id)) {
+      v.status = 'em_uso';
+      v.activeRentalId = activeVehicleIds.get(v.id);
+    } else if (v.status === 'em_uso') {
+      v.status = 'disponivel';
+      v.activeRentalId = undefined;
+    }
+  }
+}
+
 function saveTenantData(tenantId: string, data: any) {
+  reconcileTenantVehicles(data);
   const filePath = getTenantFilePath(tenantId);
   try {
     fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
   } catch (err) {
     console.error('Erro ao salvar dados do tenant:', err);
+  }
+}
+
+// ============================================================================
+// SERVER-SENT EVENTS (SSE) - SINCRONIZAÇÃO EM TEMPO REAL ENTRE DISPOSITIVOS
+// ============================================================================
+const sseClients = new Map<string, Set<express.Response>>();
+
+function broadcastTenantUpdate(tenantId: string, eventData: any) {
+  const safeId = normalizeTenantId(tenantId);
+  const targets = new Set<string>([safeId, 'tenant_adm_cledison_outlook_com', 'tenant_drift_01', tenantId]);
+  const enrichedEvent = { ...eventData, serverTime: Date.now() };
+  for (const tid of targets) {
+    const clients = sseClients.get(tid);
+    if (clients) {
+      const payload = `data: ${JSON.stringify(enrichedEvent)}\n\n`;
+      clients.forEach((client) => {
+        try {
+          client.write(payload);
+        } catch {
+          clients.delete(client);
+        }
+      });
+    }
   }
 }
 
@@ -174,16 +222,56 @@ app.get('/api/cloud/health', (_req, res) => {
   res.json({ status: 'ok', service: 'DriftPark Cloud Sync', timestamp: Date.now() });
 });
 
+// Stream Server-Sent Events (SSE) para atualização instantânea entre celulares/computadores
+app.get('/api/cloud/stream/:tenantId', (req, res) => {
+  const { tenantId } = req.params;
+  const safeId = normalizeTenantId(tenantId);
+
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    Connection: 'keep-alive',
+  });
+
+  const current = loadTenantData(safeId);
+  reconcileTenantVehicles(current);
+  res.write(`data: ${JSON.stringify({ type: 'init', tenantId: safeId, data: current, serverTime: Date.now() })}\n\n`);
+
+  if (!sseClients.has(safeId)) {
+    sseClients.set(safeId, new Set());
+  }
+  sseClients.get(safeId)!.add(res);
+
+  // Heartbeat a cada 15 segundos para sincronizar relógio e evitar timeout
+  const keepAlive = setInterval(() => {
+    try {
+      res.write(`data: ${JSON.stringify({ type: 'ping', serverTime: Date.now() })}\n\n`);
+    } catch {
+      clearInterval(keepAlive);
+    }
+  }, 15000);
+
+  req.on('close', () => {
+    clearInterval(keepAlive);
+    const clients = sseClients.get(safeId);
+    if (clients) {
+      clients.delete(res);
+      if (clients.size === 0) sseClients.delete(safeId);
+    }
+  });
+});
+
 // Busca dados completos do tenant (veículos, corridas, fila, operadores, tabela de preços)
 app.get('/api/cloud/tenants/:tenantId', (req, res) => {
   const { tenantId } = req.params;
   if (!tenantId) return res.status(400).json({ error: 'tenantId obrigatório' });
   const data = loadTenantData(tenantId);
+  reconcileTenantVehicles(data);
   const since = Number(req.query.since);
   if (since && data && data.updatedAt && data.updatedAt <= since) {
-    return res.json({ success: true, unmodified: true, updatedAt: data.updatedAt });
+    return res.json({ success: true, unmodified: true, updatedAt: data.updatedAt, serverTime: Date.now() });
   }
-  res.json({ success: true, data });
+  res.json({ success: true, data, serverTime: Date.now() });
 });
 
 // Sincronização e migração dos dados locais do cliente para a nuvem
@@ -258,7 +346,8 @@ app.post('/api/cloud/tenants/:tenantId/sync', (req, res) => {
   current.updatedAt = Date.now();
 
   saveTenantData(tenantId, current);
-  res.json({ success: true, data: current });
+  broadcastTenantUpdate(tenantId, { type: 'state_updated', tenantId, data: current });
+  res.json({ success: true, data: current, serverTime: Date.now() });
 });
 
 // Operações de Veículo na Nuvem
@@ -282,7 +371,8 @@ app.post('/api/cloud/tenants/:tenantId/vehicle', (req, res) => {
 
   current.updatedAt = Date.now();
   saveTenantData(tenantId, current);
-  res.json({ success: true, vehicles: current.vehicles });
+  broadcastTenantUpdate(tenantId, { type: 'state_updated', tenantId, data: current });
+  res.json({ success: true, vehicles: current.vehicles, serverTime: Date.now() });
 });
 
 // Operações de Corrida na Nuvem
@@ -291,13 +381,22 @@ app.post('/api/cloud/tenants/:tenantId/rental', (req, res) => {
   const { action, rental, rentalId } = req.body;
   const current = loadTenantData(tenantId);
   current.rentals = current.rentals || [];
+  current.deletedRentalIds = Array.isArray(current.deletedRentalIds) ? current.deletedRentalIds : [];
 
   if (action === 'delete') {
-    current.rentals = current.rentals.filter((r: any) => r.id !== rentalId);
+    if (rentalId) {
+      if (!current.deletedRentalIds.includes(rentalId)) {
+        current.deletedRentalIds.push(rentalId);
+      }
+      current.rentals = current.rentals.filter((r: any) => r.id !== rentalId);
+    }
   } else if (action === 'clearHistory') {
     // Remove apenas corridas concluídas, preserva ativas e pausadas
     current.rentals = current.rentals.filter((r: any) => r.status === 'ativa' || r.status === 'pausada');
   } else if (action === 'save' && rental) {
+    if (rental.id && current.deletedRentalIds.includes(rental.id)) {
+      current.deletedRentalIds = current.deletedRentalIds.filter((id: string) => id !== rental.id);
+    }
     const idx = current.rentals.findIndex((r: any) => r.id === rental.id);
     const item = { ...rental, tenantId };
     if (item.vehicleImageUrl && (item.vehicleImageUrl.startsWith('data:') || item.vehicleImageUrl.length > 300)) {
@@ -311,8 +410,15 @@ app.post('/api/cloud/tenants/:tenantId/rental', (req, res) => {
   }
 
   current.updatedAt = Date.now();
+  reconcileTenantVehicles(current);
   saveTenantData(tenantId, current);
-  res.json({ success: true, rentals: current.rentals });
+  broadcastTenantUpdate(tenantId, {
+    type: action === 'delete' ? 'rental_deleted' : 'state_updated',
+    deletedRentalId: action === 'delete' ? rentalId : undefined,
+    tenantId,
+    data: current
+  });
+  res.json({ success: true, rentals: current.rentals, serverTime: Date.now() });
 });
 
 // Operações de Fila na Nuvem
@@ -332,7 +438,8 @@ app.post('/api/cloud/tenants/:tenantId/queue', (req, res) => {
 
   current.updatedAt = Date.now();
   saveTenantData(tenantId, current);
-  res.json({ success: true, queue: current.queue });
+  broadcastTenantUpdate(tenantId, { type: 'state_updated', tenantId, data: current });
+  res.json({ success: true, queue: current.queue, serverTime: Date.now() });
 });
 
 // Operações de Configuração / Tabela de Preços na Nuvem
@@ -343,7 +450,8 @@ app.post('/api/cloud/tenants/:tenantId/pricing', (req, res) => {
   current.pricing = { ...current.pricing, ...pricing };
   current.updatedAt = Date.now();
   saveTenantData(tenantId, current);
-  res.json({ success: true, pricing: current.pricing });
+  broadcastTenantUpdate(tenantId, { type: 'state_updated', tenantId, data: current });
+  res.json({ success: true, pricing: current.pricing, serverTime: Date.now() });
 });
 
 // Operações de Usuários / Operadores no Tenant (Exclusão e Atualização)

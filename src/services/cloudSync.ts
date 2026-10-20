@@ -56,6 +56,7 @@ export async function fetchTenantCloudData(tenantId: string, since?: number): Pr
       return { unmodified: true, updatedAt: json.updatedAt };
     }
     if (json?.success && json?.data) {
+      if (json.serverTime) json.data.serverTime = json.serverTime;
       return json.data;
     }
   } catch (err) {
@@ -313,8 +314,8 @@ export function subscribeTenantStream(
       eventSource.onmessage = (event) => {
         try {
           const parsed = JSON.parse(event.data);
-          if (parsed && parsed.data) {
-            onUpdate(parsed.data);
+          if (parsed) {
+            onUpdate(parsed);
           }
         } catch {}
       };

@@ -105,6 +105,7 @@ interface DriftParkContextType {
   isSyncing: boolean;
   syncWithCloudNow: () => Promise<void>;
   loadHistoryFromCloud: (force?: boolean) => Promise<void>;
+  getSynchronizedNow: () => number;
 
   // Auth & Multi-tenant actions
   login: (email: string, password?: string) => Promise<{ success: boolean; message?: string }>;
@@ -184,7 +185,26 @@ const STORAGE_KEYS = {
   VEHICLES: 'driftpark_vehicles_v1',
   RENTALS: 'driftpark_rentals_v1',
   QUEUE: 'driftpark_queue_v1',
+  DELETED_RENTALS: 'driftpark_deleted_rentals_v1',
 };
+
+export function getDeletedRentalIds(): Set<string> {
+  try {
+    const raw = safeGetItem(STORAGE_KEYS.DELETED_RENTALS);
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+export function markRentalAsDeleted(rentalId: string) {
+  try {
+    if (!rentalId) return;
+    const current = getDeletedRentalIds();
+    current.add(rentalId);
+    safeSetItem(STORAGE_KEYS.DELETED_RENTALS, JSON.stringify(Array.from(current)));
+  } catch {}
+}
 
 // Web Audio API sound synthesizer otimizado (singleton para evitar travamento de memória e CPU)
 let sharedAudioCtx: AudioContext | null = null;
@@ -362,59 +382,78 @@ function mergeVehicles(
 }
 
 /**
- * Mescla de corridas não-destrutiva: nunca apaga corridas locais do celular.
+ * Mescla de corridas resiliente com suporte a deleção e cancelamento em tempo real:
+ * - Se uma corrida foi deletada em qualquer dispositivo, ela é descartada de vez.
+ * - Se uma corrida foi anulada ou concluída na nuvem, o status remoto tem prioridade.
+ * - Preserva corridas locais recém-criadas enquanto estiver offline.
  */
 function mergeRentals(
   existingRentals: Rental[],
   incomingRentals: Rental[],
-  targetTenantId?: string
+  targetTenantId?: string,
+  incomingDeletedIds?: string[]
 ): { merged: Rental[]; unsyncedLocal: Rental[] } {
-  const map = new Map<string, Rental>();
-  for (const r of existingRentals) {
-    if (r && r.id && !isMockRental(r) && (!targetTenantId || isSameTenantId(r.tenantId, targetTenantId))) {
-      map.set(r.id, {
-        ...r,
-        tenantId: targetTenantId || r.tenantId,
-      });
-    }
+  const deletedSet = getDeletedRentalIds();
+  if (Array.isArray(incomingDeletedIds)) {
+    incomingDeletedIds.forEach((id) => {
+      deletedSet.add(id);
+      markRentalAsDeleted(id);
+    });
   }
 
+  const map = new Map<string, Rental>();
+
+  // 1. Processa corridas recebidas da Nuvem / Servidor
+  for (const inc of incomingRentals) {
+    if (!inc || !inc.id || isMockRental(inc) || (inc as any).isDeleted) continue;
+    if (deletedSet.has(inc.id)) continue;
+    if (targetTenantId && inc.tenantId && !isSameTenantId(inc.tenantId, targetTenantId)) continue;
+    const resolvedTenant = targetTenantId || inc.tenantId;
+    map.set(inc.id, {
+      ...inc,
+      tenantId: resolvedTenant,
+    });
+  }
+
+  // 2. Mescla estado local: preserva apenas se não foi deletada
   const incomingIds = new Set(incomingRentals.map((r) => r.id));
   const unsyncedLocal: Rental[] = [];
 
-  for (const r of existingRentals) {
-    if (!incomingIds.has(r.id) && !isMockRental(r) && (!targetTenantId || isSameTenantId(r.tenantId, targetTenantId))) {
-      unsyncedLocal.push(r);
-    }
-  }
+  for (const ex of existingRentals) {
+    if (!ex || !ex.id || isMockRental(ex) || (ex as any).isDeleted) continue;
+    if (deletedSet.has(ex.id)) continue;
+    if (targetTenantId && ex.tenantId && !isSameTenantId(ex.tenantId, targetTenantId)) continue;
 
-  for (const inc of incomingRentals) {
-    if (!inc || !inc.id || isMockRental(inc)) continue;
-    if (targetTenantId && inc.tenantId && !isSameTenantId(inc.tenantId, targetTenantId)) continue;
-    const existing = map.get(inc.id);
-    const resolvedTenant = targetTenantId || inc.tenantId;
-    if (!existing) {
-      map.set(inc.id, {
-        ...inc,
-        tenantId: resolvedTenant,
-      });
+    if (!incomingIds.has(ex.id)) {
+      // Se não veio do servidor: se foi criada nos últimos 60s (offline recém-criada), preserva
+      const ageMs = Date.now() - (ex.createdAt || ex.startTime || 0);
+      if (ageMs < 60000 && (ex.status === 'ativa' || ex.status === 'pausada')) {
+        map.set(ex.id, ex);
+        unsyncedLocal.push(ex);
+      }
+      // Se for mais antiga e não está no servidor, foi excluída em outro dispositivo! Não reativa!
     } else {
-      const isNowPaused = (inc.status || existing.status) === 'pausada';
-      map.set(inc.id, {
-        ...existing,
-        ...inc,
-        tenantId: resolvedTenant,
-        status: inc.status || existing.status,
-        remainingTimeMs: isNowPaused ? (inc.remainingTimeMs !== undefined ? inc.remainingTimeMs : existing.remainingTimeMs) : undefined,
-        pausedAt: isNowPaused ? (inc.pausedAt !== undefined ? inc.pausedAt : existing.pausedAt) : undefined,
-        pauseReason: isNowPaused ? (inc.pauseReason !== undefined ? inc.pauseReason : existing.pauseReason) : undefined,
-      });
+      const inc = map.get(ex.id);
+      if (inc) {
+        // Se a versão remota mudou de status (ex: foi anulada, pausada ou concluída em outro aparelho), respeita o status remoto!
+        const finalStatus = inc.status || ex.status;
+        const isNowPaused = finalStatus === 'pausada';
+        map.set(ex.id, {
+          ...ex,
+          ...inc,
+          status: finalStatus,
+          remainingTimeMs: isNowPaused ? (inc.remainingTimeMs !== undefined ? inc.remainingTimeMs : ex.remainingTimeMs) : undefined,
+          pausedAt: isNowPaused ? (inc.pausedAt !== undefined ? inc.pausedAt : ex.pausedAt) : undefined,
+          pauseReason: isNowPaused ? (inc.pauseReason !== undefined ? inc.pauseReason : ex.pauseReason) : undefined,
+        });
+      }
     }
   }
 
-  const merged = Array.from(map.values()).sort(
-    (a, b) => (b.createdAt || b.startTime || 0) - (a.createdAt || a.startTime || 0)
-  );
+  const merged = Array.from(map.values())
+    .filter((r) => !deletedSet.has(r.id) && !(r as any).isDeleted)
+    .sort((a, b) => (b.createdAt || b.startTime || 0) - (a.createdAt || a.startTime || 0));
+
   return { merged, unsyncedLocal };
 }
 
