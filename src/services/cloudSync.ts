@@ -285,3 +285,64 @@ export async function deleteOperatorCloud(
     console.warn('Aviso ao excluir operador na nuvem:', err);
   }
 }
+
+/**
+ * Assina o stream Server-Sent Events (SSE) para receber alterações de corridas e veículos em tempo real (< 50ms)
+ */
+export function subscribeTenantStream(
+  tenantId: string,
+  onUpdate: (data: any) => void
+): () => void {
+  if (typeof window === 'undefined' || !window.EventSource || !tenantId) {
+    return () => {};
+  }
+
+  let eventSource: EventSource | null = null;
+  let isClosed = false;
+  let retryTimeout: any = null;
+
+  const connect = () => {
+    if (isClosed) return;
+    try {
+      const url = BACKEND_URL
+        ? `${BACKEND_URL}/api/cloud/stream/${encodeURIComponent(tenantId)}`
+        : `/api/cloud/stream/${encodeURIComponent(tenantId)}`;
+
+      eventSource = new EventSource(url);
+
+      eventSource.onmessage = (event) => {
+        try {
+          const parsed = JSON.parse(event.data);
+          if (parsed && parsed.data) {
+            onUpdate(parsed.data);
+          }
+        } catch {}
+      };
+
+      eventSource.onerror = () => {
+        if (eventSource) {
+          eventSource.close();
+          eventSource = null;
+        }
+        if (!isClosed) {
+          retryTimeout = setTimeout(connect, 3000);
+        }
+      };
+    } catch {
+      if (!isClosed) {
+        retryTimeout = setTimeout(connect, 4000);
+      }
+    }
+  };
+
+  connect();
+
+  return () => {
+    isClosed = true;
+    if (retryTimeout) clearTimeout(retryTimeout);
+    if (eventSource) {
+      eventSource.close();
+      eventSource = null;
+    }
+  };
+}
