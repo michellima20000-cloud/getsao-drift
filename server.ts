@@ -73,16 +73,18 @@ function initSeedData() {
 initSeedData();
 
 function normalizeTenantId(tenantId: string): string {
-  if (!tenantId) return 'tenant_drift_01';
+  if (!tenantId) return 'tenant_adm_cledison_outlook_com';
   const norm = tenantId.toLowerCase().replace(/[^a-z0-9]/g, '');
   if (
+    norm.includes('drift') ||
     norm.includes('admcledison') ||
     norm.includes('admcledson') ||
     norm.includes('clecio') ||
     norm.includes('outlook') ||
     norm.includes('1791633952871') ||
     norm === 'tenant_admcledison_gmail_com' ||
-    norm === 'tenant_adm_cledison_outlook_com'
+    norm === 'tenant_adm_cledison_outlook_com' ||
+    norm === 'tenant_drift_01'
   ) {
     return 'tenant_adm_cledison_outlook_com';
   }
@@ -168,6 +170,9 @@ function saveTenantData(tenantId: string, data: any) {
   const filePath = getTenantFilePath(tenantId);
   try {
     fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
+    // Salva cópia idêntica em tenant_drift_01.json para sincronizar ambos os identificadores
+    const driftPath = path.join(TENANTS_DIR, 'tenant_drift_01.json');
+    fs.writeFileSync(driftPath, JSON.stringify(data, null, 2), 'utf-8');
   } catch (err) {
     console.error('Erro ao salvar dados do tenant:', err);
   }
@@ -398,7 +403,10 @@ app.post('/api/cloud/tenants/:tenantId/rental', (req, res) => {
       current.deletedRentalIds = current.deletedRentalIds.filter((id: string) => id !== rental.id);
     }
     const idx = current.rentals.findIndex((r: any) => r.id === rental.id);
-    const item = { ...rental, tenantId };
+    const rawAmt = rental.amount !== undefined && rental.amount !== null ? Number(rental.amount) : 0;
+    const existingAmt = idx >= 0 ? Number(current.rentals[idx]?.amount || 0) : 0;
+    const finalAmt = rawAmt > 0 ? rawAmt : (existingAmt > 0 ? existingAmt : rawAmt);
+    const item = { ...rental, tenantId, amount: finalAmt };
     if (item.vehicleImageUrl && (item.vehicleImageUrl.startsWith('data:') || item.vehicleImageUrl.length > 300)) {
       delete item.vehicleImageUrl;
     }

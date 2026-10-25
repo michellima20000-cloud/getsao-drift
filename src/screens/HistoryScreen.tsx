@@ -62,12 +62,24 @@ export const HistoryScreen: React.FC = () => {
     category?: string;
   } | null>(null);
 
+  // Helper de data robusto que aceita createdAt, startTime ou timestamp numérico/string
+  const getRentalDate = (r: Rental): Date => {
+    const ts = r.createdAt || r.startTime || (r as any).date;
+    if (!ts) return new Date();
+    const d = new Date(ts);
+    return isNaN(d.getTime()) ? new Date() : d;
+  };
+
   // Helper de formatação de data YYYY-MM-DD
   const formatYMD = (d: Date) => {
     const y = d.getFullYear();
     const m = String(d.getMonth() + 1).padStart(2, '0');
     const day = String(d.getDate()).padStart(2, '0');
     return `${y}-${m}-${day}`;
+  };
+
+  const getRentalYMD = (r: Rental): string => {
+    return formatYMD(getRentalDate(r));
   };
 
   const today = useMemo(() => new Date(), []);
@@ -150,17 +162,16 @@ export const HistoryScreen: React.FC = () => {
     return null;
   }, [dateFilterMode, todayStr, yesterdayStr, beforeYesterdayStr, selectedSpecificDate]);
 
-  // Lista base do Histórico: APENAS corridas que já foram finalizadas pelo operador/admin ou canceladas/anuladas.
-  // Corridas em andamento ('ativa') pertencem exclusivamente à tela inicial de pista/telemetria até serem finalizadas!
+  // Lista base do Histórico: Todas as corridas válidas do parque (concluídas, fechamentos e ativas com tag)
   const historyRentals = useMemo(() => {
-    return rentals.filter((r) => r.status !== 'ativa');
+    return rentals.filter((r) => Boolean(r && r.id));
   }, [rentals]);
 
   // Lista de corridas filtradas por data e critérios
   const dateScopedRentals = useMemo(() => {
     return historyRentals.filter((r) => {
-      const rDate = new Date(r.createdAt);
-      const rYMD = formatYMD(rDate);
+      const rDate = getRentalDate(r);
+      const rYMD = getRentalYMD(r);
 
       if (dateFilterMode === 'TODAS') return true;
 
@@ -184,31 +195,59 @@ export const HistoryScreen: React.FC = () => {
   const totalRevenue = useMemo(() => {
     return validPayingRentals
       .filter((r) => r.paymentStatus === 'PAGO')
-      .reduce((acc, curr) => acc + curr.amount, 0);
+      .reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
   }, [validPayingRentals]);
 
   const pendingAmount = useMemo(() => {
     return validPayingRentals
       .filter((r) => r.paymentStatus === 'NAO_PAGO')
-      .reduce((acc, curr) => acc + curr.amount, 0);
+      .reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
   }, [validPayingRentals]);
 
   const pixTotal = useMemo(() => {
     return validPayingRentals
-      .filter((r) => r.paymentStatus === 'PAGO' && r.paymentMethod === 'PIX')
-      .reduce((acc, curr) => acc + curr.amount, 0);
+      .filter((r) => r.paymentStatus === 'PAGO')
+      .reduce((acc, curr) => {
+        if (curr.isNightClosure && curr.closureDetails) {
+          return acc + (Number(curr.closureDetails.pixAmount) || 0);
+        }
+        if (curr.paymentMethod === 'PIX') {
+          return acc + (Number(curr.amount) || 0);
+        }
+        return acc;
+      }, 0);
   }, [validPayingRentals]);
 
   const cardTotal = useMemo(() => {
     return validPayingRentals
-      .filter((r) => r.paymentStatus === 'PAGO' && r.paymentMethod === 'CARTAO')
-      .reduce((acc, curr) => acc + curr.amount, 0);
+      .filter((r) => r.paymentStatus === 'PAGO')
+      .reduce((acc, curr) => {
+        if (curr.isNightClosure && curr.closureDetails) {
+          return acc + (Number(curr.closureDetails.cardAmount) || 0);
+        }
+        if (
+          curr.paymentMethod === 'CARTAO' ||
+          curr.paymentMethod === 'CARTAO_CREDITO' ||
+          curr.paymentMethod === 'CARTAO_DEBITO'
+        ) {
+          return acc + (Number(curr.amount) || 0);
+        }
+        return acc;
+      }, 0);
   }, [validPayingRentals]);
 
   const cashTotal = useMemo(() => {
     return validPayingRentals
-      .filter((r) => r.paymentStatus === 'PAGO' && r.paymentMethod === 'DINHEIRO')
-      .reduce((acc, curr) => acc + curr.amount, 0);
+      .filter((r) => r.paymentStatus === 'PAGO')
+      .reduce((acc, curr) => {
+        if (curr.isNightClosure && curr.closureDetails) {
+          return acc + (Number(curr.closureDetails.cashAmount) || 0);
+        }
+        if (curr.paymentMethod === 'DINHEIRO') {
+          return acc + (Number(curr.amount) || 0);
+        }
+        return acc;
+      }, 0);
   }, [validPayingRentals]);
 
   // Corridas finais para exibição após busca e filtro de status
@@ -656,7 +695,7 @@ export const HistoryScreen: React.FC = () => {
           </div>
         ) : (
           displayedRentals.map((rental) => {
-            const startDate = new Date(rental.startTime);
+            const startDate = getRentalDate(rental);
             const dateFormatted = `${String(startDate.getDate()).padStart(2, '0')}/${String(
               startDate.getMonth() + 1
             ).padStart(2, '0')}`;
@@ -767,7 +806,7 @@ export const HistoryScreen: React.FC = () => {
                         isAnnulled ? 'text-rose-400 line-through' : 'text-white'
                       }`}
                     >
-                      R$ {rental.amount.toFixed(2)}
+                      R$ {(Number(rental.amount) || 0).toFixed(2)}
                     </div>
 
                     {/* Botões do Administrador (Editar, Anular, Excluir) */}
@@ -834,7 +873,12 @@ export const HistoryScreen: React.FC = () => {
                   </div>
 
                   <div className="flex items-center gap-1">
-                    {isAnnulled ? (
+                    {rental.status === 'ativa' || rental.status === 'pausada' ? (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 animate-pulse flex items-center gap-1">
+                        <Zap size={10} className="fill-current" />
+                        EM PISTA
+                      </span>
+                    ) : isAnnulled ? (
                       <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40">
                         ANULADA
                       </span>
@@ -1227,7 +1271,7 @@ export const HistoryScreen: React.FC = () => {
               </div>
               <div>Piloto: {editingRental.customerName}</div>
               <div className="text-cyan-400 font-bold mt-1">
-                Valor: R$ {editingRental.amount.toFixed(2)}
+                Valor: R$ {(Number(editingRental.amount) || 0).toFixed(2)}
               </div>
             </div>
 

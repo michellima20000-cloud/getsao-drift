@@ -102,19 +102,27 @@ export const DashboardScreen: React.FC = () => {
   // Today's revenue calculation
   const todayRevenue = safeRentals
     .filter((r) => {
-      if (!r || !r.createdAt) return false;
-      const today = new Date().toDateString();
+      if (!r) return false;
+      const ts = r.createdAt || r.startTime;
+      if (!ts) return false;
       try {
+        const d = new Date(ts);
+        const today = new Date();
+        const isSameDay =
+          d.getFullYear() === today.getFullYear() &&
+          d.getMonth() === today.getMonth() &&
+          d.getDate() === today.getDate();
         return (
-          new Date(r.createdAt).toDateString() === today &&
-          r.status === 'concluida' &&
+          isSameDay &&
+          r.status !== 'anulada' &&
+          r.status !== 'cancelada' &&
           r.paymentStatus === 'PAGO'
         );
       } catch {
         return false;
       }
     })
-    .reduce((acc, curr) => acc + (typeof curr?.amount === 'number' ? curr.amount : 0), 0);
+    .reduce((acc, curr) => acc + (Number(curr?.amount) || 0), 0);
 
   return (
     <div className="space-y-5 pb-6">

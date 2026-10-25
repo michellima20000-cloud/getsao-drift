@@ -403,50 +403,64 @@ function mergeRentals(
 
   const map = new Map<string, Rental>();
 
-  // 1. Processa corridas recebidas da Nuvem / Servidor
-  for (const inc of incomingRentals) {
-    if (!inc || !inc.id || isMockRental(inc) || (inc as any).isDeleted) continue;
-    if (deletedSet.has(inc.id)) continue;
-    if (targetTenantId && inc.tenantId && !isSameTenantId(inc.tenantId, targetTenantId)) continue;
-    const resolvedTenant = targetTenantId || inc.tenantId;
-    map.set(inc.id, {
-      ...inc,
-      tenantId: resolvedTenant,
-    });
-  }
-
-  // 2. Mescla estado local: preserva apenas se não foi deletada
-  const incomingIds = new Set(incomingRentals.map((r) => r.id));
-  const unsyncedLocal: Rental[] = [];
-
+  // 1. Processa TODAS as corridas existentes em memória e cache (NUNCA descarta histórico a menos que esteja no deletedSet)
   for (const ex of existingRentals) {
     if (!ex || !ex.id || isMockRental(ex) || (ex as any).isDeleted) continue;
     if (deletedSet.has(ex.id)) continue;
     if (targetTenantId && ex.tenantId && !isSameTenantId(ex.tenantId, targetTenantId)) continue;
+    map.set(ex.id, {
+      ...ex,
+      amount: Number(ex.amount) || 0,
+    });
+  }
 
-    if (!incomingIds.has(ex.id)) {
-      // Se não veio do servidor: se foi criada nos últimos 60s (offline recém-criada), preserva
-      const ageMs = Date.now() - (ex.createdAt || ex.startTime || 0);
-      if (ageMs < 60000 && (ex.status === 'ativa' || ex.status === 'pausada')) {
-        map.set(ex.id, ex);
-        unsyncedLocal.push(ex);
-      }
-      // Se for mais antiga e não está no servidor, foi excluída em outro dispositivo! Não reativa!
+  // 2. Mescla e atualiza com as corridas recebidas da Nuvem / Servidor
+  const incomingIds = new Set(incomingRentals.map((r) => r.id));
+  const unsyncedLocal: Rental[] = [];
+
+  for (const inc of incomingRentals) {
+    if (!inc || !inc.id || isMockRental(inc) || (inc as any).isDeleted) continue;
+    if (deletedSet.has(inc.id)) continue;
+    if (targetTenantId && inc.tenantId && !isSameTenantId(inc.tenantId, targetTenantId)) continue;
+
+    const existing = map.get(inc.id);
+    const resolvedTenant = targetTenantId || inc.tenantId;
+    const incAmount = inc.amount !== undefined && inc.amount !== null ? Number(inc.amount) : 0;
+    const existingAmount = existing ? (Number(existing.amount) || 0) : 0;
+    const finalAmount = incAmount > 0 ? incAmount : existingAmount;
+
+    if (!existing) {
+      map.set(inc.id, {
+        ...inc,
+        amount: finalAmount,
+        tenantId: resolvedTenant,
+      });
     } else {
-      const inc = map.get(ex.id);
-      if (inc) {
-        // Se a versão remota mudou de status (ex: foi anulada, pausada ou concluída em outro aparelho), respeita o status remoto!
-        const finalStatus = inc.status || ex.status;
-        const isNowPaused = finalStatus === 'pausada';
-        map.set(ex.id, {
-          ...ex,
-          ...inc,
-          status: finalStatus,
-          remainingTimeMs: isNowPaused ? (inc.remainingTimeMs !== undefined ? inc.remainingTimeMs : ex.remainingTimeMs) : undefined,
-          pausedAt: isNowPaused ? (inc.pausedAt !== undefined ? inc.pausedAt : ex.pausedAt) : undefined,
-          pauseReason: isNowPaused ? (inc.pauseReason !== undefined ? inc.pauseReason : ex.pauseReason) : undefined,
-        });
-      }
+      const finalStatus = inc.status || existing.status;
+      const isNowPaused = finalStatus === 'pausada';
+      map.set(inc.id, {
+        ...existing,
+        ...inc,
+        amount: finalAmount,
+        tenantId: resolvedTenant,
+        status: finalStatus,
+        remainingTimeMs: isNowPaused
+          ? (inc.remainingTimeMs !== undefined ? inc.remainingTimeMs : existing.remainingTimeMs)
+          : undefined,
+        pausedAt: isNowPaused
+          ? (inc.pausedAt !== undefined ? inc.pausedAt : existing.pausedAt)
+          : undefined,
+        pauseReason: isNowPaused
+          ? (inc.pauseReason !== undefined ? inc.pauseReason : existing.pauseReason)
+          : undefined,
+      });
+    }
+  }
+
+  // Identifica corridas locais que ainda não estão no servidor para sincronização em background
+  for (const [id, r] of map.entries()) {
+    if (!incomingIds.has(id)) {
+      unsyncedLocal.push(r);
     }
   }
 
@@ -805,6 +819,12 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [isAlarmMuted, setIsAlarmMuted] = useState(false);
   const toggleAlarmMute = () => setIsAlarmMuted((prev) => !prev);
+
+  // Sincronização de horário de servidor para garantir consistência entre PC e Celular
+  const serverTimeOffsetRef = React.useRef<number>(0);
+  const getSynchronizedNow = React.useCallback(() => {
+    return Date.now() + serverTimeOffsetRef.current;
+  }, []);
 
   const [isQuotaExceeded, setIsQuotaExceeded] = useState<boolean>(() => getIsFirestoreQuotaExceeded());
 
@@ -2968,7 +2988,14 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       createdBy: currentUser?.email,
     };
 
-    setRentalsState((prev) => [newRental, ...prev]);
+    setRentalsState((prev) => {
+      const next = [newRental, ...prev];
+      safeSetItem(STORAGE_KEYS.RENTALS, JSON.stringify(next));
+      if (activeTenantKey) {
+        safeSetItem(`driftpark_rentals_${activeTenantKey}`, JSON.stringify(next));
+      }
+      return next;
+    });
 
     // Atualiza veículo em uso
     const updatedRuns = (vehicle.totalRuns || 0) + 1;
@@ -3034,11 +3061,17 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       pauseReason: undefined,
       paymentMethod: finalPaymentMethod,
       paymentStatus: finalPaymentStatus,
+      amount: Number(rental.amount) || 0,
     };
 
-    setRentalsState((prev) =>
-      prev.map((r) => (r.id === rentalId ? finishedRental : r))
-    );
+    setRentalsState((prev) => {
+      const next = prev.map((r) => (r.id === rentalId ? finishedRental : r));
+      safeSetItem(STORAGE_KEYS.RENTALS, JSON.stringify(next));
+      if (activeTenantKey) {
+        safeSetItem(`driftpark_rentals_${activeTenantKey}`, JSON.stringify(next));
+      }
+      return next;
+    });
 
     // Libera o veículo
     let releasedVeh: Vehicle | null = null;
@@ -3052,21 +3085,8 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       })
     );
 
-    // Grava atomicamente em lote no Firebase Firestore e na API Cloud
-    saveDocToCloud(
-      'corridas',
-      rentalId,
-      {
-        status: 'concluida',
-        endTime: now,
-        remainingTimeMs: null,
-        pausedAt: null,
-        pauseReason: null,
-        paymentMethod: finalPaymentMethod,
-        paymentStatus: finalPaymentStatus,
-      },
-      true
-    );
+    // Grava atomicamente em lote no Firebase Firestore e na API Cloud com todos os campos preservados
+    saveDocToCloud('corridas', rentalId, finishedRental, true);
     if (rental.vehicleId) {
       saveDocToCloud('veiculos', rental.vehicleId, { status: 'disponivel', activeRentalId: null }, true);
     }
@@ -3091,11 +3111,17 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       remainingTimeMs: undefined,
       pausedAt: undefined,
       pauseReason: undefined,
+      amount: Number(rental.amount) || 0,
     };
 
-    setRentalsState((prev) =>
-      prev.map((r) => (r.id === rentalId ? canceledRental : r))
-    );
+    setRentalsState((prev) => {
+      const next = prev.map((r) => (r.id === rentalId ? canceledRental : r));
+      safeSetItem(STORAGE_KEYS.RENTALS, JSON.stringify(next));
+      if (activeTenantKey) {
+        safeSetItem(`driftpark_rentals_${activeTenantKey}`, JSON.stringify(next));
+      }
+      return next;
+    });
 
     // Libera o veículo
     let releasedVeh: Vehicle | null = null;
@@ -3109,13 +3135,8 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       })
     );
 
-    // Grava atomicamente em lote no Firebase Firestore e na API Cloud
-    saveDocToCloud(
-      'corridas',
-      rentalId,
-      { status: 'anulada', endTime: now, remainingTimeMs: null, pausedAt: null, pauseReason: null },
-      true
-    );
+    // Grava atomicamente no Firebase Firestore e na API Cloud
+    saveDocToCloud('corridas', rentalId, canceledRental, true);
     if (rental.vehicleId) {
       saveDocToCloud('veiculos', rental.vehicleId, { status: 'disponivel', activeRentalId: null }, true);
     }
@@ -3254,7 +3275,14 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       isManualPastEntry: true,
     };
 
-    setRentalsState((prev) => [newRental, ...prev]);
+    setRentalsState((prev) => {
+      const next = [newRental, ...prev];
+      safeSetItem(STORAGE_KEYS.RENTALS, JSON.stringify(next));
+      if (activeTenantKey) {
+        safeSetItem(`driftpark_rentals_${activeTenantKey}`, JSON.stringify(next));
+      }
+      return next;
+    });
 
     saveDocToCloud('corridas', rentalId, {
       ...newRental,
@@ -3313,7 +3341,14 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       },
     };
 
-    setRentalsState((prev) => [closureEntry, ...prev]);
+    setRentalsState((prev) => {
+      const next = [closureEntry, ...prev];
+      safeSetItem(STORAGE_KEYS.RENTALS, JSON.stringify(next));
+      if (activeTenantKey) {
+        safeSetItem(`driftpark_rentals_${activeTenantKey}`, JSON.stringify(next));
+      }
+      return next;
+    });
 
     saveDocToCloud('corridas', rentalId, {
       ...closureEntry,
@@ -3374,18 +3409,23 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     paymentStatus: PaymentStatus
   ) => {
     let updatedR: Rental | null = null;
-    setRentalsState((prev) =>
-      prev.map((r) => {
+    setRentalsState((prev) => {
+      const next = prev.map((r) => {
         if (r.id === rentalId) {
-          updatedR = { ...r, paymentMethod, paymentStatus };
+          updatedR = { ...r, paymentMethod, paymentStatus, amount: Number(r.amount) || 0 };
           return updatedR;
         }
         return r;
-      })
-    );
+      });
+      safeSetItem(STORAGE_KEYS.RENTALS, JSON.stringify(next));
+      if (activeTenantKey) {
+        safeSetItem(`driftpark_rentals_${activeTenantKey}`, JSON.stringify(next));
+      }
+      return next;
+    });
 
-    saveDocToCloud('corridas', rentalId, { paymentMethod, paymentStatus }, true);
     if (updatedR) {
+      saveDocToCloud('corridas', rentalId, updatedR, true);
       saveRentalCloud(activeTenantKey, updatedR);
     }
     playTone('click');
@@ -3497,8 +3537,10 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
   // Export CSV Daily Report
   const exportDailyReport = () => {
     const tenantRentals = rentals.filter((r) => {
+      if (!r) return false;
       const today = new Date().toDateString();
-      return new Date(r.createdAt).toDateString() === today && r.status !== 'ativa';
+      const ts = r.createdAt || r.startTime;
+      return ts ? new Date(ts).toDateString() === today : false;
     });
 
     const headers = [
@@ -3517,13 +3559,13 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     ];
 
     const rows = tenantRentals.map((r) => [
-      new Date(r.startTime).toLocaleString('pt-BR'),
+      new Date(r.startTime || r.createdAt || Date.now()).toLocaleString('pt-BR'),
       `"${r.vehicleCode} - ${r.vehicleName}"`,
       r.vehicleCategory,
       `"${r.customerName}"`,
       `"${r.customerPhone}"`,
       r.durationMinutes,
-      r.amount.toFixed(2).replace('.', ','),
+      (Number(r.amount) || 0).toFixed(2).replace('.', ','),
       r.paymentMethod,
       r.paymentStatus === 'PAGO' ? 'PAGO' : 'NÃO PAGO',
       r.status.toUpperCase(),
@@ -3584,6 +3626,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
         isSyncing,
         syncWithCloudNow,
         loadHistoryFromCloud,
+        getSynchronizedNow,
         isAlarmMuted,
         toggleAlarmMute,
         login,
