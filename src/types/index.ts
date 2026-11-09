@@ -92,6 +92,7 @@ export interface Rental {
   adminEmail?: string;
   adminUid?: string;
   createdBy?: string;
+  updatedAt?: number;
 }
 
 export interface QueueItem {

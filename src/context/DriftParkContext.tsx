@@ -792,6 +792,11 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     try {
       const parsed: Rental[] = JSON.parse(saved);
       const filtered = Array.isArray(parsed) ? parsed.filter((r) => !isMockRental(r)) : [];
+      if (filtered.length < INITIAL_RENTALS.length) {
+        const { merged } = mergeRentals(INITIAL_RENTALS, filtered, 'tenant_adm_cledison_outlook_com');
+        safeSetItem(STORAGE_KEYS.RENTALS, JSON.stringify(merged));
+        return merged;
+      }
       return filtered.length > 0 ? filtered : INITIAL_RENTALS;
     } catch {
       return INITIAL_RENTALS;
@@ -1051,7 +1056,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
 
         [snapVeiculos, snapCorridas, snapFila, tenantDoc, snapUsers] = await Promise.all([
           withTimeout(getDocs(query(collection(db, 'veiculos'), where('tenantId', '==', tenantKey)))),
-          withTimeout(getDocs(query(collection(db, 'corridas'), where('tenantId', '==', tenantKey), limit(200)))),
+          withTimeout(getDocs(query(collection(db, 'corridas'), where('tenantId', '==', tenantKey), limit(1000)))),
           withTimeout(getDocs(query(collection(db, 'fila'), where('tenantId', '==', tenantKey)))),
           withTimeout(getDoc(doc(db, 'tenants', tenantKey))),
           withTimeout(getDocs(query(collection(db, 'users'), where('tenantId', '==', tenantKey)))),
@@ -1415,7 +1420,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
         const q = query(
           collection(db, 'corridas'),
           where('tenantId', '==', activeTenantKey),
-          limit(50)
+          limit(1000)
         );
         const snap = await getDocs(q);
         const cloudItems: Rental[] = [];

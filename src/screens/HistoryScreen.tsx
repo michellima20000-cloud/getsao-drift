@@ -570,7 +570,7 @@ export const HistoryScreen: React.FC = () => {
             <div className="my-2 flex items-baseline justify-between flex-wrap gap-2">
               <div>
                 <span className="text-3xl font-black text-white font-display tracking-tight glow-cyan-text">
-                  R$ {totalRevenue.toFixed(2)}
+                  R$ {totalRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
                 <span className="text-xs text-slate-400 ml-2">
                   ({dateScopedRentals.length} registro(s) no período)
