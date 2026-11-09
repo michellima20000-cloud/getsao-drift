@@ -9,6 +9,7 @@ import {
   ExternalLink,
   X,
 } from 'lucide-react';
+import { PWAInstallButton } from './PWAInstallButton';
 
 export const TopHeader: React.FC = () => {
   const {
@@ -70,8 +71,11 @@ export const TopHeader: React.FC = () => {
             </div>
           </div>
 
-          {/* Right Tools: Cloud Sync & User Menu */}
-          <div className="flex items-center gap-2">
+          {/* Right Tools: PWA Install, Cloud Sync & User Menu */}
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            {/* Botão Instalar PWA */}
+            <PWAInstallButton variant="compact" />
+
             {/* Cloud Sync Status & Instant Refresh */}
             <button
               type="button"
