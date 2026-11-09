@@ -88,11 +88,13 @@ export const NewRentalScreen: React.FC = () => {
   const selectedVehicle = vehicles.find((v) => v.id === selectedVehicleId);
 
   // Price calculation
-  const tenantPricing = currentTenant?.pricing || { 5: 15, 10: 25, 15: 35, 20: 45, 30: 60 };
+  const tenantPricing = currentTenant?.pricing || { 5: 15, 10: 12, 15: 35, 20: 45, 30: 60 };
   const calculatedPrice =
     mode === 'manual'
       ? parseFloat(manualCustomPrice) || 0
-      : (tenantPricing[durationMinutes] || (durationMinutes * 2.5));
+      : (tenantPricing[durationMinutes] !== undefined
+          ? tenantPricing[durationMinutes]
+          : (durationMinutes === 10 ? 12 : durationMinutes * 2.5));
 
   const durationOptions = [5, 10, 15, 20, 30];
 
@@ -338,7 +340,10 @@ export const NewRentalScreen: React.FC = () => {
         <div className="grid grid-cols-5 gap-1.5">
           {durationOptions.map((min) => {
             const isSelected = durationMinutes === min;
-            const price = (currentTenant?.pricing && currentTenant.pricing[min]) || (min * 2.5);
+            const price =
+              currentTenant?.pricing?.[min] !== undefined
+                ? currentTenant.pricing[min]
+                : (min === 10 ? 12 : min * 2.5);
 
             return (
               <button

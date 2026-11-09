@@ -296,7 +296,7 @@ export const HistoryScreen: React.FC = () => {
       setPastVehicleId(vehicles[0].id);
     }
     setPastDuration(10);
-    const price = (currentTenant?.pricing && currentTenant.pricing[10]) || 25;
+    const price = currentTenant?.pricing?.[10] !== undefined ? currentTenant.pricing[10] : 12;
     setPastAmount(price.toFixed(2));
     setPastMethod('PIX');
     setPastStatus('PAGO');
@@ -978,7 +978,9 @@ export const HistoryScreen: React.FC = () => {
                         type="button"
                         onClick={() => {
                           setPastDuration(min);
-                          const p = (currentTenant?.pricing && currentTenant.pricing[min]) || (min * 2.5);
+                          const p = currentTenant?.pricing?.[min] !== undefined
+                            ? currentTenant.pricing[min]
+                            : (min === 10 ? 12 : min * 2.5);
                           setPastAmount(p.toFixed(2));
                         }}
                         className={`py-1.5 rounded-lg border text-[11px] font-bold transition-all ${

@@ -350,6 +350,17 @@ export const ManagementScreen: React.FC = () => {
     }
   };
 
+  const handleOpenPricingModal = (initialMin: number = 10) => {
+    if (!isAdmin) return;
+    setSelectedDuration(initialMin);
+    const priceVal =
+      currentTenant?.pricing?.[initialMin] !== undefined
+        ? currentTenant.pricing[initialMin]
+        : (initialMin === 10 ? 12 : initialMin * 2.5);
+    setNewPriceValue(String(priceVal));
+    setIsPricingModalOpen(true);
+  };
+
   const handleUpdatePrice = (e: React.FormEvent) => {
     e.preventDefault();
     const val = parseFloat(newPriceValue);
@@ -424,7 +435,7 @@ export const ManagementScreen: React.FC = () => {
           {/* [Configurar Preços] */}
           <button
             type="button"
-            onClick={() => isAdmin && setIsPricingModalOpen(true)}
+            onClick={() => handleOpenPricingModal(10)}
             disabled={!isAdmin}
             className={`p-3 rounded-xl border flex flex-col items-center justify-center text-center transition-all ${
               isAdmin
@@ -518,12 +529,12 @@ export const ManagementScreen: React.FC = () => {
                           code: veh.code,
                           category: veh.category,
                         });
+                      } else {
+                        handleOpenEditVehicle(veh);
                       }
                     }}
-                    className={`relative w-20 h-20 sm:w-24 sm:h-24 rounded-2xl overflow-hidden bg-slate-900 border-2 border-cyan-500/40 flex items-center justify-center shrink-0 shadow-md group ${
-                      veh.imageUrl ? 'cursor-pointer hover:border-cyan-300' : ''
-                    }`}
-                    title={veh.imageUrl ? 'Clique para ampliar foto' : undefined}
+                    className="relative w-20 h-20 sm:w-24 sm:h-24 rounded-2xl overflow-hidden bg-slate-900 border-2 border-cyan-500/40 flex items-center justify-center shrink-0 shadow-md group cursor-pointer hover:border-cyan-300"
+                    title={veh.imageUrl ? 'Clique para ampliar foto' : 'Clique para adicionar foto do carrinho'}
                   >
                     {veh.imageUrl ? (
                       <>
@@ -1261,24 +1272,33 @@ export const ManagementScreen: React.FC = () => {
                 <label className="text-[11px] uppercase font-bold text-slate-400 block mb-1">
                   Selecione a Duração
                 </label>
-                <div className="grid grid-cols-4 gap-1.5">
-                  {[5, 10, 15, 20, 30].map((min) => (
-                    <button
-                      key={min}
-                      type="button"
-                      onClick={() => {
-                        setSelectedDuration(min);
-                        setNewPriceValue(String((currentTenant?.pricing && currentTenant.pricing[min]) || min * 2.5));
-                      }}
-                      className={`py-2 rounded-xl border text-xs font-bold ${
-                        selectedDuration === min
-                          ? 'bg-cyan-500 text-slate-950 border-cyan-400'
-                          : 'bg-[#141E38] border-slate-700 text-slate-300'
-                      }`}
-                    >
-                      {min} min
-                    </button>
-                  ))}
+                <div className="grid grid-cols-5 gap-1.5">
+                  {[5, 10, 15, 20, 30].map((min) => {
+                    const priceForMin =
+                      currentTenant?.pricing?.[min] !== undefined
+                        ? currentTenant.pricing[min]
+                        : (min === 10 ? 12 : min * 2.5);
+                    return (
+                      <button
+                        key={min}
+                        type="button"
+                        onClick={() => {
+                          setSelectedDuration(min);
+                          setNewPriceValue(String(priceForMin));
+                        }}
+                        className={`py-2 px-1 rounded-xl border text-center transition-all ${
+                          selectedDuration === min
+                            ? 'bg-cyan-500 text-slate-950 border-cyan-400 font-extrabold shadow-sm'
+                            : 'bg-[#141E38] border-slate-700 text-slate-300 hover:border-slate-500'
+                        }`}
+                      >
+                        <div className="text-xs font-extrabold">{min}m</div>
+                        <div className={`text-[10px] ${selectedDuration === min ? 'text-slate-900 font-bold' : 'text-slate-400'}`}>
+                          R$ {priceForMin}
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
