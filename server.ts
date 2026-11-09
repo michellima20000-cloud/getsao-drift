@@ -6,8 +6,27 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+if (!process.env.DISABLE_HMR) {
+  process.env.DISABLE_HMR = 'true';
+}
+
 const app = express();
-const PORT = Number(process.env.PORT) || 3000;
+
+function resolvePort(): number {
+  const args = process.argv.slice(2);
+  const portIndex = args.findIndex((arg) => arg === '--port' || arg === '-p');
+  if (portIndex !== -1 && args[portIndex + 1]) {
+    const parsed = parseInt(args[portIndex + 1], 10);
+    if (!isNaN(parsed)) return parsed;
+  }
+  // In production, respect process.env.PORT; in development or container environment, AI Studio binds to 3000
+  if (process.env.NODE_ENV === 'production' && process.env.PORT) {
+    return Number(process.env.PORT) || 3000;
+  }
+  return 3000;
+}
+
+const PORT = resolvePort();
 
 app.use(express.json({ limit: '10mb' }));
 
