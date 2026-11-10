@@ -888,19 +888,28 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   useEffect(() => {
     if (Array.isArray(vehiclesState) && vehiclesState.length > 0) {
-      safeSetItem(STORAGE_KEYS.VEHICLES, JSON.stringify(vehiclesState));
-      if (activeTenantKey) {
-        safeSetItem(`driftpark_vehicles_${activeTenantKey}`, JSON.stringify(vehiclesState));
-      }
+      const t = setTimeout(() => {
+        safeSetItem(STORAGE_KEYS.VEHICLES, JSON.stringify(vehiclesState));
+        if (activeTenantKey) {
+          safeSetItem(`driftpark_vehicles_${activeTenantKey}`, JSON.stringify(vehiclesState));
+        }
+      }, 300);
+      return () => clearTimeout(t);
     }
   }, [vehiclesState, activeTenantKey]);
 
   useEffect(() => {
-    safeSetItem(STORAGE_KEYS.RENTALS, JSON.stringify(rentalsState));
+    const t = setTimeout(() => {
+      safeSetItem(STORAGE_KEYS.RENTALS, JSON.stringify(rentalsState));
+    }, 300);
+    return () => clearTimeout(t);
   }, [rentalsState]);
 
   useEffect(() => {
-    safeSetItem(STORAGE_KEYS.QUEUE, JSON.stringify(queueState));
+    const t = setTimeout(() => {
+      safeSetItem(STORAGE_KEYS.QUEUE, JSON.stringify(queueState));
+    }, 300);
+    return () => clearTimeout(t);
   }, [queueState]);
 
   // Alarme sonoro contínuo e repetitivo de fim de corrida
@@ -913,6 +922,10 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
   }, [isAlarmMuted]);
 
   useEffect(() => {
+    const hasActiveRentals = rentalsState.some((r) => r.status === 'ativa');
+    if (!hasActiveRentals) {
+      return;
+    }
     let tickCount = 0;
     const timer = setInterval(() => {
       const now = Date.now();
@@ -976,15 +989,23 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
   };
 
   // STRICT MULTI-TENANT FILTERING COM PROTEÇÃO TOTAL CONTRA NULOS E DADOS FICTÍCIOS
-  const vehicles = (Array.isArray(vehiclesState) ? vehiclesState : []).filter(
-    (v) => v && v.id && !isMockVehicle(v) && isItemInActiveTenant(v.tenantId, (v as any).adminEmail, (v as any).createdBy, (v as any).adminUid)
-  );
-  const rentals = (Array.isArray(rentalsState) ? rentalsState : []).filter(
-    (r) => r && r.id && !isMockRental(r) && !(r as any).isDeleted && !(r as any).isMock && isItemInActiveTenant(r.tenantId, r.adminEmail, (r as any).createdBy, (r as any).adminUid)
-  );
-  const queue = (Array.isArray(queueState) ? queueState : []).filter(
-    (q) => q && q.id && !isMockQueue(q) && isItemInActiveTenant(q.tenantId, (q as any).adminEmail, (q as any).createdBy, (q as any).adminUid)
-  );
+  const vehicles = React.useMemo(() => {
+    return (Array.isArray(vehiclesState) ? vehiclesState : []).filter(
+      (v) => v && v.id && !isMockVehicle(v) && isItemInActiveTenant(v.tenantId, (v as any).adminEmail, (v as any).createdBy, (v as any).adminUid)
+    );
+  }, [vehiclesState, activeTenantKey, currentUser?.email, currentUser?.adminEmail, currentUser?.id]);
+
+  const rentals = React.useMemo(() => {
+    return (Array.isArray(rentalsState) ? rentalsState : []).filter(
+      (r) => r && r.id && !isMockRental(r) && !(r as any).isDeleted && !(r as any).isMock && isItemInActiveTenant(r.tenantId, r.adminEmail, (r as any).createdBy, (r as any).adminUid)
+    );
+  }, [rentalsState, activeTenantKey, currentUser?.email, currentUser?.adminEmail, currentUser?.id]);
+
+  const queue = React.useMemo(() => {
+    return (Array.isArray(queueState) ? queueState : []).filter(
+      (q) => q && q.id && !isMockQueue(q) && isItemInActiveTenant(q.tenantId, (q as any).adminEmail, (q as any).createdBy, (q as any).adminUid)
+    );
+  }, [queueState, activeTenantKey, currentUser?.email, currentUser?.adminEmail, currentUser?.id]);
 
   // =========================================================================
   // 1. SINCRONIZAÇÃO DIRETA COM O FIREBASE CLOUD DATABASE (FIRESTORE + REALTIME DB)

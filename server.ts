@@ -96,13 +96,22 @@ function getTenantFilePath(tenantId: string) {
   return path.join(TENANTS_DIR, `${safeId}.json`);
 }
 
+// Cache em memória de alta performance para resposta instantânea (< 2ms)
+const tenantCache = new Map<string, any>();
+
 function loadTenantData(tenantId: string) {
-  const filePath = getTenantFilePath(tenantId);
   const safeId = normalizeTenantId(tenantId);
+  if (tenantCache.has(safeId)) {
+    return tenantCache.get(safeId);
+  }
+
+  const filePath = getTenantFilePath(tenantId);
   if (fs.existsSync(filePath)) {
     try {
       const content = fs.readFileSync(filePath, 'utf-8');
-      return JSON.parse(content);
+      const parsed = JSON.parse(content);
+      tenantCache.set(safeId, parsed);
+      return parsed;
     } catch {}
   }
   // Se ainda não existir no arquivo individual, tenta recuperar do seed
@@ -125,11 +134,12 @@ function loadTenantData(tenantId: string) {
           updatedAt: raw.updatedAt || Date.now(),
         };
         fs.writeFileSync(filePath, JSON.stringify(normalized, null, 2), 'utf-8');
+        tenantCache.set(safeId, normalized);
         return normalized;
       }
     } catch {}
   }
-  return {
+  const fallback = {
     id: tenantId,
     name: 'Drift Park',
     city: 'Pista Principal',
@@ -140,6 +150,8 @@ function loadTenantData(tenantId: string) {
     users: [],
     updatedAt: Date.now(),
   };
+  tenantCache.set(safeId, fallback);
+  return fallback;
 }
 
 function reconcileTenantVehicles(tenantData: any) {
@@ -167,6 +179,11 @@ function reconcileTenantVehicles(tenantData: any) {
 
 function saveTenantData(tenantId: string, data: any) {
   reconcileTenantVehicles(data);
+  const safeId = normalizeTenantId(tenantId);
+  tenantCache.set(safeId, data);
+  tenantCache.set('tenant_drift_01', data);
+  tenantCache.set('tenant_adm_cledison_outlook_com', data);
+
   const filePath = getTenantFilePath(tenantId);
   try {
     fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
@@ -202,16 +219,22 @@ function broadcastTenantUpdate(tenantId: string, eventData: any) {
   }
 }
 
+let usersIndexCache: Record<string, any> | null = null;
+
 function loadUsersIndex(): Record<string, any> {
+  if (usersIndexCache) return usersIndexCache;
   if (fs.existsSync(USERS_FILE)) {
     try {
-      return JSON.parse(fs.readFileSync(USERS_FILE, 'utf-8'));
+      usersIndexCache = JSON.parse(fs.readFileSync(USERS_FILE, 'utf-8'));
+      return usersIndexCache!;
     } catch {}
   }
-  return {};
+  usersIndexCache = {};
+  return usersIndexCache;
 }
 
 function saveUsersIndex(index: Record<string, any>) {
+  usersIndexCache = index;
   try {
     fs.writeFileSync(USERS_FILE, JSON.stringify(index, null, 2), 'utf-8');
   } catch (err) {

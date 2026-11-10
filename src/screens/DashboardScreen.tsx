@@ -49,12 +49,34 @@ export const DashboardScreen: React.FC = () => {
     syncWithCloudNow,
   } = useDriftPark();
 
-  // Active & Paused races on track
-  const safeRentals = Array.isArray(rentals) ? rentals.filter(Boolean) : [];
-  const safeVehicles = Array.isArray(vehicles) ? vehicles.filter(Boolean) : [];
-  const safeQueue = Array.isArray(queue) ? queue.filter(Boolean) : [];
+  // Active & Paused races on track (Memoized to prevent redundant allocations)
+  const safeRentals = React.useMemo(() => (Array.isArray(rentals) ? rentals.filter(Boolean) : []), [rentals]);
+  const safeVehicles = React.useMemo(() => (Array.isArray(vehicles) ? vehicles.filter(Boolean) : []), [vehicles]);
+  const safeQueue = React.useMemo(() => (Array.isArray(queue) ? queue.filter(Boolean) : []), [queue]);
 
-  const activeRentals = safeRentals.filter((r) => r?.status === 'ativa' || r?.status === 'pausada');
+  const activeRentals = React.useMemo(
+    () => safeRentals.filter((r) => r?.status === 'ativa' || r?.status === 'pausada'),
+    [safeRentals]
+  );
+
+  // Mapa O(1) de veículos para busca instantânea em tempo constante
+  const vehiclesById = React.useMemo(() => {
+    const map = new Map<string, Vehicle>();
+    safeVehicles.forEach((v) => {
+      if (v && v.id) map.set(v.id, v);
+    });
+    return map;
+  }, [safeVehicles]);
+
+  // Master Clock: Um único intervalo centralizado que sincroniza todos os cronômetros
+  const [currentNow, setCurrentNow] = useState<number>(() => Date.now());
+  useEffect(() => {
+    if (activeRentals.length === 0) return;
+    const timer = setInterval(() => {
+      setCurrentNow(Date.now());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [activeRentals.length > 0]);
 
   // Modal para conferência de pagamento e finalização manual
   const [rentalToFinalize, setRentalToFinalize] = useState<Rental | null>(null);
@@ -69,19 +91,52 @@ export const DashboardScreen: React.FC = () => {
     category?: string;
   } | null>(null);
 
-  // Free vehicles count
-  const freeVehicles = safeVehicles.filter((v) => v?.status === 'disponivel');
-  const inUseVehicles = safeVehicles.filter((v) => v?.status === 'em_uso');
+  // Resumo de frota e contadores consolidados em uma única iteração
+  const {
+    freeVehicles,
+    inUseVehicles,
+    driftCount,
+    driftFree,
+    jeepCount,
+    jeepFree,
+    bumpCount,
+    bumpFree,
+  } = React.useMemo(() => {
+    const free: Vehicle[] = [];
+    const inUse: Vehicle[] = [];
 
-  // Categories breakdown
-  const driftCount = safeVehicles.filter((v) => v?.category === 'DRIFT').length;
-  const driftFree = safeVehicles.filter((v) => v?.category === 'DRIFT' && v?.status === 'disponivel').length;
+    let dCount = 0, dFree = 0;
+    let jCount = 0, jFree = 0;
+    let bCount = 0, bFree = 0;
 
-  const jeepCount = safeVehicles.filter((v) => v?.category === 'JEEP').length;
-  const jeepFree = safeVehicles.filter((v) => v?.category === 'JEEP' && v?.status === 'disponivel').length;
+    for (const v of safeVehicles) {
+      const isFree = v?.status === 'disponivel';
+      if (isFree) free.push(v);
+      if (v?.status === 'em_uso') inUse.push(v);
 
-  const bumpCount = safeVehicles.filter((v) => v?.category === 'BATE_BATE').length;
-  const bumpFree = safeVehicles.filter((v) => v?.category === 'BATE_BATE' && v?.status === 'disponivel').length;
+      if (v?.category === 'DRIFT') {
+        dCount++;
+        if (isFree) dFree++;
+      } else if (v?.category === 'JEEP') {
+        jCount++;
+        if (isFree) jFree++;
+      } else if (v?.category === 'BATE_BATE') {
+        bCount++;
+        if (isFree) bFree++;
+      }
+    }
+
+    return {
+      freeVehicles: free,
+      inUseVehicles: inUse,
+      driftCount: dCount,
+      driftFree: dFree,
+      jeepCount: jCount,
+      jeepFree: jFree,
+      bumpCount: bCount,
+      bumpFree: bFree,
+    };
+  }, [safeVehicles]);
 
   // Dynamic greeting based on time of day
   const getGreeting = () => {
@@ -99,30 +154,27 @@ export const DashboardScreen: React.FC = () => {
     return `${period}, Operador ${firstName}!`;
   };
 
-  // Today's revenue calculation
-  const todayRevenue = safeRentals
-    .filter((r) => {
-      if (!r) return false;
-      const ts = r.createdAt || r.startTime;
-      if (!ts) return false;
-      try {
-        const d = new Date(ts);
-        const today = new Date();
-        const isSameDay =
-          d.getFullYear() === today.getFullYear() &&
-          d.getMonth() === today.getMonth() &&
-          d.getDate() === today.getDate();
-        return (
-          isSameDay &&
-          r.status !== 'anulada' &&
-          r.status !== 'cancelada' &&
-          r.paymentStatus === 'PAGO'
-        );
-      } catch {
-        return false;
+  // Cálculo de faturamento de hoje com otimização memoizada
+  const todayRevenue = React.useMemo(() => {
+    const today = new Date();
+    const tY = today.getFullYear();
+    const tM = today.getMonth();
+    const tD = today.getDate();
+
+    let sum = 0;
+    for (const r of safeRentals) {
+      if (!r || r.status === 'anulada' || r.status === 'cancelada' || r.paymentStatus !== 'PAGO') {
+        continue;
       }
-    })
-    .reduce((acc, curr) => acc + (Number(curr?.amount) || 0), 0);
+      const ts = r.createdAt || r.startTime;
+      if (!ts) continue;
+      const d = new Date(ts);
+      if (d.getFullYear() === tY && d.getMonth() === tM && d.getDate() === tD) {
+        sum += Number(r.amount) || 0;
+      }
+    }
+    return sum;
+  }, [safeRentals]);
 
   return (
     <div className="space-y-5 pb-6">
@@ -316,8 +368,9 @@ export const DashboardScreen: React.FC = () => {
             {activeRentals.map((rental) => (
               <ActiveRentalCard
                 key={rental.id}
+                now={currentNow}
                 rental={rental}
-                vehicle={vehicles.find((v) => v.id === rental.vehicleId)}
+                vehicle={vehiclesById.get(rental.vehicleId)}
                 isAdmin={currentUser?.role === 'admin' || true}
                 isAlarmMuted={isAlarmMuted}
                 onToggleMute={toggleAlarmMute}
@@ -573,7 +626,8 @@ export const DashboardScreen: React.FC = () => {
 };
 
 // Sub-component for individual active race card with live countdown, car photo & race controls
-const ActiveRentalCard: React.FC<{
+const ActiveRentalCard = React.memo<{
+  now: number;
   rental: Rental;
   vehicle?: Vehicle;
   isAdmin?: boolean;
@@ -587,7 +641,8 @@ const ActiveRentalCard: React.FC<{
   onResume: () => void;
   onExtend: () => void;
   onPlaySound: () => void;
-}> = ({
+}>(({
+  now,
   rental,
   vehicle,
   isAdmin,
@@ -602,16 +657,7 @@ const ActiveRentalCard: React.FC<{
   onExtend,
   onPlaySound,
 }) => {
-  const [now, setNow] = useState<number>(() => Date.now());
   const [confirmAction, setConfirmAction] = useState<'cancel' | 'delete' | null>(null);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setNow(Date.now());
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, []);
 
   const isPaused = rental.status === 'pausada';
   const timeLeftMs = isPaused
@@ -976,4 +1022,4 @@ const ActiveRentalCard: React.FC<{
       )}
     </div>
   );
-};
+});

@@ -35,10 +35,18 @@ export const QueueScreen: React.FC = () => {
     setIsModalOpen(false);
   };
 
-  // Check how many free cars per category
-  const driftFree = vehicles.filter((v) => v.category === 'DRIFT' && v.status === 'disponivel').length;
-  const jeepFree = vehicles.filter((v) => v.category === 'JEEP' && v.status === 'disponivel').length;
-  const bumpFree = vehicles.filter((v) => v.category === 'BATE_BATE' && v.status === 'disponivel').length;
+  // Check how many free cars per category (Memoized single pass)
+  const { driftFree, jeepFree, bumpFree } = React.useMemo(() => {
+    let d = 0, j = 0, b = 0;
+    for (const v of vehicles) {
+      if (v?.status === 'disponivel') {
+        if (v.category === 'DRIFT') d++;
+        else if (v.category === 'JEEP') j++;
+        else if (v.category === 'BATE_BATE') b++;
+      }
+    }
+    return { driftFree: d, jeepFree: j, bumpFree: b };
+  }, [vehicles]);
 
   return (
     <div className="space-y-4 pb-8">
