@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useDriftPark } from '../context/DriftParkContext';
 import { SpeedometerLogo } from './SpeedometerLogo';
+import { PWAInstallButton } from './PWAInstallButton';
 import {
   ChevronDown,
   LogOut,
@@ -9,7 +10,6 @@ import {
   ExternalLink,
   X,
 } from 'lucide-react';
-import { PWAInstallButton } from './PWAInstallButton';
 
 export const TopHeader: React.FC = () => {
   const {
@@ -73,8 +73,8 @@ export const TopHeader: React.FC = () => {
 
           {/* Right Tools: PWA Install, Cloud Sync & User Menu */}
           <div className="flex items-center gap-1.5 sm:gap-2">
-            {/* Botão Instalar PWA */}
-            <PWAInstallButton variant="compact" />
+            {/* PWA Install Button */}
+            <PWAInstallButton variant="header" />
 
             {/* Cloud Sync Status & Instant Refresh */}
             <button

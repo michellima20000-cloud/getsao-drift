@@ -618,24 +618,12 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     (Array.isArray(allTenants) && allTenants[0]) ||
     INITIAL_TENANTS[0];
 
-  // Recupera precificação salva persistentemente pelo gestor caso exista
-  const savedTenantPricing = (() => {
-    try {
-      const p1 = safeGetItem(`driftpark_pricing_${currentTenantId}`);
-      if (p1) {
-        const parsed = JSON.parse(p1);
-        if (parsed && typeof parsed === 'object') return parsed;
-      }
-    } catch {}
-    return null;
-  })();
-
   const currentTenant: Tenant = {
     ...rawTenant,
     id: rawTenant?.id || 'tenant_adm_cledison_outlook_com',
     name: rawTenant?.name || 'DRIFT PARK',
     city: rawTenant?.city || 'Pista Principal',
-    pricing: savedTenantPricing || rawTenant?.pricing || { 5: 15.0, 10: 12.0, 15: 35.0, 20: 45.0, 30: 60.0 },
+    pricing: rawTenant?.pricing || { 5: 15.0, 10: 25.0, 15: 35.0, 20: 45.0, 30: 60.0 },
   };
 
   // Conta desativada a pedido do usuário: nunca utilizar ou aceitar adm.cledson@gmail.com
@@ -804,11 +792,6 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     try {
       const parsed: Rental[] = JSON.parse(saved);
       const filtered = Array.isArray(parsed) ? parsed.filter((r) => !isMockRental(r)) : [];
-      if (filtered.length < INITIAL_RENTALS.length) {
-        const { merged } = mergeRentals(INITIAL_RENTALS, filtered, 'tenant_adm_cledison_outlook_com');
-        safeSetItem(STORAGE_KEYS.RENTALS, JSON.stringify(merged));
-        return merged;
-      }
       return filtered.length > 0 ? filtered : INITIAL_RENTALS;
     } catch {
       return INITIAL_RENTALS;
@@ -1068,7 +1051,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
 
         [snapVeiculos, snapCorridas, snapFila, tenantDoc, snapUsers] = await Promise.all([
           withTimeout(getDocs(query(collection(db, 'veiculos'), where('tenantId', '==', tenantKey)))),
-          withTimeout(getDocs(query(collection(db, 'corridas'), where('tenantId', '==', tenantKey), limit(1000)))),
+          withTimeout(getDocs(query(collection(db, 'corridas'), where('tenantId', '==', tenantKey), limit(200)))),
           withTimeout(getDocs(query(collection(db, 'fila'), where('tenantId', '==', tenantKey)))),
           withTimeout(getDoc(doc(db, 'tenants', tenantKey))),
           withTimeout(getDocs(query(collection(db, 'users'), where('tenantId', '==', tenantKey)))),
@@ -1292,7 +1275,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
                 city: d.city || 'Pista Principal',
                 document: d.document || '00.000.000/0001-00',
                 active: true,
-                pricing: d.pricing || { 5: 15, 10: 12, 15: 35, 20: 45, 30: 60 },
+                pricing: d.pricing || { 5: 15, 10: 25, 15: 35, 20: 45, 30: 60 },
               },
             ];
           });
@@ -1308,7 +1291,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
           city: 'Pista Principal',
           document: '00.000.000/0001-00',
           active: true,
-          pricing: { 5: 15, 10: 12, 15: 35, 20: 45, 30: 60 },
+          pricing: { 5: 15, 10: 25, 15: 35, 20: 45, 30: 60 },
         };
         setAllTenants((prev) => {
           if (prev.some((t) => t.id === defaultTenantObj.id)) return prev;
@@ -1432,7 +1415,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
         const q = query(
           collection(db, 'corridas'),
           where('tenantId', '==', activeTenantKey),
-          limit(1000)
+          limit(50)
         );
         const snap = await getDocs(q);
         const cloudItems: Rental[] = [];
@@ -2280,7 +2263,7 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       city: 'Pista Principal',
       document: '00.000.000/0001-00',
       active: true,
-      pricing: { 5: 15, 10: 12, 15: 35, 20: 45, 30: 60 },
+      pricing: { 5: 15, 10: 25, 15: 35, 20: 45, 30: 60 },
     };
 
     // Garante que o tenant exista
@@ -2915,11 +2898,9 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       return next;
     });
 
+    saveDocToCloud('veiculos', vehicleId, data, true);
     if (updatedItem) {
-      saveDocToCloud('veiculos', vehicleId, updatedItem, true);
       saveVehicleCloud(activeTenantKey, updatedItem);
-    } else {
-      saveDocToCloud('veiculos', vehicleId, data, true);
     }
     playTone('click');
   };
@@ -3608,36 +3589,17 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
   };
 
   const updatePriceTier = (durationMinutes: number, price: number) => {
-    const updatedPricing = {
-      ...(currentTenant.pricing || { 5: 15.0, 10: 12.0, 15: 35.0, 20: 45.0, 30: 60.0 }),
-      [durationMinutes]: price,
-    };
-
-    // 1. Atualiza lista de tenants em memória
-    const updatedTenants = (allTenants || []).map((t) =>
-      t.id === currentTenant.id || t.id === activeTenantKey
-        ? { ...t, pricing: updatedPricing }
-        : t
+    const updatedPricing = { ...currentTenant.pricing, [durationMinutes]: price };
+    setAllTenants((prev) =>
+      prev.map((t) =>
+        t.id === currentTenant.id || t.id === activeTenantKey
+          ? { ...t, pricing: updatedPricing }
+          : t
+      )
     );
-    if (!updatedTenants.some((t) => t.id === activeTenantKey)) {
-      updatedTenants.push({ ...currentTenant, id: activeTenantKey, pricing: updatedPricing });
-    }
-    setAllTenants(updatedTenants);
 
-    // 2. Persistência imediata no LocalStorage com proteção anti-quota
-    safeSetItem(STORAGE_KEYS.TENANTS, JSON.stringify(updatedTenants));
-    safeSetItem(`driftpark_pricing_${activeTenantKey}`, JSON.stringify(updatedPricing));
-    if (currentTenant.id && currentTenant.id !== activeTenantKey) {
-      safeSetItem(`driftpark_pricing_${currentTenant.id}`, JSON.stringify(updatedPricing));
-    }
-
-    // 3. Persistência na Nuvem Firestore e Cloud API do servidor
-    saveDocToCloud('tenants', activeTenantKey, { pricing: updatedPricing, updatedAt: Date.now() }, true);
-    if (currentTenant.id && currentTenant.id !== activeTenantKey) {
-      saveDocToCloud('tenants', currentTenant.id, { pricing: updatedPricing, updatedAt: Date.now() }, true);
-    }
+    saveDocToCloud('tenants', activeTenantKey, { pricing: updatedPricing, updatedAt: Date.now() });
     updatePricingCloud(activeTenantKey, updatedPricing);
-
     playTone('click');
   };
 

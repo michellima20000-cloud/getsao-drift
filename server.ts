@@ -6,27 +6,8 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-if (!process.env.DISABLE_HMR) {
-  process.env.DISABLE_HMR = 'true';
-}
-
 const app = express();
-
-function resolvePort(): number {
-  const args = process.argv.slice(2);
-  const portIndex = args.findIndex((arg) => arg === '--port' || arg === '-p');
-  if (portIndex !== -1 && args[portIndex + 1]) {
-    const parsed = parseInt(args[portIndex + 1], 10);
-    if (!isNaN(parsed)) return parsed;
-  }
-  // In production, respect process.env.PORT; in development or container environment, AI Studio binds to 3000
-  if (process.env.NODE_ENV === 'production' && process.env.PORT) {
-    return Number(process.env.PORT) || 3000;
-  }
-  return 3000;
-}
-
-const PORT = resolvePort();
+const PORT = Number(process.env.PORT) || 3000;
 
 app.use(express.json({ limit: '10mb' }));
 
@@ -63,7 +44,7 @@ function initSeedData() {
               id: raw.tenant?.id || tId,
               name: raw.tenant?.name || 'Drift Park',
               city: raw.tenant?.city || 'Pista Principal',
-              pricing: raw.tenant?.pricing || { 5: 15.0, 10: 12.0, 15: 35.0, 20: 45.0, 30: 60.0 },
+              pricing: raw.tenant?.pricing || { 5: 15.0, 10: 25.0, 15: 35.0, 20: 45.0, 30: 60.0 },
               vehicles: raw.vehicles || [],
               rentals: raw.rentals || [],
               queue: raw.queue || [],
@@ -136,7 +117,7 @@ function loadTenantData(tenantId: string) {
           id: raw.tenant?.id || tenantId,
           name: raw.tenant?.name || 'Drift Park',
           city: raw.tenant?.city || 'Pista Principal',
-          pricing: raw.tenant?.pricing || { 5: 15.0, 10: 12.0, 15: 35.0, 20: 45.0, 30: 60.0 },
+          pricing: raw.tenant?.pricing || { 5: 15.0, 10: 25.0, 15: 35.0, 20: 45.0, 30: 60.0 },
           vehicles: raw.vehicles || [],
           rentals: raw.rentals || [],
           queue: raw.queue || [],
@@ -152,7 +133,7 @@ function loadTenantData(tenantId: string) {
     id: tenantId,
     name: 'Drift Park',
     city: 'Pista Principal',
-    pricing: { 5: 15.0, 10: 12.0, 15: 35.0, 20: 45.0, 30: 60.0 },
+    pricing: { 5: 15.0, 10: 25.0, 15: 35.0, 20: 45.0, 30: 60.0 },
     vehicles: [],
     rentals: [],
     queue: [],

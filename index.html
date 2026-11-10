@@ -4,6 +4,53 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <script>
+      // Neutraliza tentativas de conexão do WebSocket do Vite HMR (HMR desativado no ambiente AI Studio)
+      (function() {
+        try {
+          if (typeof window !== 'undefined' && window.WebSocket) {
+            var NativeWebSocket = window.WebSocket;
+            function ViteHmrStub(url, protocols) {
+              if (
+                protocols === 'vite-hmr' ||
+                (typeof url === 'string' && (url.includes('vite') || url.includes('hmr') || protocols === 'vite-hmr'))
+              ) {
+                var listeners = {};
+                return {
+                  binaryType: 'blob',
+                  readyState: 1, // WebSocket.OPEN
+                  bufferedAmount: 0,
+                  extensions: '',
+                  protocol: 'vite-hmr',
+                  url: url,
+                  onopen: null,
+                  onclose: null,
+                  onerror: null,
+                  onmessage: null,
+                  send: function() {},
+                  close: function() {},
+                  addEventListener: function(event, handler) {
+                    listeners[event] = listeners[event] || [];
+                    listeners[event].push(handler);
+                  },
+                  removeEventListener: function(event, handler) {
+                    if (!listeners[event]) return;
+                    listeners[event] = listeners[event].filter(function(h) { return h !== handler; });
+                  },
+                  dispatchEvent: function() { return true; }
+                };
+              }
+              return new NativeWebSocket(url, protocols);
+            }
+            ViteHmrStub.prototype = NativeWebSocket.prototype;
+            ViteHmrStub.CONNECTING = NativeWebSocket.CONNECTING;
+            ViteHmrStub.OPEN = NativeWebSocket.OPEN;
+            ViteHmrStub.CLOSING = NativeWebSocket.CLOSING;
+            ViteHmrStub.CLOSED = NativeWebSocket.CLOSED;
+            window.WebSocket = ViteHmrStub;
+          }
+        } catch (e) {}
+      })();
+
       // Compatibilidade para extensões de navegador que tentam sobrescrever window.fetch
       (function() {
         try {
@@ -110,10 +157,9 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="Drift Park" />
-    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
-    <link rel="icon" type="image/png" href="/favicon.png" />
+    <meta name="apple-mobile-web-app-title" content="DriftPark" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
     <meta property="og:title" content="Drift Park - Gestão de Aluguel e Pista" />
     <meta property="og:description" content="Sistema moderno e fluido para gestão e aluguel de carrinhos de bate-bate, drift e jeep com arquitetura multi-tenant e telemetria de pista." />
     <meta property="og:type" content="website" />

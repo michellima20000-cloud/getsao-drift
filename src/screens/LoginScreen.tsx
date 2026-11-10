@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { useDriftPark } from '../context/DriftParkContext';
 import { SpeedometerLogo } from '../components/SpeedometerLogo';
+import { PWAInstallButton } from '../components/PWAInstallButton';
 import { Mail, Lock, Eye, EyeOff, User, Check, AlertCircle } from 'lucide-react';
 import { safeGetItem, safeSetItem, safeRemoveItem } from '../utils/safeStorage';
-import { PWAInstallButton } from '../components/PWAInstallButton';
 
 export const LoginScreen: React.FC = () => {
   const { login, register } = useDriftPark();
@@ -253,12 +253,12 @@ export const LoginScreen: React.FC = () => {
               )}
             </button>
           </div>
-        </form>
 
-        {/* PWA Install Button */}
-        <div className="mt-4">
-          <PWAInstallButton variant="button" />
-        </div>
+          {/* Botão de Instalação do Aplicativo PWA */}
+          <div className="pt-3 border-t border-slate-800/80">
+            <PWAInstallButton variant="button" />
+          </div>
+        </form>
       </div>
     </div>
   );

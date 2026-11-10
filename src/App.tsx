@@ -13,7 +13,6 @@ import { QueueScreen } from './screens/QueueScreen';
 import { ManagementScreen } from './screens/ManagementScreen';
 import { TopHeader } from './components/TopHeader';
 import { BottomNav } from './components/BottomNav';
-import { OfflineIndicator } from './components/OfflineIndicator';
 import { safeGetItem, safeSetItem, safeRemoveItem } from './utils/safeStorage';
 class ErrorBoundary extends React.Component<
   { children: React.ReactNode },
@@ -168,9 +167,6 @@ const AppContent: React.FC = () => {
             </div>
           )}
         </div>
-
-        {/* Global Offline Mode Indicator */}
-        <OfflineIndicator />
       </div>
     </div>
   );
