@@ -143,8 +143,8 @@ export const INITIAL_VEHICLES: Vehicle[] = [
     "status": "disponivel",
     "batteryLevel": 30,
     "totalRuns": 14,
-    "name": "Veículo",
-    "code": "#01",
+    "name": "Tesla",
+    "code": "#7",
     "category": "DRIFT"
   }
 ];

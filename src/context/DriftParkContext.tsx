@@ -314,7 +314,7 @@ const playTone = (type: 'start' | 'finish' | 'click' | 'alert' | 'countdown_beep
 };
 
 function isSameTenantId(t1?: string, t2?: string): boolean {
-  if (!t1 || !t2) return true;
+  if (!t1 || !t2) return false;
   if (t1 === t2) return true;
   const clean1 = t1.toLowerCase().replace(/[^a-z0-9]/g, '');
   const clean2 = t2.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -322,6 +322,9 @@ function isSameTenantId(t1?: string, t2?: string): boolean {
   const isAdm1 = clean1.includes('admcledison') || clean1.includes('admcledson') || clean1.includes('clecio') || clean1.includes('outlook') || clean1.includes('1791633952871');
   const isAdm2 = clean2.includes('admcledison') || clean2.includes('admcledson') || clean2.includes('clecio') || clean2.includes('outlook') || clean2.includes('1791633952871');
   if (isAdm1 && isAdm2) return true;
+  const isMichel1 = clean1.includes('michellima') || clean1 === 'tenantdrift01' || clean1 === 'drift01';
+  const isMichel2 = clean2.includes('michellima') || clean2 === 'tenantdrift01' || clean2 === 'drift01';
+  if (isMichel1 && isMichel2) return true;
   return false;
 }
 
@@ -337,8 +340,13 @@ function mergeVehicles(
   const map = new Map<string, Vehicle>();
   for (const v of existingVehicles) {
     if (v && v.id && !isMockVehicle(v) && (!targetTenantId || isSameTenantId(v.tenantId, targetTenantId))) {
+      const initialFallback = INITIAL_VEHICLES.find((iv) => iv.id === v.id);
       map.set(v.id, {
         ...v,
+        name: v.name || initialFallback?.name || 'Veículo',
+        code: v.code || initialFallback?.code || '#01',
+        category: v.category || initialFallback?.category || 'DRIFT',
+        imageUrl: v.imageUrl || initialFallback?.imageUrl,
         tenantId: targetTenantId || v.tenantId,
       });
     }
@@ -358,9 +366,19 @@ function mergeVehicles(
     if (targetTenantId && inc.tenantId && !isSameTenantId(inc.tenantId, targetTenantId)) continue;
     const existing = map.get(inc.id);
     const resolvedTenant = targetTenantId || inc.tenantId;
+    const initialFallback = INITIAL_VEHICLES.find((iv) => iv.id === inc.id);
+    const resolvedName = inc.name || existing?.name || initialFallback?.name || 'Veículo';
+    const resolvedCode = inc.code || existing?.code || initialFallback?.code || `#${map.size + 1}`;
+    const resolvedCat = inc.category || existing?.category || initialFallback?.category || 'DRIFT';
+    const resolvedImg = inc.imageUrl || existing?.imageUrl || initialFallback?.imageUrl;
+
     if (!existing) {
       map.set(inc.id, {
         ...inc,
+        name: resolvedName,
+        code: resolvedCode,
+        category: resolvedCat,
+        imageUrl: resolvedImg,
         tenantId: resolvedTenant,
       });
     } else {
@@ -368,12 +386,15 @@ function mergeVehicles(
       map.set(inc.id, {
         ...existing,
         ...inc,
+        name: resolvedName,
+        code: resolvedCode,
+        category: resolvedCat,
+        imageUrl: resolvedImg,
         tenantId: resolvedTenant,
         status: nextStatus,
         batteryLevel: typeof inc.batteryLevel === 'number' ? inc.batteryLevel : existing.batteryLevel,
         totalRuns: Math.max(existing.totalRuns || 0, inc.totalRuns || 0),
         activeRentalId: nextStatus === 'disponivel' ? undefined : (inc.activeRentalId !== undefined ? inc.activeRentalId : existing.activeRentalId),
-        imageUrl: inc.imageUrl || existing.imageUrl,
       });
     }
   }
@@ -2438,14 +2459,24 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     try {
       const cachedVehiclesStr =
         safeGetItem(`driftpark_vehicles_${profile.tenantId}`) || safeGetItem(STORAGE_KEYS.VEHICLES);
+      let vehsToSet: Vehicle[] = [];
       if (cachedVehiclesStr) {
         const parsed = JSON.parse(cachedVehiclesStr);
         if (Array.isArray(parsed) && parsed.length > 0) {
           const validVehs = parsed.filter((v: any) => !isMockVehicle(v));
           if (validVehs.length > 0) {
-            setVehiclesState(validVehs);
+            vehsToSet = validVehs;
           }
         }
+      }
+      if (
+        vehsToSet.length === 0 &&
+        (profile.tenantId === 'tenant_adm_cledison_outlook_com' || isAdmcledisonAccount(profile.tenantId))
+      ) {
+        vehsToSet = INITIAL_VEHICLES;
+      }
+      if (vehsToSet.length > 0) {
+        setVehiclesState(vehsToSet);
       }
       const cachedRentals = safeGetItem(STORAGE_KEYS.RENTALS);
       if (cachedRentals) {

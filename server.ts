@@ -76,17 +76,22 @@ function normalizeTenantId(tenantId: string): string {
   if (!tenantId) return 'tenant_adm_cledison_outlook_com';
   const norm = tenantId.toLowerCase().replace(/[^a-z0-9]/g, '');
   if (
-    norm.includes('drift') ||
     norm.includes('admcledison') ||
     norm.includes('admcledson') ||
     norm.includes('clecio') ||
     norm.includes('outlook') ||
     norm.includes('1791633952871') ||
-    norm === 'tenant_admcledison_gmail_com' ||
-    norm === 'tenant_adm_cledison_outlook_com' ||
-    norm === 'tenant_drift_01'
+    norm === 'tenantadmcledisongmailcom' ||
+    norm === 'tenantadmcledisonoutlookcom'
   ) {
     return 'tenant_adm_cledison_outlook_com';
+  }
+  if (
+    norm === 'tenantdrift01' ||
+    norm === 'drift01' ||
+    norm.includes('michellima')
+  ) {
+    return 'tenant_drift_01';
   }
   return tenantId.replace(/[^a-zA-Z0-9_-]/g, '_');
 }
@@ -181,15 +186,10 @@ function saveTenantData(tenantId: string, data: any) {
   reconcileTenantVehicles(data);
   const safeId = normalizeTenantId(tenantId);
   tenantCache.set(safeId, data);
-  tenantCache.set('tenant_drift_01', data);
-  tenantCache.set('tenant_adm_cledison_outlook_com', data);
 
-  const filePath = getTenantFilePath(tenantId);
+  const filePath = getTenantFilePath(safeId);
   try {
     fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
-    // Salva cópia idêntica em tenant_drift_01.json para sincronizar ambos os identificadores
-    const driftPath = path.join(TENANTS_DIR, 'tenant_drift_01.json');
-    fs.writeFileSync(driftPath, JSON.stringify(data, null, 2), 'utf-8');
   } catch (err) {
     console.error('Erro ao salvar dados do tenant:', err);
   }
@@ -202,7 +202,7 @@ const sseClients = new Map<string, Set<express.Response>>();
 
 function broadcastTenantUpdate(tenantId: string, eventData: any) {
   const safeId = normalizeTenantId(tenantId);
-  const targets = new Set<string>([safeId, 'tenant_adm_cledison_outlook_com', 'tenant_drift_01', tenantId]);
+  const targets = new Set<string>([safeId, tenantId]);
   const enrichedEvent = { ...eventData, serverTime: Date.now() };
   for (const tid of targets) {
     const clients = sseClients.get(tid);
@@ -312,6 +312,7 @@ app.post('/api/cloud/tenants/:tenantId/sync', (req, res) => {
 
   // Atualiza frota autoritativa enviada pelo cliente (preserva frota se vier array vazio)
   if (Array.isArray(vehicles) && vehicles.length > 0) {
+    const safeTenant = normalizeTenantId(tenantId);
     const vMap = new Map();
     (current.vehicles || []).forEach((v: any) => {
       if (v && v.id) vMap.set(v.id, v);
@@ -319,7 +320,16 @@ app.post('/api/cloud/tenants/:tenantId/sync', (req, res) => {
     vehicles
       .filter((v: any) => v && v.id)
       .forEach((v: any) => {
-        vMap.set(v.id, { ...v, tenantId });
+        const existing = vMap.get(v.id);
+        vMap.set(v.id, {
+          ...existing,
+          ...v,
+          name: v.name || existing?.name,
+          code: v.code || existing?.code,
+          category: v.category || existing?.category,
+          imageUrl: v.imageUrl || existing?.imageUrl,
+          tenantId: safeTenant,
+        });
       });
     current.vehicles = Array.from(vMap.values());
   }
@@ -389,9 +399,16 @@ app.post('/api/cloud/tenants/:tenantId/vehicle', (req, res) => {
     current.vehicles = current.vehicles.filter((v: any) => v.id !== vehicleId);
   } else if (action === 'save' && vehicle) {
     const idx = current.vehicles.findIndex((v: any) => v.id === vehicle.id);
-    const item = { ...vehicle, tenantId };
+    const item = { ...vehicle, tenantId: normalizeTenantId(tenantId) };
     if (idx >= 0) {
-      current.vehicles[idx] = { ...current.vehicles[idx], ...item };
+      current.vehicles[idx] = {
+        ...current.vehicles[idx],
+        ...item,
+        name: item.name || current.vehicles[idx].name,
+        code: item.code || current.vehicles[idx].code,
+        category: item.category || current.vehicles[idx].category,
+        imageUrl: item.imageUrl || current.vehicles[idx].imageUrl,
+      };
     } else {
       current.vehicles.push(item);
     }

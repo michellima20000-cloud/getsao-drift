@@ -81,7 +81,10 @@
       "tenantId": "tenant_adm_cledison_outlook_com",
       "status": "disponivel",
       "batteryLevel": 30,
-      "totalRuns": 14
+      "totalRuns": 14,
+      "name": "Tesla",
+      "code": "#7",
+      "category": "DRIFT"
     }
   ],
   "rentals": [
