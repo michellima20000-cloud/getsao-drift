@@ -340,7 +340,9 @@ function mergeVehicles(
   const map = new Map<string, Vehicle>();
   for (const v of existingVehicles) {
     if (v && v.id && !isMockVehicle(v) && (!targetTenantId || isSameTenantId(v.tenantId, targetTenantId))) {
-      const initialFallback = INITIAL_VEHICLES.find((iv) => iv.id === v.id);
+      const initialFallback = INITIAL_VEHICLES.find(
+        (iv) => iv.id === v.id || (v.code && iv.code === v.code) || (v.name && iv.name.toLowerCase() === v.name.toLowerCase())
+      );
       map.set(v.id, {
         ...v,
         name: v.name || initialFallback?.name || 'Veículo',
@@ -366,7 +368,9 @@ function mergeVehicles(
     if (targetTenantId && inc.tenantId && !isSameTenantId(inc.tenantId, targetTenantId)) continue;
     const existing = map.get(inc.id);
     const resolvedTenant = targetTenantId || inc.tenantId;
-    const initialFallback = INITIAL_VEHICLES.find((iv) => iv.id === inc.id);
+    const initialFallback = INITIAL_VEHICLES.find(
+      (iv) => iv.id === inc.id || (inc.code && iv.code === inc.code) || (inc.name && iv.name.toLowerCase() === inc.name.toLowerCase())
+    );
     const resolvedName = inc.name || existing?.name || initialFallback?.name || 'Veículo';
     const resolvedCode = inc.code || existing?.code || initialFallback?.code || `#${map.size + 1}`;
     const resolvedCat = inc.category || existing?.category || initialFallback?.category || 'DRIFT';
@@ -2938,7 +2942,8 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
     setVehiclesState((prev) => {
       const next = prev.map((v) => {
         if (v.id === vehicleId) {
-          updatedItem = { ...v, ...data };
+          const finalImg = data.imageUrl !== undefined ? data.imageUrl : v.imageUrl;
+          updatedItem = { ...v, ...data, imageUrl: finalImg };
           return updatedItem;
         }
         return v;
@@ -2950,8 +2955,8 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       return next;
     });
 
-    saveDocToCloud('veiculos', vehicleId, data, true);
     if (updatedItem) {
+      saveDocToCloud('veiculos', vehicleId, updatedItem, true);
       saveVehicleCloud(activeTenantKey, updatedItem);
     }
     playTone('click');
@@ -2974,8 +2979,8 @@ export const DriftParkProvider: React.FC<{ children: ReactNode }> = ({ children 
       return next;
     });
 
-    saveDocToCloud('veiculos', vehicleId, { status }, true);
     if (updatedItem) {
+      saveDocToCloud('veiculos', vehicleId, updatedItem, true);
       saveVehicleCloud(activeTenantKey, updatedItem);
     }
     playTone('click');

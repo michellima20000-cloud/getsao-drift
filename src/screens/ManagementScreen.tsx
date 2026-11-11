@@ -23,6 +23,7 @@ import {
   CheckCheck,
   LogIn,
   ZoomIn,
+  Loader2,
 } from 'lucide-react';
 
 export const ManagementScreen: React.FC = () => {
@@ -61,6 +62,9 @@ export const ManagementScreen: React.FC = () => {
   const [vehCode, setVehCode] = useState('');
   const [vehCategory, setVehCategory] = useState<VehicleCategory>('DRIFT');
   const [vehImageUrl, setVehImageUrl] = useState<string>('');
+  const [isPhotoRemoved, setIsPhotoRemoved] = useState(false);
+  const [isProcessingImage, setIsProcessingImage] = useState(false);
+  const [imageUploadFeedback, setImageUploadFeedback] = useState<string | null>(null);
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
 
@@ -160,6 +164,9 @@ export const ManagementScreen: React.FC = () => {
     setVehCode(`#${vehicles.length + 1}`);
     setVehCategory('DRIFT');
     setVehImageUrl('');
+    setIsPhotoRemoved(false);
+    setIsProcessingImage(false);
+    setImageUploadFeedback(null);
     setIsVehicleModalOpen(true);
   };
 
@@ -170,6 +177,9 @@ export const ManagementScreen: React.FC = () => {
     setVehCode(veh.code);
     setVehCategory(veh.category);
     setVehImageUrl(veh.imageUrl || '');
+    setIsPhotoRemoved(false);
+    setIsProcessingImage(false);
+    setImageUploadFeedback(null);
     setIsVehicleModalOpen(true);
   };
 
@@ -178,6 +188,9 @@ export const ManagementScreen: React.FC = () => {
     setIsVehicleModalOpen(false);
     setEditingVehicle(null);
     setVehImageUrl('');
+    setIsPhotoRemoved(false);
+    setIsProcessingImage(false);
+    setImageUploadFeedback(null);
   };
 
   // Process and compress image file (computer or mobile camera roll)
@@ -185,40 +198,76 @@ export const ManagementScreen: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    if (file.size > 20 * 1024 * 1024) {
+      setImageUploadFeedback('Arquivo muito pesado. Escolha uma foto com menos de 20MB.');
+      e.target.value = '';
+      return;
+    }
+
+    setIsProcessingImage(true);
+    setImageUploadFeedback('Processando e otimizando foto...');
+    setIsPhotoRemoved(false);
+
     const reader = new FileReader();
+    reader.onerror = () => {
+      setIsProcessingImage(false);
+      setImageUploadFeedback('Erro ao ler a imagem. Tente novamente.');
+      e.target.value = '';
+    };
+
     reader.onload = (event) => {
       const img = new Image();
+      img.onerror = () => {
+        setIsProcessingImage(false);
+        setImageUploadFeedback('Formato de imagem inválido ou corrompido.');
+      };
+
       img.onload = () => {
-        // Redimensiona proporcionalmente para otimizar armazenamento (max 400px)
-        const canvas = document.createElement('canvas');
-        const maxDim = 400;
-        let width = img.width;
-        let height = img.height;
+        try {
+          // Redimensiona proporcionalmente para otimizar armazenamento com alta nitidez (max 480px)
+          const canvas = document.createElement('canvas');
+          const maxDim = 480;
+          let width = img.width;
+          let height = img.height;
 
-        if (width > height) {
-          if (width > maxDim) {
-            height = Math.round((height * maxDim) / width);
-            width = maxDim;
+          if (width > height) {
+            if (width > maxDim) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            }
+          } else {
+            if (height > maxDim) {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
           }
-        } else {
-          if (height > maxDim) {
-            width = Math.round((width * maxDim) / height);
-            height = maxDim;
-          }
-        }
 
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(img, 0, 0, width, height);
-          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.65);
-          setVehImageUrl(compressedDataUrl);
-          stopCamera();
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+            ctx.drawImage(img, 0, 0, width, height);
+            const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.75);
+            setVehImageUrl(compressedDataUrl);
+            setImageUploadFeedback(null);
+            stopCamera();
+          } else {
+            setImageUploadFeedback('Falha ao processar canvas da imagem.');
+          }
+        } catch (err) {
+          console.error('Erro ao redimensionar imagem:', err);
+          setImageUploadFeedback('Erro ao processar imagem.');
+        } finally {
+          setIsProcessingImage(false);
         }
       };
+
       if (event.target?.result) {
         img.src = event.target.result as string;
+      } else {
+        setIsProcessingImage(false);
       }
     };
     reader.readAsDataURL(file);
@@ -278,52 +327,80 @@ export const ManagementScreen: React.FC = () => {
   // Capture frame from active camera stream
   const capturePhotoFromCamera = () => {
     if (!videoRef.current) return;
-    const video = videoRef.current;
-    const canvas = document.createElement('canvas');
-    const maxDim = 400;
-    let width = video.videoWidth || 640;
-    let height = video.videoHeight || 480;
-    if (width > maxDim) {
-      height = Math.round((height * maxDim) / width);
-      width = maxDim;
-    }
-    canvas.width = width;
-    canvas.height = height;
+    setIsProcessingImage(true);
+    setImageUploadFeedback('Capturando e processando foto...');
+    try {
+      const video = videoRef.current;
+      const canvas = document.createElement('canvas');
+      const maxDim = 480;
+      let width = video.videoWidth || 640;
+      let height = video.videoHeight || 480;
+      if (width > maxDim) {
+        height = Math.round((height * maxDim) / width);
+        width = maxDim;
+      }
+      canvas.width = width;
+      canvas.height = height;
 
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      ctx.drawImage(video, 0, 0, width, height);
-      const photoDataUrl = canvas.toDataURL('image/jpeg', 0.65);
-      setVehImageUrl(photoDataUrl);
-      stopCamera();
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(video, 0, 0, width, height);
+        const photoDataUrl = canvas.toDataURL('image/jpeg', 0.75);
+        setVehImageUrl(photoDataUrl);
+        setIsPhotoRemoved(false);
+        setImageUploadFeedback(null);
+        stopCamera();
+      }
+    } catch (err) {
+      console.error('Erro ao capturar da câmera:', err);
+      setImageUploadFeedback('Erro ao capturar foto da câmera.');
+    } finally {
+      setIsProcessingImage(false);
     }
   };
 
   const handleSaveVehicle = (e: React.FormEvent) => {
     e.preventDefault();
     if (!vehName.trim()) return;
+    if (isProcessingImage) return;
+
     const codeToUse = vehCode.trim() || `#${vehicles.length + 1}`;
     const formattedCode = codeToUse.startsWith('#') ? codeToUse : `#${codeToUse}`;
+
+    // Determina a foto final preservando fotos existentes ao editar
+    let finalImageUrl: string | undefined = undefined;
+    if (isPhotoRemoved) {
+      finalImageUrl = undefined;
+    } else if (vehImageUrl && vehImageUrl.trim().length > 0) {
+      finalImageUrl = vehImageUrl.trim();
+    } else if (editingVehicle?.imageUrl) {
+      finalImageUrl = editingVehicle.imageUrl;
+    }
 
     if (editingVehicle) {
       updateVehicle(editingVehicle.id, {
         name: vehName.trim(),
         code: formattedCode,
         category: vehCategory,
-        imageUrl: vehImageUrl || undefined,
+        imageUrl: finalImageUrl,
       });
     } else {
       addVehicle(
         vehName.trim(),
         formattedCode,
         vehCategory,
-        vehImageUrl || undefined
+        finalImageUrl
       );
     }
 
     setVehName('');
     setVehCode('');
     setVehImageUrl('');
+    setIsPhotoRemoved(false);
+    setIsProcessingImage(false);
+    setImageUploadFeedback(null);
     setEditingVehicle(null);
     stopCamera();
     setIsVehicleModalOpen(false);
@@ -1025,7 +1102,10 @@ export const ManagementScreen: React.FC = () => {
                           </button>
                           <button
                             type="button"
-                            onClick={() => setVehImageUrl('')}
+                            onClick={() => {
+                              setVehImageUrl('');
+                              setIsPhotoRemoved(true);
+                            }}
                             className="py-2 px-3 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-xs font-bold border border-rose-500/40 flex items-center gap-1 transition-all"
                           >
                             <Trash2 size={13} />
@@ -1036,12 +1116,20 @@ export const ManagementScreen: React.FC = () => {
                     ) : (
                       /* Opções de Upload: Celular, Computador ou Câmera com clique direto e confiável */
                       <div className="space-y-2">
+                        {isProcessingImage && (
+                          <div className="flex items-center justify-center gap-2 p-3 bg-cyan-950/50 border border-cyan-500/40 rounded-xl text-cyan-300 text-xs font-semibold animate-pulse">
+                            <Loader2 size={16} className="animate-spin text-cyan-400" />
+                            <span>{imageUploadFeedback || 'Otimizando e preparando foto...'}</span>
+                          </div>
+                        )}
+
                         <div className="grid grid-cols-2 gap-2">
                           {/* Opção 1: Enviar Foto (Galeria do Celular ou Arquivos do Computador) */}
                           <button
                             type="button"
+                            disabled={isProcessingImage}
                             onClick={() => galleryInputRef.current?.click()}
-                            className="p-4 rounded-xl border border-slate-700 hover:border-cyan-500/60 bg-[#141E38] hover:bg-[#1C2541] text-slate-300 hover:text-cyan-300 transition-all flex flex-col items-center justify-center text-center gap-1.5 group active:scale-95 shadow-sm"
+                            className="p-4 rounded-xl border border-slate-700 hover:border-cyan-500/60 disabled:opacity-50 bg-[#141E38] hover:bg-[#1C2541] text-slate-300 hover:text-cyan-300 transition-all flex flex-col items-center justify-center text-center gap-1.5 group active:scale-95 shadow-sm"
                           >
                             <div className="w-10 h-10 rounded-xl bg-cyan-500/10 group-hover:bg-cyan-500/20 text-cyan-400 flex items-center justify-center">
                               <Upload size={20} />
@@ -1053,8 +1141,9 @@ export const ManagementScreen: React.FC = () => {
                           {/* Opção 2: Tirar Foto Direta (Abre a câmera nativa no Celular) */}
                           <button
                             type="button"
+                            disabled={isProcessingImage}
                             onClick={() => cameraInputRef.current?.click()}
-                            className="p-4 rounded-xl border border-slate-700 hover:border-amber-500/60 bg-[#141E38] hover:bg-[#1C2541] text-slate-300 hover:text-amber-300 transition-all flex flex-col items-center justify-center text-center gap-1.5 group active:scale-95 shadow-sm"
+                            className="p-4 rounded-xl border border-slate-700 hover:border-amber-500/60 disabled:opacity-50 bg-[#141E38] hover:bg-[#1C2541] text-slate-300 hover:text-amber-300 transition-all flex flex-col items-center justify-center text-center gap-1.5 group active:scale-95 shadow-sm"
                           >
                             <div className="w-10 h-10 rounded-xl bg-amber-500/10 group-hover:bg-amber-500/20 text-amber-400 flex items-center justify-center">
                               <Camera size={20} />
@@ -1069,12 +1158,21 @@ export const ManagementScreen: React.FC = () => {
                           <input
                             type="text"
                             value={vehImageUrl}
-                            onChange={(e) => setVehImageUrl(e.target.value)}
+                            onChange={(e) => {
+                              setVehImageUrl(e.target.value);
+                              setIsPhotoRemoved(false);
+                            }}
                             placeholder="Ou cole aqui o link da foto (URL)..."
                             className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-[11px] text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-400 font-mono"
                           />
                         </div>
                       </div>
+                    )}
+
+                    {imageUploadFeedback && !isProcessingImage && (
+                      <p className="text-[10px] text-amber-300 bg-amber-950/40 border border-amber-800/60 p-2 rounded-lg">
+                        {imageUploadFeedback}
+                      </p>
                     )}
 
                     {cameraError && (
@@ -1097,9 +1195,11 @@ export const ManagementScreen: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 rounded-xl bg-cyan-400 hover:bg-cyan-300 text-slate-950 text-xs font-bold shadow-[0_0_12px_rgba(0,180,216,0.35)] transition-all"
+                  disabled={isProcessingImage}
+                  className="flex-1 py-2.5 rounded-xl bg-cyan-400 hover:bg-cyan-300 disabled:opacity-50 disabled:cursor-not-allowed text-slate-950 text-xs font-bold shadow-[0_0_12px_rgba(0,180,216,0.35)] transition-all flex items-center justify-center gap-1.5"
                 >
-                  {editingVehicle ? 'Salvar Alterações' : 'Cadastrar Veículo'}
+                  {isProcessingImage && <Loader2 size={14} className="animate-spin text-slate-950" />}
+                  <span>{editingVehicle ? 'Salvar Alterações' : 'Cadastrar Veículo'}</span>
                 </button>
               </div>
             </form>

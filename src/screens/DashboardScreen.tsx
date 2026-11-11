@@ -59,11 +59,17 @@ export const DashboardScreen: React.FC = () => {
     [safeRentals]
   );
 
-  // Mapa O(1) de veículos para busca instantânea em tempo constante
+  // Mapa O(1) de veículos para busca instantânea em tempo constante por ID e Código
   const vehiclesById = React.useMemo(() => {
     const map = new Map<string, Vehicle>();
     safeVehicles.forEach((v) => {
-      if (v && v.id) map.set(v.id, v);
+      if (v && v.id) {
+        map.set(v.id, v);
+        if (v.code) {
+          map.set(v.code, v);
+          map.set(v.code.replace('#', ''), v);
+        }
+      }
     });
     return map;
   }, [safeVehicles]);
@@ -394,7 +400,9 @@ export const DashboardScreen: React.FC = () => {
 
       {/* Modal de Finalização de Corrida com Foto do Carrinho em Alta Resolução e Conferência de Pagamento */}
       {rentalToFinalize && (() => {
-        const matchingVehicle = vehicles.find((v) => v.id === rentalToFinalize.vehicleId);
+        const matchingVehicle =
+          vehicles.find((v) => v.id === rentalToFinalize.vehicleId) ||
+          vehicles.find((v) => v.code === rentalToFinalize.vehicleCode);
         const modalCarImg = matchingVehicle?.imageUrl || rentalToFinalize.vehicleImageUrl;
 
         return (
